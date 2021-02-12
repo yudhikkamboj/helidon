@@ -14,34 +14,6 @@
  * limitations under the License.
  */
 
-
-def test(closure) {
-  return {
-    try { closure() } finally {
-      archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
-      junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
-    }
-  }
-}
-def saveCache(closure) {
-  return {
-    closure()
-    stash name: 'build-cache', includes: 'target/build-cache.tar'
-  }
-}
-def withCache(closure) {
-  return {
-    unstash 'build-cache'
-    closure()
-  }
-}
-def run(name, ...closures) {
-  return [ name: stage(name) { closures.each { it() } } ]
-}
-def runParallel(stages) {
-  return parallel(stages.collectEntries { it })
-}
-
 pipeline {
   agent {
     label "linux"
@@ -90,4 +62,31 @@ pipeline {
       steps { sh './etc/scripts/release.sh release_build' }
     }
   }
+}
+
+def test(closure) {
+  return {
+    try { closure() } finally {
+      archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
+      junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+    }
+  }
+}
+def saveCache(closure) {
+  return {
+    closure()
+    stash name: 'build-cache', includes: 'target/build-cache.tar'
+  }
+}
+def withCache(closure) {
+  return {
+    unstash 'build-cache'
+    closure()
+  }
+}
+def run(name, ...closures) {
+  return [ name: stage(name) { closures.each { it() } } ]
+}
+def runParallel(stages) {
+  return parallel(stages.collectEntries { it })
 }
