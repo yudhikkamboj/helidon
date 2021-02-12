@@ -23,7 +23,19 @@ def test(closure) {
     }
   }
 }
-def run(name, Closure...closures) {
+def saveCache(closure)
+  return {
+    closure()
+    stash 'build-cache' 'target/build-cache.tar'
+  }
+}
+def withCache(closure) {
+  return {
+    unstash 'build-cache'
+    closure()
+  }
+}
+def run(name, ...closures) {
   return [ name: stage(name) { closures.each { it() } } ]
 }
 def runParallel(stages) {
@@ -44,20 +56,20 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-          runParallel ([
+          runParallel([
             run('build',
-              { sh './etc/scripts/build.sh' },
+              saveCache { sh './etc/scripts/build.sh' },
               {
-                runParallel ([
-                  run('unit-tests', test { sh './etc/scripts/test-unit.sh' }),
-                  run('integration-tests', test { sh './etc/scripts/test-integ.sh' }),
-                  run('native-image-tests', test { sh './etc/scripts/test-integ-native-image.sh' }),
-                  run('tcks', test { sh './etc/scripts/tcks.sh' }),
-                  run('javadocs', { sh './etc/scripts/javadocs.sh' }),
-                  run('spotbugs', { sh './etc/scripts/spotbugs.sh' }),
-                  run('javadocs', { sh './etc/scripts/javadocs.sh' }),
-                  run('site', { sh './etc/scripts/site.sh' }),
-                  run('archetypes', { sh './etc/scripts/archetypes.sh' })
+                runParallel([
+                  run('unit-tests',         withCache { test { sh './etc/scripts/test-unit.sh' }}),
+                  run('integration-tests',  withCache { test { sh './etc/scripts/test-integ.sh' }}),
+                  run('native-image-tests', withCache { test { sh './etc/scripts/test-integ-native-image.sh' }}),
+                  run('tcks',               withCache { test { sh './etc/scripts/tcks.sh' }}),
+                  run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }}),
+                  run('spotbugs',           withCache { sh './etc/scripts/spotbugs.sh' }),
+                  run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }),
+                  run('site',               withCache { sh './etc/scripts/site.sh' }),
+                  run('archetypes',         withCache { sh './etc/scripts/archetypes.sh' })
                 ])
               }),
             run('copyright', { sh './etc/scripts/copyright.sh' }),
