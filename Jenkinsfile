@@ -14,6 +14,58 @@
  * limitations under the License.
  */
 
+pipeline {
+  agent {
+    label 'linux'
+  }
+  options {
+    skipDefaultCheckout()
+    parallelsAlwaysFailFast()
+  }
+  environment {
+    NPM_CONFIG_REGISTRY = credentials('npm-registry')
+  }
+  stages {
+    stage('default-pipeline') {
+      steps {
+        script {
+          sayHello()
+          stages = [
+            name: 'build',
+            task: { sh './etc/scripts/build.sh' },
+            saveCache: true,
+            downstreams: [
+              [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },                 loadCache: true, hasTests: true ],
+              [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },                loadCache: true, hasTests: true ],
+              [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true, hasTests: true ],
+              [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
+              [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
+              [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
+              [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
+              [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
+            ],
+            [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
+            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }])
+        }
+      }
+    }
+    stage('release-pipeline') {
+      when { branch '**/release-*' }
+      environment {
+        GITHUB_SSH_KEY = credentials('helidonrobot-github-ssh-private-key')
+        MAVEN_SETTINGS_FILE = credentials('helidonrobot-maven-settings-ossrh')
+        GPG_PUBLIC_KEY = credentials('helidon-gpg-public-key')
+        GPG_PRIVATE_KEY = credentials('helidon-gpg-private-key')
+        GPG_PASSPHRASE = credentials('helidon-gpg-passphrase')
+      }
+      steps { sh './etc/scripts/release.sh release_build' }
+    }
+  }
+}
+
+def sayHello(){
+  println 'hello'
+}
 def runParallel(stages) {
   parallel(stages.collectEntries {
     if (!is.task) {
@@ -47,52 +99,4 @@ def runParallel(stages) {
       }
     }]
   })
-}
-
-pipeline {
-  agent {
-    label 'linux'
-  }
-  options {
-    skipDefaultCheckout()
-    parallelsAlwaysFailFast()
-  }
-  environment {
-    NPM_CONFIG_REGISTRY = credentials('npm-registry')
-  }
-  stages {
-    stage('default-pipeline') {
-      steps {
-        script {
-          runParallel([
-            name: 'build',
-            task: { sh './etc/scripts/build.sh' },
-            saveCache: true,
-            downstreams: [
-              [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },                 loadCache: true, hasTests: true ],
-              [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },                loadCache: true, hasTests: true ],
-              [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true, hasTests: true ],
-              [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
-              [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
-              [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
-              [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
-              [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
-            ],
-            [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
-            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }])
-        }
-      }
-    }
-    stage('release-pipeline') {
-      when { branch '**/release-*' }
-      environment {
-        GITHUB_SSH_KEY = credentials('helidonrobot-github-ssh-private-key')
-        MAVEN_SETTINGS_FILE = credentials('helidonrobot-maven-settings-ossrh')
-        GPG_PUBLIC_KEY = credentials('helidon-gpg-public-key')
-        GPG_PRIVATE_KEY = credentials('helidon-gpg-private-key')
-        GPG_PASSPHRASE = credentials('helidon-gpg-passphrase')
-      }
-      steps { sh './etc/scripts/release.sh release_build' }
-    }
-  }
 }
