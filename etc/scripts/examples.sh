@@ -1,6 +1,6 @@
 #!/bin/bash -e
 #
-# Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+# Copyright (c) 2021 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,6 +42,6 @@ source ${WS_DIR}/etc/scripts/pipeline-env.sh
 mvn ${MAVEN_ARGS} --version
 
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    clean install -e \
-    -DskipTests \
-    -Ppipeline
+  package -e \
+  -DskipTests \
+  -Ppipeline,examples

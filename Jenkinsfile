@@ -42,6 +42,7 @@ pipeline {
                 [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
                 [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
                 [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
+                [ name: 'examples',           task: { sh './etc/scripts/examples.sh' },                loadCache: true ],
                 [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
             ],
             [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
