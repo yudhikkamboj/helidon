@@ -27,7 +27,7 @@ def r(script) {
   return { sh script }
 }
 def s(name, Closure ...closures) {
-  return name: stage(name) { steps { closures.each { it() } } }
+  return [ name: stage(name) { steps { closures.each { it() } } } ]
 }
 def p(...stages) {
   return { parallel stages.collectEntries { it } }
