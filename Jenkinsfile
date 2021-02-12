@@ -70,8 +70,8 @@ def runStages(stages) {
 def generateStage(stage) {
   return {
     node(stage.label ?: 'linux') {
-      stage("${stage.name}") {
-        println "hello pipeline"
+      println "hello pipeline"
+//       stage("${stage.name}") {
 //         retry(3) {
 //           checkout scm
 //         }
@@ -92,7 +92,7 @@ def generateStage(stage) {
 //             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
 //           }
 //         }
-      }
+//       }
     }
   }
 }
