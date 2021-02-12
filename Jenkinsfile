@@ -64,35 +64,34 @@ pipeline {
   }
 }
 
-def runStages(stages) {
-  parallel(stages.collectEntries { [ "${it.name}": generateStage(it) ] })
+def runStages(args) {
+  parallel(args.collectEntries { [ "${it.name}": generateStage(it) ] })
 }
-def generateStage(stage) {
+def generateStage(args) {
   return {
-    node(stage.label ?: 'linux') {
-      println "hello pipeline"
-//       stage("${stage.name}") {
-//         retry(3) {
-//           checkout scm
-//         }
-//         if (Boolean.valueOf(stage.loadCache)) {
-//           unstash 'build-cache'
-//         }
-//         try {
-//           // stage.task()
-//           if (stage.downstreams) {
-//             runStages(stage.downstreams)
-//           }
-//           if (Boolean.valueOf(stage.saveCache)) {
-//             stash name: 'build-cache', includes: 'target/build-cache.tar'
-//           }
-//         } finally {
-//           if (Boolean.valueOf(stage.hasTests)) {
-//             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
-//             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
-//           }
-//         }
-//       }
+    node(args.label ?: 'linux') {
+      stage("${args.name}") {
+        retry(3) {
+          checkout scm
+        }
+        if (Boolean.valueOf(args.loadCache)) {
+          unstash 'build-cache'
+        }
+        try {
+          args.task()
+          if (args.downstreams) {
+            runStages(args.downstreams)
+          }
+          if (Boolean.valueOf(args.saveCache)) {
+            stash name: 'build-cache', includes: 'target/build-cache.tar'
+          }
+        } finally {
+          if (Boolean.valueOf(args.hasTests)) {
+            archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
+            junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+          }
+        }
+      }
     }
   }
 }
