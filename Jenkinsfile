@@ -28,7 +28,7 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-//           runParallel([
+          runParallel([
             run('build',
               saveCache { sh './etc/scripts/build.sh' },
               {
@@ -46,7 +46,7 @@ pipeline {
               })
 //             run('copyright', { sh './etc/scripts/copyright.sh' }),
 //             run('checkstyle', { sh './etc/scripts/checkstyle.sh' })
-//           ])
+          ])
         }
       }
     }
