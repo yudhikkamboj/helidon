@@ -78,7 +78,7 @@ def generateStage(stage) {
           unstash 'build-cache'
         }
         try {
-          stage.task()
+          // stage.task()
           if (stage.downstreams) {
             runStages(stage.downstreams)
           }
