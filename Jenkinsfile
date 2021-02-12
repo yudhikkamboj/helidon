@@ -14,6 +14,41 @@
  * limitations under the License.
  */
 
+def runParallel(stages) {
+  parallel(stages.collectEntries {
+    if (!is.task) {
+      return [:]
+    }
+    name = it.name ?: 'unnamed-stage'
+    return [ name: {
+      node(it.label ?: 'linux') {
+        stage(name) {
+          retry(3) {
+            checkout scm
+          }
+          if (Boolean.valueOf(it.loadCache)) {
+            unstash 'build-cache'
+          }
+          try {
+            it.task()
+            if (it.downstreams) {
+              runParallel(it.downstreams)
+            }
+            if (Boolean.valueOf(it.saveCache)) {
+              stash name: 'build-cache', includes: 'target/build-cache.tar'
+            }
+          } finally {
+            if (Boolean.valueOf(it.archiveTests)) {
+              archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
+              junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+            }
+          }
+        }
+      }
+    }]
+  })
+}
+
 pipeline {
   agent {
     label 'linux'
@@ -60,39 +95,4 @@ pipeline {
       steps { sh './etc/scripts/release.sh release_build' }
     }
   }
-}
-
-def runParallel(stages) {
-  parallel(stages.collectEntries {
-    if (!is.task) {
-      return [:]
-    }
-    name = it.name ?: 'unnamed-stage'
-    return [ name: {
-      node(it.label ?: 'linux') {
-        stage(name) {
-          retry(3) {
-            checkout scm
-          }
-          if (Boolean.valueOf(it.loadCache)) {
-            unstash 'build-cache'
-          }
-          try {
-            it.task()
-            if (it.downstreams) {
-              runParallel(it.downstreams)
-            }
-            if (Boolean.valueOf(it.saveCache)) {
-              stash name: 'build-cache', includes: 'target/build-cache.tar'
-            }
-          } finally {
-            if (Boolean.valueOf(it.archiveTests)) {
-              archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
-              junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
-            }
-          }
-        }
-      }
-    }]
-  })
 }
