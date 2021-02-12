@@ -66,7 +66,7 @@ pipeline {
 
 def runStages(stages) {
   parallel(stages.collectEntries {
-    if (!is.task) {
+    if (!it.task) {
       return [:]
     }
     name = it.name ?: 'unnamed-stage'
