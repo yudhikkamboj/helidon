@@ -16,9 +16,10 @@
 
 pipeline {
   agent {
-    label "linux"
+    label 'linux'
   }
   options {
+    skipDefaultCheckout()
     parallelsAlwaysFailFast()
   }
   environment {
@@ -28,25 +29,22 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-          runParallel([
-            run('build',
-              saveCache { sh './etc/scripts/build.sh' },
-              {
-                runParallel([
-                  run('unit-tests',         withCache { test { sh './etc/scripts/test-unit.sh' }}),
-                  run('integration-tests',  withCache { test { sh './etc/scripts/test-integ.sh' }}),
-                  run('native-image-tests', withCache { test { sh './etc/scripts/test-integ-native-image.sh' }}),
-                  run('tcks',               withCache { test { sh './etc/scripts/tcks.sh' }}),
-                  run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }),
-                  run('spotbugs',           withCache { sh './etc/scripts/spotbugs.sh' }),
-                  run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }),
-                  run('site',               withCache { sh './etc/scripts/site.sh' }),
-                  run('archetypes',         withCache { sh './etc/scripts/archetypes.sh' })
-                ])
-              })
-//             run('copyright', { sh './etc/scripts/copyright.sh' }),
-//             run('checkstyle', { sh './etc/scripts/checkstyle.sh' })
-          ])
+          run([
+            name: 'build',
+            task: { sh './etc/scripts/build.sh' },
+            saveCache: true,
+            downstreams: [
+              [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh',                 loadCache: true, hasTests: true ],
+              [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh',                loadCache: true, hasTests: true ],
+              [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true, hasTests: true ],
+              [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
+              [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
+              [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
+              [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
+              [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
+            ],
+            [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
+            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }])
         }
       }
     }
@@ -64,29 +62,37 @@ pipeline {
   }
 }
 
-def test(closure) {
-  return {
-    try { closure() } finally {
-      archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
-      junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+def run(stages) {
+  parallel(stages.collectEntries {
+    if (!is.task) {
+      return [:]
     }
-  }
-}
-def saveCache(closure) {
-  return {
-    closure()
-    stash name: 'build-cache', includes: 'target/build-cache.tar'
-  }
-}
-def withCache(closure) {
-  return {
-    unstash 'build-cache'
-    closure()
-  }
-}
-def run(name, ...closures) {
-  return [ name: { node { stage(name) { closures.each { it() }}}} ]
-}
-def runParallel(stages) {
-  return parallel(stages.collectEntries { it })
+    name = it.name ?: 'unnamed-stage'
+    return [ name: {
+      node(it.label ?: 'linux') {
+        stage(name) {
+          retry(3) {
+            checkout scm
+          }
+          if (Boolean.valueOf(it.loadCache)) {
+            unstash 'build-cache'
+          }
+          try {
+            it.task()
+            if (it.downstreams) {
+              runParallel(it.downstreams)
+            }
+            if (Boolean.valueOf(it.saveCache)) {
+              stash name: 'build-cache', includes: 'target/build-cache.tar'
+            }
+          } finally {
+            if (Boolean.valueOf(it.archiveTests)) {
+              archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
+              junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+            }
+          }
+        }
+      }
+    }]
+  })
 }
