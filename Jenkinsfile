@@ -65,7 +65,7 @@ pipeline {
                   run('integration-tests',  withCache { test { sh './etc/scripts/test-integ.sh' }}),
                   run('native-image-tests', withCache { test { sh './etc/scripts/test-integ-native-image.sh' }}),
                   run('tcks',               withCache { test { sh './etc/scripts/tcks.sh' }}),
-                  run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }}),
+                  run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }),
                   run('spotbugs',           withCache { sh './etc/scripts/spotbugs.sh' }),
                   run('javadocs',           withCache { sh './etc/scripts/javadocs.sh' }),
                   run('site',               withCache { sh './etc/scripts/site.sh' }),
