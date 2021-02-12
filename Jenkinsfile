@@ -24,7 +24,7 @@ def test(closure) {
   }
 }
 def run(name, Closure...closures) {
-  return [ name: stage(name) { steps { closures.each { it() } } } ]
+  return [ name: stage(name) { closures.each { it() } } ]
 }
 def runParallel(stages) {
   return parallel(stages.collectEntries { it })
