@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+# Copyright (c) 2018, 2021 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 #
 
 require_env() {
-    if [ -z "$(eval echo \$${1})" ] ; then
+    if [ -z "$(eval echo \$"${1}")" ] ; then
         echo "ERROR: ${1} not set in the environment"
         return 1
     fi
@@ -48,24 +48,24 @@ if [ -n "${JENKINS_HOME}" ] ; then
     fi
     if [ ! -e "${HOME}/.npmrc" ] ; then
         if [ -n "${NPM_CONFIG_REGISTRY}" ] ; then
-            echo "registry = ${NPM_CONFIG_REGISTRY}" >> ${HOME}/.npmrc
+            echo "registry = ${NPM_CONFIG_REGISTRY}" >> "${HOME}"/.npmrc
         fi
         if [ -n "${https_proxy}" ] ; then
-            echo "https-proxy = ${https_proxy}" >> ${HOME}/.npmrc
+            echo "https-proxy = ${https_proxy}" >> "${HOME}"/.npmrc
         fi
         if [ -n "${http_proxy}" ] ; then
-            echo "proxy = ${http_proxy}" >> ${HOME}/.npmrc
+            echo "proxy = ${http_proxy}" >> "${HOME}"/.npmrc
         fi
         if [ -n "${NO_PROXY}" ] ; then
-            echo "noproxy = ${NO_PROXY}" >> ${HOME}/.npmrc
+            echo "noproxy = ${NO_PROXY}" >> "${HOME}"/.npmrc
         fi
     fi
 
     if [ -n "${GPG_PUBLIC_KEY}" ] ; then
-        gpg --import --no-tty --batch ${GPG_PUBLIC_KEY}
+        gpg --import --no-tty --batch "${GPG_PUBLIC_KEY}"
     fi
     if [ -n "${GPG_PRIVATE_KEY}" ] ; then
-        gpg --allow-secret-key-import --import --no-tty --batch ${GPG_PRIVATE_KEY}
+        gpg --allow-secret-key-import --import --no-tty --batch "${GPG_PRIVATE_KEY}"
     fi
     if [ -n "${GPG_PASSPHRASE}" ] ; then
         echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
@@ -73,4 +73,28 @@ if [ -n "${JENKINS_HOME}" ] ; then
         GPG_KEYGRIP=$(gpg --with-keygrip -K | grep "Keygrip" | head -1 | awk '{print $3}')
         /usr/lib/gnupg/gpg-preset-passphrase --preset "${GPG_KEYGRIP}" <<< "${GPG_PASSPHRASE}"
     fi
+
+    echo "-------------------------------------------------------------------------------"
+    echo "-------------------------------- TEMP HACK START ------------------------------"
+    echo "-------------------------------------------------------------------------------"
+
+    git clone git@github.com:romain-grecourt/helidon-build-tools.git
+    # shellcheck disable=SC2164
+    cd helidon-build-tools
+    git checkout buildstate-maven-extension
+
+    mvn "${MAVEN_ARGS}" --version
+
+    mvn "${MAVEN_ARGS}" -f "${WS_DIR}"/utils/pom.xml \
+      install -e \
+      -DskipTests
+
+    mvn "${MAVEN_ARGS}" -f "${WS_DIR}"/build-cache-maven-plugin/pom.xml \
+      install -e \
+      -DskipTests
+
+    echo "-------------------------------------------------------------------------------"
+    echo "--------------------------------- TEMP HACK END -------------------------------"
+    echo "-------------------------------------------------------------------------------"
+
 fi

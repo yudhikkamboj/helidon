@@ -1,6 +1,6 @@
 #!/bin/bash -e
 #
-# Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+# Copyright (c) 2018, 2021 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,20 +35,20 @@ else
 fi
 
 # Path to the root of the workspace
-readonly WS_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; cd ../.. ; pwd -P)
+readonly WS_DIR=$(cd "$(dirname -- "${SCRIPT_PATH}")" ; cd ../.. ; pwd -P)
 
 readonly RESULT_FILE=$(mktemp -t XXXcopyright-result)
 
-source ${WS_DIR}/etc/scripts/pipeline-env.sh
+source "${WS_DIR}"/etc/scripts/pipeline-env.sh
 
 die(){ echo "${1}" ; exit 1 ;}
 
-mvn ${MAVEN_ARGS} -q org.glassfish.copyright:glassfish-copyright-maven-plugin:copyright \
-        -f ${WS_DIR}/pom.xml \
+mvn "${MAVEN_ARGS}" -q org.glassfish.copyright:glassfish-copyright-maven-plugin:copyright \
+        -f "${WS_DIR}"/pom.xml \
         -Dcopyright.exclude="${WS_DIR}/etc/copyright-exclude.txt" \
         -Dcopyright.template="${WS_DIR}/etc/copyright.txt" \
         -Dcopyright.scm="git" \
-        -Pexamples,docs,ossrh-releases,tests > ${RESULT_FILE} || die "Error running the Maven command"
+        -Pexamples,docs,ossrh-releases,tests > "${RESULT_FILE}" || die "Error running the Maven command"
 
-grep -i "copyright" ${RESULT_FILE} \
+grep -i "copyright" "${RESULT_FILE}" \
     && die "COPYRIGHT ERROR" || echo "COPYRIGHT OK"

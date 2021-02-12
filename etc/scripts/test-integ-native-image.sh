@@ -1,6 +1,6 @@
 #!/bin/bash -e
 #
-# Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+# Copyright (c) 2021 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,19 +37,18 @@ fi
 # Path to the root of the workspace
 readonly WS_DIR=$(cd "$(dirname -- "${SCRIPT_PATH}")" ; cd ../.. ; pwd -P)
 
-readonly LOG_FILE=$(mktemp -t XXXcheckstyle-log)
-
-readonly RESULT_FILE=$(mktemp -t XXXcheckstyle-result)
-
 source "${WS_DIR}"/etc/scripts/pipeline-env.sh
 
-die(){ echo "${1}" ; exit 1 ;}
+mvn "${MAVEN_ARGS}" --version
 
-mvn "${MAVEN_ARGS}" checkstyle:checkstyle-aggregate \
-    -f "${WS_DIR}"/pom.xml \
-    -Dcheckstyle.output.format="plain" \
-    -Dcheckstyle.output.file="${RESULT_FILE}" \
-    -Pexamples,ossrh-releases > "${LOG_FILE}" 2>&1 || (cat "${LOG_FILE}" ; exit 1)
+mvn install -e -Ppipeline -DskipTests
 
-grep "^\[ERROR\]" "${RESULT_FILE}" \
-    && die "CHECKSTYLE ERROR" || echo "CHECKSTYLE OK"
+#
+# test running from jar file, and then from module path
+#
+# The first integration test tests all MP features except for JPA/JTA
+# with multiple JAX-RS applications including security
+
+tests/integration/native-image/mp-1/test-runtime.sh
+# The third integration test tests Helidon Quickstart MP
+tests/integration/native-image/mp-3/test-runtime.sh

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+def testSh(script) {
+  try {
+    sh script
+  } finally {
+    archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
+    junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+  }
+}
 
 pipeline {
   agent {
@@ -28,33 +37,24 @@ pipeline {
     stage('default') {
       parallel {
         stage('build'){
-          steps {
-            script {
-              try {
-                sh './etc/scripts/build.sh'
-              } finally {
-                archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
-                junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
-              }
-            }
+          steps { sh './etc/scripts/build.sh' }
+          parallel {
+            stage('unit-tests') { steps { script { testSh('./etc/scripts/test-unit.sh') } } }
+            stage('integration-tests') { steps { script { testSh('./etc/scripts/test-integ.sh') } } }
+            stage('native-image-tests'){ steps { sh './etc/scripts/test-integ-native-image.sh' } }
+            stage('javadocs'){ steps { sh './etc/scripts/javadocs.sh' } }
+            stage('spotbugs'){ steps { sh './etc/scripts/spotbugs.sh' } }
+            stage('tcks'){ steps { sh './etc/scripts/tcks.sh' } }
+            stage('site'){ steps { sh './etc/scripts/site.sh' } }
+            stage('archetypes'){ steps { sh './etc/scripts/archetypes.sh' } }
           }
         }
-        stage('copyright'){
-          steps {
-            sh './etc/scripts/copyright.sh'
-          }
-        }
-        stage('checkstyle'){
-          steps {
-            sh './etc/scripts/checkstyle.sh'
-          }
-        }
+        stage('copyright'){ steps { sh './etc/scripts/copyright.sh' } }
+        stage('checkstyle'){ steps { sh './etc/scripts/checkstyle.sh' } }
       }
     }
     stage('release') {
-      when {
-        branch '**/release-*'
-      }
+      when { branch '**/release-*' }
       environment {
         GITHUB_SSH_KEY = credentials('helidonrobot-github-ssh-private-key')
         MAVEN_SETTINGS_FILE = credentials('helidonrobot-maven-settings-ossrh')
@@ -62,9 +62,7 @@ pipeline {
         GPG_PRIVATE_KEY = credentials('helidon-gpg-private-key')
         GPG_PASSPHRASE = credentials('helidon-gpg-passphrase')
       }
-      steps {
-        sh './etc/scripts/release.sh release_build'
-      }
+      steps { sh './etc/scripts/release.sh release_build' }
     }
   }
 }
