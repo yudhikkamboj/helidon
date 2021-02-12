@@ -65,36 +65,33 @@ pipeline {
 }
 
 def runStages(stages) {
-  parallel(stages.collectEntries {
-    if (!it.task) {
-      return [:]
-    }
-    name = it.name ?: 'unnamed-stage'
-    return [ name: {
-      node(it.label ?: 'linux') {
-        stage(name) {
-          retry(3) {
-            checkout scm
+  parallel(stages.collectEntries { [ "${it.name}": generateStage(it) ] })
+}
+def generateStage(stage) {
+  return {
+    node(it.label ?: 'linux') {
+      stage("${stageName}") {
+        retry(3) {
+          checkout scm
+        }
+        if (Boolean.valueOf(it.loadCache)) {
+          unstash 'build-cache'
+        }
+        try {
+          it.task()
+          if (it.downstreams) {
+            runStages(it.downstreams)
           }
-          if (Boolean.valueOf(it.loadCache)) {
-            unstash 'build-cache'
+          if (Boolean.valueOf(it.saveCache)) {
+            stash name: 'build-cache', includes: 'target/build-cache.tar'
           }
-          try {
-            it.task()
-            if (it.downstreams) {
-              runStages(it.downstreams)
-            }
-            if (Boolean.valueOf(it.saveCache)) {
-              stash name: 'build-cache', includes: 'target/build-cache.tar'
-            }
-          } finally {
-            if (Boolean.valueOf(it.archiveTests)) {
-              archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
-              junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
-            }
+        } finally {
+          if (Boolean.valueOf(it.archiveTests)) {
+            archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
+            junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
           }
         }
       }
-    }]
-  })
+    }
+  }
 }
