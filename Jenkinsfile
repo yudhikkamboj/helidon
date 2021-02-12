@@ -27,7 +27,7 @@ def run(name, Closure...closures) {
   return [ name: stage(name) { steps { closures.each { it() } } } ]
 }
 def runParallel(stages) {
-  return parallel stages.collectEntries { it }
+  return parallel(stages.collectEntries { it })
 }
 
 pipeline {
