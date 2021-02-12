@@ -74,7 +74,7 @@ def generateStage(args) {
         retry(3) {
           checkout scm
         }
-        if (Boolean.valueOf(args.loadCache)) {
+        if (args.loadCache?: false) {
           unstash 'build-cache'
         }
         try {
@@ -82,11 +82,13 @@ def generateStage(args) {
           if (args.downstreams) {
             runStages(args.downstreams)
           }
-          if (Boolean.valueOf(args.saveCache)) {
+          if (args.saveCache) {
+            println "before stash"
             stash name: 'build-cache', includes: 'target/build-cache.tar'
+            println "after stash"
           }
         } finally {
-          if (Boolean.valueOf(args.hasTests)) {
+          if (args.hasTests?: false) {
             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
           }
