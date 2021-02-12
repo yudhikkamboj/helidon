@@ -23,7 +23,7 @@ def test(closure) {
     }
   }
 }
-def saveCache(closure)
+def saveCache(closure) {
   return {
     closure()
     stash name: 'build-cache', includes: 'target/build-cache.tar'
