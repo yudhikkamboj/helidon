@@ -85,11 +85,11 @@ if [ -n "${JENKINS_HOME}" ] ; then
 
     mvn "${MAVEN_ARGS}" --version
 
-    mvn "${MAVEN_ARGS}" -f "${WS_DIR}"/utils/pom.xml \
+    mvn "${MAVEN_ARGS}" -f utils/pom.xml \
       install -e \
       -DskipTests
 
-    mvn "${MAVEN_ARGS}" -f "${WS_DIR}"/build-cache-maven-plugin/pom.xml \
+    mvn "${MAVEN_ARGS}" -f build-cache-maven-plugin/pom.xml \
       install -e \
       -DskipTests
 
