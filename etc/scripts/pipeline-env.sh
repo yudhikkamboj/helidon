@@ -78,7 +78,7 @@ if [ -n "${JENKINS_HOME}" ] ; then
     echo "-------------------------------- TEMP HACK START ------------------------------"
     echo "-------------------------------------------------------------------------------"
 
-    git clone https://github.com/romain-grecourt/helidon.git
+    git clone https://github.com/romain-grecourt/helidon-build-tools.git
     # shellcheck disable=SC2164
     cd helidon-build-tools
     git checkout buildstate-maven-extension
