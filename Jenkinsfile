@@ -47,7 +47,8 @@ pipeline {
           runParallel [
             run('build',
               { sh './etc/scripts/build.sh' },
-              { runParallel [
+              {
+                runParallel [
                   run('unit-tests', test { sh './etc/scripts/test-unit.sh' }),
                   run('integration-tests', test { sh './etc/scripts/test-integ.sh' }),
                   run('native-image-tests', test { sh './etc/scripts/test-integ-native-image.sh' }),
@@ -57,7 +58,8 @@ pipeline {
                   run('javadocs', { sh './etc/scripts/javadocs.sh' }),
                   run('site', { sh './etc/scripts/site.sh' }),
                   run('archetypes', { sh './etc/scripts/archetypes.sh' })
-              ]}),
+                ]
+              }),
             run('copyright', { sh './etc/scripts/copyright.sh' }),
             run('checkstyle', { sh './etc/scripts/checkstyle.sh' })
           ]
