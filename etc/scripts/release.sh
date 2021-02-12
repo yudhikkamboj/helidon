@@ -101,15 +101,15 @@ readonly PREPARE_HOOKS=( )
 # Hooks for deployment work
 readonly PERFORM_HOOKS=( )
 
-source "${WS_DIR}"/etc/scripts/pipeline-env.sh
+source ${WS_DIR}/etc/scripts/pipeline-env.sh
 
 # Resolve FULL_VERSION
 if [ -z "${VERSION+x}" ]; then
 
     # get maven version
-    MVN_VERSION=$(mvn "${MAVEN_ARGS}" \
+    MVN_VERSION=$(mvn ${MAVEN_ARGS} \
         -q \
-        -f "${WS_DIR}"/pom.xml \
+        -f ${WS_DIR}/pom.xml \
         -Dexec.executable="echo" \
         -Dexec.args="\${project.version}" \
         --non-recursive \
@@ -127,7 +127,7 @@ printf "\n%s: FULL_VERSION=%s\n\n" "$(basename "${0}")" "${FULL_VERSION}"
 
 update_version(){
     # Update version
-    mvn "${MAVEN_ARGS}" -f "${WS_DIR}"/parent/pom.xml versions:set versions:set-property \
+    mvn ${MAVEN_ARGS} -f ${WS_DIR}/parent/pom.xml versions:set versions:set-property \
         -DgenerateBackupPoms=false \
         -DnewVersion="${FULL_VERSION}" \
         -Dproperty=helidon.version \
@@ -170,13 +170,13 @@ release_site(){
     fi
 
     # Generate site
-    mvn "${MAVEN_ARGS}" site
+    mvn ${MAVEN_ARGS} site
 
     # Sign site jar
-    gpg -ab "${WS_DIR}"/target/helidon-project-"${FULL_VERSION}"-site.jar
+    gpg -ab ${WS_DIR}/target/helidon-project-"${FULL_VERSION}"-site.jar
 
     # Deploy site.jar and signature file explicitly using deploy-file
-    mvn "${MAVEN_ARGS}" deploy:deploy-file \
+    mvn ${MAVEN_ARGS} deploy:deploy-file \
         -Dfile="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar" \
         -Dfiles="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar.asc" \
         -Dclassifier="site" \
@@ -216,12 +216,12 @@ release_build(){
 
     # Create the nexus staging repository
     local STAGING_DESC="Helidon v${FULL_VERSION}"
-    mvn "${MAVEN_ARGS}" nexus-staging:rc-open \
+    mvn ${MAVEN_ARGS} nexus-staging:rc-open \
         -DstagingProfileId="6026dab46eed94" \
         -DstagingDescription="${STAGING_DESC}"
 
     # shellcheck disable=SC2155
-    export STAGING_REPO_ID=$(mvn "${MAVEN_ARGS}" nexus-staging:rc-list | \
+    export STAGING_REPO_ID=$(mvn ${MAVEN_ARGS} nexus-staging:rc-list | \
         grep -E "^[0-9:,]*[ ]?\[INFO\] iohelidon\-[0-9]+[ ]+OPEN[ ]+${STAGING_DESC}" | \
         awk '{print $2" "$3}' | \
         sed -e s@'\[INFO\] '@@g -e s@'OPEN'@@g | \
@@ -229,7 +229,7 @@ release_build(){
     echo "Nexus staging repository ID: ${STAGING_REPO_ID}"
 
     # Perform deployment
-    mvn "${MAVEN_ARGS}" clean deploy \
+    mvn ${MAVEN_ARGS} clean deploy \
        -Prelease,archetypes \
       -DskipTests \
       -DstagingRepositoryId="${STAGING_REPO_ID}" \
@@ -247,7 +247,7 @@ release_build(){
     release_site
 
     # Close the nexus staging repository
-    mvn "${MAVEN_ARGS}" nexus-staging:rc-close \
+    mvn ${MAVEN_ARGS} nexus-staging:rc-close \
       -DstagingRepositoryId="${STAGING_REPO_ID}" \
       -DstagingDescription="${STAGING_DESC}"
 

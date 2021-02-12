@@ -83,13 +83,10 @@ if [ -n "${JENKINS_HOME}" ] ; then
     cd helidon-build-tools
     git checkout buildstate-maven-extension
 
-    mvn "${MAVEN_ARGS}" --version
+    mvn ${MAVEN_ARGS} --version
 
-    mvn ${MAVEN_ARGS} -f utils/pom.xml \
-      install -e \
-      -DskipTests
-
-    mvn ${MAVEN_ARGS} -f build-cache-maven-plugin/pom.xml \
+    mvn ${MAVEN_ARGS} -f pom.xml \
+      -am -pl build-cache-maven-plugin \
       install -e \
       -DskipTests
 

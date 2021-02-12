@@ -37,9 +37,9 @@ fi
 # Path to the root of the workspace
 readonly WS_DIR=$(cd "$(dirname -- "${SCRIPT_PATH}")" ; cd ../.. ; pwd -P)
 
-source "${WS_DIR}"/etc/scripts/pipeline-env.sh
+source ${WS_DIR}/etc/scripts/pipeline-env.sh
 
-mvn "${MAVEN_ARGS}" --version
+mvn ${MAVEN_ARGS} --version
 
 mvn install -e -Ppipeline -DskipTests
 

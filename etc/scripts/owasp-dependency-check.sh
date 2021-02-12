@@ -45,7 +45,7 @@ die(){ cat ${RESULT_FILE} ; echo "Dependency report in ${WS_DIR}/target" ; echo 
 
 mvn ${MAVEN_ARGS} -Dorg.slf4j.simpleLogger.defaultLogLevel=WARN org.owasp:dependency-check-maven:aggregate \
         -f ${WS_DIR}/pom.xml \
-        -Dtop.parent.basedir="${WS_DIR}" \
+        -Dtop.parent.basedir=${WS_DIR} \
         > ${RESULT_FILE} || die "Error running the Maven command"
 
 grep -i "One or more dependencies were identified with known vulnerabilities" ${RESULT_FILE} \
