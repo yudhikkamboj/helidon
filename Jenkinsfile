@@ -29,23 +29,24 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-          sayHello()
-          stages = [[
-            name: 'build',
-            task: { sh './etc/scripts/build.sh' },
-            saveCache: true,
-            downstreams: [
-              [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },                 loadCache: true, hasTests: true ],
-              [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },                loadCache: true, hasTests: true ],
-              [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true, hasTests: true ],
-              [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
-              [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
-              [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
-              [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
-              [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
+          runParallel([
+            [
+              name: 'build',
+              task: { sh './etc/scripts/build.sh' },
+              saveCache: true,
+              downstreams: [
+                [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },               loadCache: true, hasTests: true ],
+                [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },              loadCache: true, hasTests: true ],
+                [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true, hasTests: true ],
+                [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
+                [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
+                [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
+                [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
+                [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
             ],
             [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
-            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }]]
+            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }]
+          ])
         }
       }
     }
@@ -63,9 +64,6 @@ pipeline {
   }
 }
 
-def sayHello(){
-  println 'hello'
-}
 def runParallel(stages) {
   parallel(stages.collectEntries {
     if (!is.task) {
