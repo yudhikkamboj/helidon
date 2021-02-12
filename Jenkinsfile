@@ -62,7 +62,7 @@ pipeline {
                 s('archetypes', r('./etc/scripts/archetypes.sh'))
               ),
             s('copyright', r('./etc/scripts/copyright.sh')),
-            s('checkstyle', r('./etc/scripts/checkstyle.sh')))
+            s('checkstyle', r('./etc/scripts/checkstyle.sh')))()
         }
       }
     }
