@@ -71,26 +71,27 @@ def generateStage(stage) {
   return {
     node(stage.label ?: 'linux') {
       stage("${stage.name}") {
-        retry(3) {
-          checkout scm
-        }
-        if (Boolean.valueOf(stage.loadCache)) {
-          unstash 'build-cache'
-        }
-        try {
-          // stage.task()
-          if (stage.downstreams) {
-            runStages(stage.downstreams)
-          }
-          if (Boolean.valueOf(stage.saveCache)) {
-            stash name: 'build-cache', includes: 'target/build-cache.tar'
-          }
-        } finally {
-          if (Boolean.valueOf(stage.archiveTests)) {
-            archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
-            junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
-          }
-        }
+        println "hello pipeline"
+//         retry(3) {
+//           checkout scm
+//         }
+//         if (Boolean.valueOf(stage.loadCache)) {
+//           unstash 'build-cache'
+//         }
+//         try {
+//           // stage.task()
+//           if (stage.downstreams) {
+//             runStages(stage.downstreams)
+//           }
+//           if (Boolean.valueOf(stage.saveCache)) {
+//             stash name: 'build-cache', includes: 'target/build-cache.tar'
+//           }
+//         } finally {
+//           if (Boolean.valueOf(stage.hasTests)) {
+//             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
+//             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+//           }
+//         }
       }
     }
   }
