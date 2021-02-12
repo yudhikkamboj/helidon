@@ -29,7 +29,7 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-          run([
+          runParallel([
             name: 'build',
             task: { sh './etc/scripts/build.sh' },
             saveCache: true,
@@ -62,7 +62,7 @@ pipeline {
   }
 }
 
-def run(stages) {
+def runParallel(stages) {
   parallel(stages.collectEntries {
     if (!is.task) {
       return [:]
