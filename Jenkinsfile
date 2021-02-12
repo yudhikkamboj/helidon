@@ -26,7 +26,7 @@ def test(closure) {
 def saveCache(closure)
   return {
     closure()
-    stash 'build-cache' 'target/build-cache.tar'
+    stash name: 'build-cache', includes: 'target/build-cache.tar'
   }
 }
 def withCache(closure) {
