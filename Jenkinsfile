@@ -85,7 +85,7 @@ def withCache(closure) {
   }
 }
 def run(name, ...closures) {
-  return [ name: stage(name) { closures.each { it() } } ]
+  return [ name: { node { stage(name) { closures.each { it() }}}} ]
 }
 def runParallel(stages) {
   return parallel(stages.collectEntries { it })
