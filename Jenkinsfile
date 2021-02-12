@@ -14,13 +14,23 @@
  * limitations under the License.
  */
 
-def testSh(script) {
-  try {
-    sh script
-  } finally {
-    archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
-    junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+
+def t(closure) {
+  return {
+    try { closure() } finally {
+      archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
+      junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
+    }
   }
+}
+def r(script) {
+  return { sh script }
+}
+def s(name, Closure ...closures) {
+  return name: stage(name) { steps { closures.each { it() } } }
+}
+def p(...stages) {
+  return { parallel stages.collectEntries { it } }
 }
 
 pipeline {
@@ -34,26 +44,29 @@ pipeline {
     NPM_CONFIG_REGISTRY = credentials('npm-registry')
   }
   stages {
-    stage('default') {
-      parallel {
-        stage('build'){
-          steps { sh './etc/scripts/build.sh' }
-          parallel {
-            stage('unit-tests') { steps { script { testSh('./etc/scripts/test-unit.sh') } } }
-            stage('integration-tests') { steps { script { testSh('./etc/scripts/test-integ.sh') } } }
-            stage('native-image-tests'){ steps { sh './etc/scripts/test-integ-native-image.sh' } }
-            stage('javadocs'){ steps { sh './etc/scripts/javadocs.sh' } }
-            stage('spotbugs'){ steps { sh './etc/scripts/spotbugs.sh' } }
-            stage('tcks'){ steps { sh './etc/scripts/tcks.sh' } }
-            stage('site'){ steps { sh './etc/scripts/site.sh' } }
-            stage('archetypes'){ steps { sh './etc/scripts/archetypes.sh' } }
-          }
+    stage('default-pipeline') {
+      steps {
+        script {
+          p(
+            s('build',
+              r('./etc/scripts/build.sh'),
+              p(
+                s('unit-tests', t(r('./etc/scripts/test-unit.sh'))),
+                s('integration-tests', t(r('./etc/scripts/test-integ.sh'))),
+                s('native-image-tests', t(r('./etc/scripts/test-integ-native-image.sh'))),
+                s('tcks', t(r('./etc/scripts/tcks.sh'))),
+                s('javadocs', r('./etc/scripts/javadocs.sh')),
+                s('spotbugs', r('./etc/scripts/spotbugs.sh')),
+                s('javadocs', r('./etc/scripts/javadocs.sh')),
+                s('site', r('./etc/scripts/site.sh')),
+                s('archetypes', r('./etc/scripts/archetypes.sh'))
+              ),
+            s('copyright', r('./etc/scripts/copyright.sh')),
+            s('checkstyle', r('./etc/scripts/checkstyle.sh')))
         }
-        stage('copyright'){ steps { sh './etc/scripts/copyright.sh' } }
-        stage('checkstyle'){ steps { sh './etc/scripts/checkstyle.sh' } }
       }
     }
-    stage('release') {
+    stage('release-pipeline') {
       when { branch '**/release-*' }
       environment {
         GITHUB_SSH_KEY = credentials('helidonrobot-github-ssh-private-key')
