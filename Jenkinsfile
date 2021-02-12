@@ -26,7 +26,7 @@ pipeline {
     NPM_CONFIG_REGISTRY = credentials('npm-registry')
   }
   stages {
-    stage('default-pipeline') {
+    stage('pipeline') {
       steps {
         script {
           runStages([
