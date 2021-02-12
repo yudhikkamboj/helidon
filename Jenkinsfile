@@ -69,24 +69,24 @@ def runStages(stages) {
 }
 def generateStage(stage) {
   return {
-    node(it.label ?: 'linux') {
-      stage("${stageName}") {
+    node(stage.label ?: 'linux') {
+      stage("${stage.name}") {
         retry(3) {
           checkout scm
         }
-        if (Boolean.valueOf(it.loadCache)) {
+        if (Boolean.valueOf(stage.loadCache)) {
           unstash 'build-cache'
         }
         try {
-          it.task()
-          if (it.downstreams) {
-            runStages(it.downstreams)
+          stage.task()
+          if (stage.downstreams) {
+            runStages(stage.downstreams)
           }
-          if (Boolean.valueOf(it.saveCache)) {
+          if (Boolean.valueOf(stage.saveCache)) {
             stash name: 'build-cache', includes: 'target/build-cache.tar'
           }
         } finally {
-          if (Boolean.valueOf(it.archiveTests)) {
+          if (Boolean.valueOf(stage.archiveTests)) {
             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
           }
