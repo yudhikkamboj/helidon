@@ -29,7 +29,7 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-          runParallel([
+          runStages([
             [
               name: 'build',
               task: { sh './etc/scripts/build.sh' },
@@ -64,7 +64,7 @@ pipeline {
   }
 }
 
-def runParallel(stages) {
+def runStages(stages) {
   parallel(stages.collectEntries {
     if (!is.task) {
       return [:]
@@ -82,7 +82,7 @@ def runParallel(stages) {
           try {
             it.task()
             if (it.downstreams) {
-              runParallel(it.downstreams)
+              runStages(it.downstreams)
             }
             if (Boolean.valueOf(it.saveCache)) {
               stash name: 'build-cache', includes: 'target/build-cache.tar'
