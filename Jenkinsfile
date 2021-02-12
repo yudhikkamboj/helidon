@@ -79,13 +79,13 @@ def generateStage(args) {
         }
         try {
           args.task()
-          if (args.downstreams) {
-            runStages(args.downstreams)
-          }
           if (args.saveCache) {
-            println "before stash"
             stash name: 'build-cache', includes: 'target/build-cache.tar'
-            println "after stash"
+          }
+          if (args.downstreams) {
+            stage("${args.name}-downstreams") {
+              runStages(args.downstreams)
+            }
           }
         } finally {
           if (args.hasTests?: false) {
