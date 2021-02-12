@@ -15,7 +15,7 @@
  */
 
 
-def t(closure) {
+def test(closure) {
   return {
     try { closure() } finally {
       archiveArtifacts artifacts: "**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt"
@@ -23,14 +23,11 @@ def t(closure) {
     }
   }
 }
-def r(script) {
-  return { sh script }
-}
-def s(name, Closure ...closures) {
+def run(name, Closure...closures) {
   return [ name: stage(name) { steps { closures.each { it() } } } ]
 }
-def p(...stages) {
-  return { parallel stages.collectEntries { it } }
+def runParallel(stages) {
+  return parallel stages.collectEntries { it }
 }
 
 pipeline {
@@ -47,22 +44,23 @@ pipeline {
     stage('default-pipeline') {
       steps {
         script {
-          p(
-            s('build',
-              r('./etc/scripts/build.sh'),
-              p(
-                s('unit-tests', t(r('./etc/scripts/test-unit.sh'))),
-                s('integration-tests', t(r('./etc/scripts/test-integ.sh'))),
-                s('native-image-tests', t(r('./etc/scripts/test-integ-native-image.sh'))),
-                s('tcks', t(r('./etc/scripts/tcks.sh'))),
-                s('javadocs', r('./etc/scripts/javadocs.sh')),
-                s('spotbugs', r('./etc/scripts/spotbugs.sh')),
-                s('javadocs', r('./etc/scripts/javadocs.sh')),
-                s('site', r('./etc/scripts/site.sh')),
-                s('archetypes', r('./etc/scripts/archetypes.sh'))
-              ),
-            s('copyright', r('./etc/scripts/copyright.sh')),
-            s('checkstyle', r('./etc/scripts/checkstyle.sh')))()
+          runParallel [
+            run('build',
+              { sh './etc/scripts/build.sh' },
+              { runParallel [
+                  run('unit-tests', test { sh './etc/scripts/test-unit.sh' }),
+                  run('integration-tests', test { sh './etc/scripts/test-integ.sh' }),
+                  run('native-image-tests', test { sh './etc/scripts/test-integ-native-image.sh' }),
+                  run('tcks', test { sh './etc/scripts/tcks.sh' }),
+                  run('javadocs', { sh './etc/scripts/javadocs.sh' }),
+                  run('spotbugs', { sh './etc/scripts/spotbugs.sh' }),
+                  run('javadocs', { sh './etc/scripts/javadocs.sh' }),
+                  run('site', { sh './etc/scripts/site.sh' }),
+                  run('archetypes', { sh './etc/scripts/archetypes.sh' })
+              ]}),
+            run('copyright', { sh './etc/scripts/copyright.sh' }),
+            run('checkstyle', { sh './etc/scripts/checkstyle.sh' })
+          ]
         }
       }
     }
