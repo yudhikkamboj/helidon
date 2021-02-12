@@ -30,7 +30,7 @@ pipeline {
       steps {
         script {
           sayHello()
-          stages = [
+          stages = [[
             name: 'build',
             task: { sh './etc/scripts/build.sh' },
             saveCache: true,
@@ -45,7 +45,7 @@ pipeline {
               [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
             ],
             [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
-            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }])
+            [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }]]
         }
       }
     }
