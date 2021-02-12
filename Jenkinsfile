@@ -34,8 +34,8 @@ pipeline {
             task: { sh './etc/scripts/build.sh' },
             saveCache: true,
             downstreams: [
-              [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh',                 loadCache: true, hasTests: true ],
-              [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh',                loadCache: true, hasTests: true ],
+              [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },                 loadCache: true, hasTests: true ],
+              [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },                loadCache: true, hasTests: true ],
               [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true, hasTests: true ],
               [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
               [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
