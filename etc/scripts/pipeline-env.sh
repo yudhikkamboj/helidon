@@ -86,10 +86,12 @@ if [ -n "${JENKINS_HOME}" ] ; then
 
       mvn ${MAVEN_ARGS} --version
 
-      mvn ${MAVEN_ARGS} -f pom.xml \
-        -am -pl build-cache-maven-plugin \
-        install -e \
-        -DskipTests
+      while true ; do
+        mvn ${MAVEN_ARGS} -f pom.xml \
+          -am -pl build-cache-maven-plugin \
+          install -e \
+          -DskipTests && break
+      done
 
       echo "-------------------------------------------------------------------------------"
       echo "--------------------------------- TEMP HACK END -------------------------------"

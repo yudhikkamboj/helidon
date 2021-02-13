@@ -18,9 +18,6 @@ pipeline {
   agent {
     label 'linux'
   }
-  options {
-    skipDefaultCheckout()
-  }
   environment {
     NPM_CONFIG_REGISTRY = credentials('npm-registry')
   }
