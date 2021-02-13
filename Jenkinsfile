@@ -66,8 +66,8 @@ pipeline {
 
 def runStages(args) {
   parallel(args.collectEntries { [ "${it.name}": generateStage(it) ] } + [failFast: true])
-def generateStage(args) {
 }
+def generateStage(args) {
   return {
     node(args.label ?: 'linux') {
       stage("${args.name}") {
