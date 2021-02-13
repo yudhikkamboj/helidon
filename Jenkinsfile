@@ -65,9 +65,9 @@ pipeline {
 }
 
 def runStages(args) {
-  parallel(args.collectEntries { [ "${it.name}": generateStage(it) ] }, failFast: true)
-}
+  parallel(args.collectEntries { [ "${it.name}": generateStage(it) ] } + [failFast: true])
 def generateStage(args) {
+}
   return {
     node(args.label ?: 'linux') {
       stage("${args.name}") {
@@ -83,9 +83,7 @@ def generateStage(args) {
             stash name: 'build-cache', includes: 'target/build-cache.tar'
           }
           if (args.downstreams) {
-            stage("${args.name}-downstreams") {
-              runStages(args.downstreams)
-            }
+            runStages(args.downstreams)
           }
         } finally {
           if (args.hasTests?: false) {
