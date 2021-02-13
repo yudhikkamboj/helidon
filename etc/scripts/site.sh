@@ -44,4 +44,4 @@ mvn ${MAVEN_ARGS} --version
 # Build site and aggregated javadocs
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
 site -e \
-  -Pipeline
+  -Ppipeline
