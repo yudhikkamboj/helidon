@@ -74,24 +74,26 @@ if [ -n "${JENKINS_HOME}" ] ; then
         /usr/lib/gnupg/gpg-preset-passphrase --preset "${GPG_KEYGRIP}" <<< "${GPG_PASSPHRASE}"
     fi
 
-    echo "-------------------------------------------------------------------------------"
-    echo "-------------------------------- TEMP HACK START ------------------------------"
-    echo "-------------------------------------------------------------------------------"
+    (
+      echo "-------------------------------------------------------------------------------"
+      echo "-------------------------------- TEMP HACK START ------------------------------"
+      echo "-------------------------------------------------------------------------------"
 
-    git clone https://github.com/romain-grecourt/helidon-build-tools.git
-    # shellcheck disable=SC2164
-    cd helidon-build-tools
-    git checkout buildstate-maven-extension
+      git clone https://github.com/romain-grecourt/helidon-build-tools.git
+      # shellcheck diqsable=SC2164
+      cd helidon-build-tools
+      git checkout buildstate-maven-extension
 
-    mvn ${MAVEN_ARGS} --version
+      mvn ${MAVEN_ARGS} --version
 
-    mvn ${MAVEN_ARGS} -f pom.xml \
-      -am -pl build-cache-maven-plugin \
-      install -e \
-      -DskipTests
+      mvn ${MAVEN_ARGS} -f pom.xml \
+        -am -pl build-cache-maven-plugin \
+        install -e \
+        -DskipTests
 
-    echo "-------------------------------------------------------------------------------"
-    echo "--------------------------------- TEMP HACK END -------------------------------"
-    echo "-------------------------------------------------------------------------------"
+      echo "-------------------------------------------------------------------------------"
+      echo "--------------------------------- TEMP HACK END -------------------------------"
+      echo "-------------------------------------------------------------------------------"
+    )
 
 fi

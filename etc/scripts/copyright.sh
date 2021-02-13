@@ -44,7 +44,7 @@ source ${WS_DIR}/etc/scripts/pipeline-env.sh
 die(){ echo "${1}" ; exit 1 ;}
 
 git config -l
-git log -10
+echo "git rev-list: $(git rev-list HEAD --count)"
 
 mvn ${MAVEN_ARGS} -q org.glassfish.copyright:glassfish-copyright-maven-plugin:copyright \
         -f ${WS_DIR}/pom.xml \
