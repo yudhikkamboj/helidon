@@ -20,7 +20,6 @@ pipeline {
   }
   options {
     skipDefaultCheckout()
-    parallelsAlwaysFailFast()
   }
   environment {
     NPM_CONFIG_REGISTRY = credentials('npm-registry')
@@ -66,7 +65,7 @@ pipeline {
 }
 
 def runStages(args) {
-  parallel(args.collectEntries { [ "${it.name}": generateStage(it) ] })
+  parallel(args.collectEntries { [ "${it.name}": generateStage(it) ] }, failFast: true)
 }
 def generateStage(args) {
   return {
