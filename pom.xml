@@ -1549,6 +1549,7 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                                 <exclude>.git/**</exclude>
                             </projectFilesExcludes>
                             <enableChecksums>true</enableChecksums>
+                            <includeAllChecksums>true</includeAllChecksums>
                             <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
                             <loadArchive>true</loadArchive>
                             <createArchive>true</createArchive>
