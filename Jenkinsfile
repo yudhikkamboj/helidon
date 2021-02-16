@@ -80,7 +80,9 @@ def generateStage(args) {
             stash name: 'build-cache', includes: 'target/build-cache.tar'
           }
         } finally {
-          if (args.hasTests?: false) {
+          if (args.name == "build") {
+            archiveArtifacts artifacts: 'target/build-cache.tar'
+          } else if (args.hasTests?: false) {
             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
           }
