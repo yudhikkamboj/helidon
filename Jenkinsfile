@@ -79,14 +79,16 @@ def generateStage(args) {
           if (args.saveCache) {
             stash name: 'build-cache', includes: 'target/build-cache.tar'
           }
-          if (args.downstreams) {
-            runStages(args.downstreams)
-          }
         } finally {
           if (args.hasTests?: false) {
             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
           }
+        }
+      }
+      if (args.downstreams) {
+        stage("downstreams") {
+          runStages(args.downstreams)
         }
       }
     }
