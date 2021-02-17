@@ -31,15 +31,15 @@ pipeline {
               task: { sh './etc/scripts/build.sh' },
               saveCache: true,
               downstreams: [
-                [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },               loadCache: true, hasTests: true ],
-                [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },              loadCache: true, hasTests: true ],
-                [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
-                [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true ],
-                [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
-                [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
-                [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
-                [ name: 'examples',           task: { sh './etc/scripts/examples.sh' },                loadCache: true ],
-                [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
+                [ name: 'unit-tests',         task: { sh './etc/scripts/test-unit.sh' },               loadCache: true, hasTests: true ]]
+//                 [ name: 'integration-tests',  task: { sh './etc/scripts/test-integ.sh' },              loadCache: true, hasTests: true ],
+//                 [ name: 'tcks',               task: { sh './etc/scripts/tcks.sh' },                    loadCache: true, hasTests: true ],
+//                 [ name: 'native-image-tests', task: { sh './etc/scripts/test-integ-native-image.sh' }, loadCache: true ],
+//                 [ name: 'javadocs',           task: { sh './etc/scripts/javadocs.sh' },                loadCache: true ],
+//                 [ name: 'spotbugs',           task: { sh './etc/scripts/spotbugs.sh' },                loadCache: true ],
+//                 [ name: 'site',               task: { sh './etc/scripts/site.sh' },                    loadCache: true ],
+//                 [ name: 'examples',           task: { sh './etc/scripts/examples.sh' },                loadCache: true ],
+//                 [ name: 'archetypes',         task: { sh './etc/scripts/archetypes.sh' },              loadCache: true ]]
             ],
             [ name: 'copyright',  task: { sh './etc/scripts/copyright.sh' }],
             [ name: 'checkstyle', task: { sh './etc/scripts/checkstyle.sh' }]
@@ -80,16 +80,14 @@ def generateStage(args) {
             stash name: 'build-cache', includes: 'target/build-cache.tar'
           }
         } finally {
-          if (args.name == "build") {
+          if (args.name == 'build') {
             archiveArtifacts artifacts: 'target/build-cache.tar'
           } else if (args.hasTests?: false) {
             archiveArtifacts artifacts: '**/target/surefire-reports/*.txt, **/target/failsafe-reports/*.txt'
             junit testResults: '**/target/surefire-reports/*.xml,**/target/failsafe-reports/*.xml'
           }
         }
-      }
-      if (args.downstreams) {
-        stage("downstreams") {
+        if (args.downstreams) {
           runStages(args.downstreams)
         }
       }
