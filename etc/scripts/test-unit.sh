@@ -41,10 +41,7 @@ source ${WS_DIR}/etc/scripts/pipeline-env.sh
 
 mvn ${MAVEN_ARGS} --version
 
-#mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-#  test -e \
-# -Dmaven.test.failure.ignore=true \
-# -Pexamples,pipeline
-
-echo "sleep!"
-sleep 3600
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
+  test -e \
+ -Dmaven.test.failure.ignore=true \
+ -Pexamples,pipeline

@@ -1547,7 +1547,11 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                                 <exclude>docs-internal/**</exclude>
                                 <exclude>helidon-build-tools/**</exclude>
                                 <exclude>.git/**</exclude>
+                                <exclude>dependency-reduced-pom.xml</exclude>
                             </projectFilesExcludes>
+                            <buildFilesExcludes>
+                                <exclude>classes/io/grpc/**/*.class</exclude>
+                            </buildFilesExcludes>
                             <enableChecksums>true</enableChecksums>
                             <includeAllChecksums>true</includeAllChecksums>
                             <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
