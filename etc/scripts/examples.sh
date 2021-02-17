@@ -43,5 +43,5 @@ mvn ${MAVEN_ARGS} --version
 
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
   package -e \
-  -DskipTests \
+  -Dmaven.test.failure.ignore=true \
   -Ppipeline,examples

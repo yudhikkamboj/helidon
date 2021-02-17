@@ -67,6 +67,7 @@
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>exec-maven-plugin</artifactId>
                     <configuration>
+                        <!--suppress UnresolvedMavenProperty -->
                         <mainClass>${mainClass}</mainClass>
                     </configuration>
                 </plugin>
@@ -74,4 +75,12 @@
         </pluginManagement>
     </build>
 
+    <profiles>
+        <profile>
+            <id>pipeline</id>
+            <properties>
+                <skipTests>false</skipTests>
+            </properties>
+        </profile>
+    </profiles>
 </project>

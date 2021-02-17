@@ -41,7 +41,9 @@ source ${WS_DIR}/etc/scripts/pipeline-env.sh
 
 mvn ${MAVEN_ARGS} --version
 
-mvn install -e -Ppipeline -DskipTests
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
+  install -e \
+  -Ppipeline
 
 #
 # test running from jar file, and then from module path

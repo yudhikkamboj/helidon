@@ -1531,6 +1531,10 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
         </profile>
         <profile>
             <id>pipeline</id>
+            <properties>
+                <!--suppress UnresolvedMavenProperty -->
+                <skipTests>true</skipTests>
+            </properties>
             <build>
                 <plugins>
                     <plugin>

@@ -43,5 +43,4 @@ mvn ${MAVEN_ARGS} --version
 
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
     clean install -e \
-    -DskipTests \
     -Ppipeline

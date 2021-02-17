@@ -44,11 +44,9 @@ PATH="${PATH}:${JAVA_HOME}/bin"
 
 mvn ${MAVEN_ARGS} --version
 
-# Temporary workaround until job stages will share maven repository
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    clean install -e \
-    -DskipTests \
-    -Ppipeline
+  install -e \
+  -Ppipeline
 
 # Run tests in Java VM application
 (cd tests/integration/jpa && \
