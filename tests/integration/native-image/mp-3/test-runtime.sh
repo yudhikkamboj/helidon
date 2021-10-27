@@ -21,11 +21,7 @@ trap 'echo "ERROR: Error occurred at ${BASH_SOURCE}:${LINENO} command: ${BASH_CO
 set -eo pipefail
 
 # Path to this script
-if [ -h "${0}" ] ; then
-  readonly SCRIPT_PATH="$(readlink "$0")"
-else
-  readonly SCRIPT_PATH="${0}"
-fi
+[ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
 
 # Directory this script resides in
 readonly MY_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; pwd -P)
@@ -34,7 +30,7 @@ readonly MY_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; pwd -P)
 cd "${MY_DIR}"
 
 # build the binary
-mvn clean package -DskipTests
+mvn clean package -DskipTests -Ppipeline
 
 # Attempt to run this example as a java -jar
 # This is a self-testing application
