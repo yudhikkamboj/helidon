@@ -55,6 +55,12 @@
                 <module>tck</module>
             </modules>
         </profile>
+        <profile>
+            <id>pipeline</id>
+            <properties>
+                <skipTests>false</skipTests>
+            </properties>
+        </profile>
     </profiles>
 
     <build>
@@ -71,13 +77,4 @@
             </plugins>
         </pluginManagement>
     </build>
-
-    <profiles>
-        <profile>
-            <id>pipeline</id>
-            <properties>
-                <skipTests>false</skipTests>
-            </properties>
-        </profile>
-    </profiles>
 </project>
