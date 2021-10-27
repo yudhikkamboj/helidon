@@ -33,6 +33,7 @@ pipeline {
               downstreams: [
                 [ name: 'unit-tests',            task: { sh './etc/scripts/test-unit.sh' },             loadCache: true, hasTests: true ],
                 [ name: 'integration-tests',     task: { sh './etc/scripts/test-integ.sh' },            loadCache: true, hasTests: true ],
+                [ name: 'test-native-image',     task: { sh './etc/scripts/test-native-image.sh' },     loadCache: true, hasTests: true ],
                 [ name: 'tcks',                  task: { sh './etc/scripts/tcks.sh' },                  loadCache: true, hasTests: true ],
                 [ name: 'test-packaging-jar',    task: { sh './etc/scripts/test-packaging-jar.sh' },    loadCache: true ],
                 [ name: 'test-packaging-jlink',  task: { sh './etc/scripts/test-packaging-jlink.sh' },  loadCache: true ],

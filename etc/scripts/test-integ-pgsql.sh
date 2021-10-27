@@ -29,17 +29,13 @@ graalvm
 
 mvn ${MAVEN_ARGS} --version
 
-# Temporary workaround until job stages will share maven repository
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    clean install -e \
-    -DskipTests \
-    -Ppipeline
-
 # Run tests in Java VM application
 (cd tests/integration/jpa && \
-  mvn ${MAVEN_ARGS} clean verify \
+  mvn ${MAVEN_ARGS} -e \
       -Dmaven.test.failure.ignore=true -Dpgsql \
-      -pl model,appl)
+      -Ppipeline \
+      -pl model,appl \
+      clean verify)
 
 # Run tests in native image application
 (cd tests/integration/jpa && \

@@ -26,18 +26,13 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-# Temporary workaround until job stages will share maven repository
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    install -e \
-    -Dmaven.test.skip=true \
-    -DskipTests \
-    -Ppipeline
-
 # Run native image tests
 cd ${WS_DIR}/tests/integration/native-image
 
 # Prime build all native-image tests
-mvn ${MAVEN_ARGS} -e clean install
+mvn ${MAVEN_ARGS} -e \
+  -Ppipeline \
+  clean install
 
 # Run tests with classpath and then module path
 

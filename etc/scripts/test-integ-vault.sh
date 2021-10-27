@@ -26,15 +26,10 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-# Temporary workaround until job stages will share maven repository
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    install -e \
-    -DskipTests \
-    -Dmaven.test.skip=true \
-    -Ppipeline
-
 # Run integrations tests for Vault
 cd tests/integration/vault
 
-mvn ${MAVEN_ARGS} clean verify \
-      -Dmaven.test.failure.ignore=true
+mvn ${MAVEN_ARGS} -e \
+      -Dmaven.test.failure.ignore=true \
+      -Ppipeline \
+      clean verify

@@ -26,13 +26,6 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-# Temporary workaround until job stages will share maven repository
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    install -e \
-    -Dmaven.test.skip=true \
-    -DskipTests \
-    -Ppipeline
-
 # Run native image tests
 cd ${WS_DIR}/tests/integration/native-image
 
@@ -44,7 +37,11 @@ mvn ${MAVEN_ARGS} -e clean install
 readonly native_image_tests="se-1 mp-1 mp-3"
 for native_test in ${native_image_tests}; do
     cd ${WS_DIR}/tests/integration/native-image/${native_test}
-    mvn ${MAVEN_ARGS} package -e -Pjlink-image,staging -Djlink.image.addClassDataSharingArchive=false -Djlink.image.testImage=false
+    mvn ${MAVEN_ARGS} -e \
+      -Pjlink-image,staging,pipeline \
+      -Djlink.image.addClassDataSharingArchive=false \
+      -Djlink.image.testImage=false \
+      package
 done
 
 # Run tests with classpath and then module path

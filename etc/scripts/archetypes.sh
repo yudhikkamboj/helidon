@@ -41,6 +41,7 @@ source ${WS_DIR}/etc/scripts/pipeline-env.sh
 
 mvn ${MAVEN_ARGS} --version
 
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-  verify -e \
-  -Ppipeline,archetypes
+mvn ${MAVEN_ARGS} -e \
+  -f ${WS_DIR}/pom.xml \
+  -Ppipeline,archetypes \
+  verify

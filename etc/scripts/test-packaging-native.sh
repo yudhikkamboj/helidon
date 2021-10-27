@@ -38,13 +38,6 @@ mvn ${MAVEN_ARGS} --version
 echo "GRAALVM_HOME=${GRAALVM_HOME}";
 ${GRAALVM_HOME}/bin/native-image --version;
 
-# Temporary workaround until job stages will share maven repository
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    install -e \
-    -Dmaven.test.skip=true \
-    -DskipTests \
-    -Ppipeline
-
 # Run native image tests
 cd ${WS_DIR}/tests/integration/native-image
 
@@ -56,7 +49,9 @@ mvn ${MAVEN_ARGS} -e clean install
 readonly native_image_tests="se-1 mp-1 mp-3"
 for native_test in ${native_image_tests}; do
     cd ${WS_DIR}/tests/integration/native-image/${native_test}
-    mvn ${MAVEN_ARGS} -e clean package -Pnative-image
+    mvn ${MAVEN_ARGS} -e \
+      -Pnative-image,pipeline \
+      clean package
 done
 
 # Run this one because it has no pre-reqs and self-tests
