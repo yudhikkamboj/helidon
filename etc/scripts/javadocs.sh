@@ -24,20 +24,9 @@
 # Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
-# Path to this script
-if [ -h "${0}" ] ; then
-    readonly SCRIPT_PATH="$(readlink "${0}")"
-else
-    readonly SCRIPT_PATH="${0}"
-fi
-
-# Path to the root of the workspace
-readonly WS_DIR=$(cd "$(dirname -- "${SCRIPT_PATH}")" ; cd ../.. ; pwd -P)
-
-source ${WS_DIR}/etc/scripts/pipeline-env.sh
-
 mvn ${MAVEN_ARGS} --version
 
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-  package -e \
-  -Ppipeline,javadoc,sources
+mvn ${MAVEN_ARGS} -e \
+  -f ${WS_DIR}/pom.xml \
+  -Ppipeline,javadoc,sources \
+  package
