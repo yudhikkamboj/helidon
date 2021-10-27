@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 
 package io.helidon.common.reactive;
 
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -36,7 +38,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
-import static org.testng.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
 
@@ -233,6 +235,16 @@ public class AwaitTest {
     @Test
     void singleAwaitTimeoutNegative() {
         assertThrows(CompletionException.class, () -> testSingle().await(10, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void testAwaitWithDurationNegative() {
+        assertThrows(CompletionException.class, () -> testSingle().await(Duration.of(10, ChronoUnit.MILLIS)));
+    }
+
+    @Test
+    void testAwaitWithDurationPositive() {
+        assertThat(testSingle().await(Duration.of(2, ChronoUnit.SECONDS)), is(0 + 1 + 2 + 3 + 4L));
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@ package io.helidon.integrations.graal.mp.nativeimage.extension;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.function.BooleanSupplier;
 
 import com.oracle.svm.core.annotate.Substitute;
@@ -35,32 +33,10 @@ public class RestClientSubstitution {
         @SuppressWarnings("unchecked")
         @Substitute
         static <T> T createProxyInstance(Class<T> restClientClass) {
-            return AccessController.doPrivileged(new ProxyPrivilegedAction<>(restClientClass));
-        }
-    }
-
-    /**
-     * Only for native image.
-     * @param <T> type
-     */
-    public static class ProxyPrivilegedAction<T> implements PrivilegedAction<T> {
-        private final Class<T> proxyInterface;
-
-        /**
-         * Only for native image.
-         * @param proxyInterface never call directly
-         */
-        public ProxyPrivilegedAction(Class<T> proxyInterface) {
-            this.proxyInterface = proxyInterface;
-        }
-
-        @SuppressWarnings("unchecked")
-        @Override
-        public T run() {
             ClassLoader cl = Thread.currentThread().getContextClassLoader();
             return (T) Proxy.newProxyInstance(cl,
-                                              new Class[] {proxyInterface},
-                                              new DefaultMethodProxyHandler());
+                    new Class[] {restClientClass},
+                    new DefaultMethodProxyHandler());
         }
     }
 

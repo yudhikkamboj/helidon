@@ -29,6 +29,8 @@ import java.util.stream.Collectors;
 import io.helidon.common.context.Context;
 import io.helidon.common.reactive.Single;
 import io.helidon.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.media.common.MediaContext;
 import io.helidon.media.common.MediaContextBuilder;
 import io.helidon.media.common.MediaSupport;
@@ -142,6 +144,42 @@ public interface WebServer {
      * @return a listen port; or {@code -1} if socket name is unknown or the server socket is not active
      */
     int port(String socketName);
+
+    /**
+     * Returns {@code true} if TLS is configured for the default socket.
+     *
+     * @return whether TLS is enabled for the default socket
+     */
+    default boolean hasTls() {
+        return hasTls(WebServer.DEFAULT_SOCKET_NAME);
+    }
+
+    /**
+     * Returns {@code true} if TLS is configured for the named socket.
+     *
+     * @param socketName the name of a socket
+     * @return whether TLS is enabled for the socket, returns {@code false} if the socket does not exists
+     */
+    boolean hasTls(String socketName);
+
+    /**
+     * Update the TLS configuration of the default socket {@link WebServer#DEFAULT_SOCKET_NAME}.
+     *
+     * @param tls new TLS configuration
+     * @throws IllegalStateException if {@link WebServerTls#enabled()} returns {@code false} or
+     * if {@link SocketConfiguration#ssl()} returns {@code null}
+     */
+    void updateTls(WebServerTls tls);
+
+    /**
+     * Update the TLS configuration of the named socket.
+     *
+     * @param tls new TLS configuration
+     * @param socketName specific named socket name
+     * @throws IllegalStateException if {@link WebServerTls#enabled()} returns {@code false} or
+     * if {@link SocketConfiguration#ssl()} returns {@code null}
+     */
+    void updateTls(WebServerTls tls, String socketName);
 
     /**
      * Creates a new instance from a provided configuration and a routing.
@@ -318,6 +356,7 @@ public interface WebServer {
      * WebServer builder class provides a convenient way to set up WebServer with multiple server
      * sockets and optional multiple routings.
      */
+    @Configured(root = true, prefix = "server", description = "Configuration of the HTTP server.")
     final class Builder implements io.helidon.common.Builder<WebServer>,
                                    SocketConfiguration.SocketConfigurationBuilder<Builder>,
                                    ParentingMediaContextBuilder<Builder>,
@@ -337,6 +376,7 @@ public interface WebServer {
         private Transport transport;
         private MessageBodyReaderContext readerContext;
         private MessageBodyWriterContext writerContext;
+        private DirectHandlers.Builder directHandlers = DirectHandlers.builder();
 
         private Builder() {
             readerContext = MessageBodyReaderContext.create(DEFAULT_MEDIA_SUPPORT.readerContext());
@@ -352,11 +392,11 @@ public interface WebServer {
          */
         @Override
         public WebServer build() {
-            if (null == defaultRouting) {
+            if (defaultRouting == null) {
                 LOGGER.warning("Creating a web server with no default routing configured.");
                 defaultRouting = Routing.builder().build();
             }
-            if (null == explicitConfig) {
+            if (explicitConfig == null) {
                 explicitConfig = configurationBuilder.build();
             }
 
@@ -373,7 +413,8 @@ public interface WebServer {
                                                   defaultRouting,
                                                   routings,
                                                   writerContext,
-                                                  readerContext);
+                                                  readerContext,
+                                                  directHandlers.build());
 
             if (defaultRouting instanceof RequestRouting) {
                 ((RequestRouting) defaultRouting).fireNewWebServer(result);
@@ -653,6 +694,7 @@ public interface WebServer {
          * @param config the additional named server socket configuration, never null
          * @return an updated builder
          */
+        @ConfiguredOption(key = "sockets", kind = ConfiguredOption.Kind.LIST)
         public Builder addSocket(SocketConfiguration config) {
             configurationBuilder.addSocket(config.name(), config);
             return this;
@@ -766,6 +808,7 @@ public interface WebServer {
          * @param workers a workers count
          * @return an updated builder
          */
+        @ConfiguredOption(key = "worker-count")
         public Builder workersCount(int workers) {
             configurationBuilder.workersCount(workers);
             return this;
@@ -778,8 +821,31 @@ public interface WebServer {
          * @return updated builder instance
          * @see io.helidon.common.HelidonFeatures
          */
+        @ConfiguredOption(key = "features.print-details", value = "false")
         public Builder printFeatureDetails(boolean shouldPrint) {
             configurationBuilder.printFeatureDetails(shouldPrint);
+            return this;
+        }
+
+        /**
+         * Provide a custom handler for events that bypass routing.
+         * The handler can customize status, headers and message.
+         * <p>
+         * Examples of bad request ({@link DirectHandler.EventType#BAD_REQUEST}:
+         * <ul>
+         *     <li>Invalid character in path</li>
+         *     <li>Content-Length header set to a non-integer value</li>
+         *     <li>Invalid first line of the HTTP request</li>
+         * </ul>
+         * @param handler direct handler to use
+         * @param types event types to handle with the provided handler
+         * @return updated builder
+         */
+        public Builder directHandler(DirectHandler handler, DirectHandler.EventType... types) {
+            for (DirectHandler.EventType type : types) {
+                directHandlers.addHandler(type, handler);
+            }
+
             return this;
         }
     }

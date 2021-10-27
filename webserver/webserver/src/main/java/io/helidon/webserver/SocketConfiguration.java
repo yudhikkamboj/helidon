@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ import javax.net.ssl.SSLContext;
 import io.helidon.config.Config;
 import io.helidon.config.ConfigException;
 import io.helidon.config.DeprecatedConfig;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 
 /**
  * The SocketConfiguration configures a port to listen on and its associated server socket parameters.
@@ -104,25 +106,48 @@ public interface SocketConfiguration {
     int receiveBufferSize();
 
     /**
+     * Return a {@link WebServerTls} containing server TLS configuration. When empty {@link Optional} is returned
+     * no TLS should be configured.
+     *
+     * @return web server tls configuration
+     */
+    Optional<WebServerTls> tls();
+
+    /**
      * Returns a {@link SSLContext} to use with the server socket. If not {@code null} then
      * the server enforces an SSL communication.
      *
+     * @deprecated use {@code tls().sslContext()} instead. This method will be removed at 3.0.0 version.
      * @return a SSL context to use
      */
+    @Deprecated(since = "2.3.1", forRemoval = true)
     SSLContext ssl();
 
     /**
      * Returns the SSL protocols to enable, or {@code null} to enable the default
      * protocols.
+     * @deprecated use {@code tls().enabledTlsProtocols()} instead. This method will be removed at 3.0.0 version.
      * @return the SSL protocols to enable
      */
+    @Deprecated(since = "2.3.1", forRemoval = true)
     Set<String> enabledSslProtocols();
+
+    /**
+     * Return the allowed cipher suite of the TLS. If empty set is returned, the default cipher suite is used.
+     *
+     * @deprecated use {@code tls().cipherSuite()} instead. This method will be removed at 3.0.0 version.
+     * @return the allowed cipher suite
+     */
+    @Deprecated(since = "2.3.1", forRemoval = true)
+    Set<String> allowedCipherSuite();
 
     /**
      * Whether to require client authentication or not.
      *
+     * @deprecated use {@code tls().clientAuth()} instead. This method will be removed at 3.0.0 version.
      * @return client authentication
      */
+    @Deprecated(since = "2.3.1", forRemoval = true)
     ClientAuthentication clientAuth();
 
     /**
@@ -213,6 +238,14 @@ public interface SocketConfiguration {
                 .build();
     }
 
+    /**
+     * Socket configuration builder API, used by {@link io.helidon.webserver.SocketConfiguration.Builder}
+     * to configure additional sockets, and by {@link io.helidon.webserver.WebServer.Builder} to
+     * configure the default socket.
+     *
+     * @param <B> type of the subclass of this class to provide correct fluent API
+     */
+    @Configured
     interface SocketConfigurationBuilder<B extends SocketConfigurationBuilder<B>> {
         /**
          * Configures a server port to listen on with the server socket. If port is
@@ -221,6 +254,7 @@ public interface SocketConfiguration {
          * @param port the server port of the server socket
          * @return this builder
          */
+        @ConfiguredOption("0")
         B port(int port);
 
         /**
@@ -232,6 +266,7 @@ public interface SocketConfiguration {
          * @throws java.lang.NullPointerException in case the bind address is null
          * @throws io.helidon.config.ConfigException in case the address provided is not a valid host address
          */
+        @ConfiguredOption(deprecated = true)
         default B bindAddress(String address) {
             try {
                 return bindAddress(InetAddress.getByName(address));
@@ -246,6 +281,7 @@ public interface SocketConfiguration {
          * @param address host to listen on
          * @return this builder
          */
+        @ConfiguredOption
         default B host(String address) {
             return bindAddress(address);
         }
@@ -269,6 +305,7 @@ public interface SocketConfiguration {
          * @param backlog a maximum length of the queue of incoming connections
          * @return this builder
          */
+        @ConfiguredOption("1024")
         B backlog(int backlog);
 
         /**
@@ -278,6 +315,8 @@ public interface SocketConfiguration {
          * @param unit time unit to use with the configured amount
          * @return this builder
          */
+        @ConfiguredOption(key = "timeout-millis", type = Long.class, value = "0",
+                          description = "Socket timeout in milliseconds")
         B timeout(long amount, TimeUnit unit);
 
         /**
@@ -289,6 +328,7 @@ public interface SocketConfiguration {
          * @param receiveBufferSize a buffer size in bytes of the server socket or {@code 0}
          * @return this builder
          */
+        @ConfiguredOption
         B receiveBufferSize(int receiveBufferSize);
 
         /**
@@ -302,6 +342,7 @@ public interface SocketConfiguration {
          * @param webServerTls ssl configuration to use with this socket
          * @return this builder
          */
+        @ConfiguredOption
         B tls(WebServerTls webServerTls);
 
         /**
@@ -325,6 +366,7 @@ public interface SocketConfiguration {
          * @param size maximal number of bytes of combined header values
          * @return this builder
          */
+        @ConfiguredOption("8192")
         B maxHeaderSize(int size);
 
         /**
@@ -335,6 +377,7 @@ public interface SocketConfiguration {
          * @param length maximal number of characters
          * @return this builder
          */
+        @ConfiguredOption("4096")
         B maxInitialLineLength(int length);
 
         /**
@@ -346,6 +389,7 @@ public interface SocketConfiguration {
          * @param value compression flag
          * @return this builder
          */
+        @ConfiguredOption("false")
         B enableCompression(boolean value);
 
         /**
@@ -355,6 +399,7 @@ public interface SocketConfiguration {
          * @param size maximum payload size
          * @return this builder
          */
+        @ConfiguredOption
         B maxPayloadSize(long size);
 
         /**
@@ -406,6 +451,7 @@ public interface SocketConfiguration {
     /**
      * The {@link io.helidon.webserver.SocketConfiguration} builder class.
      */
+    @Configured
     final class Builder implements SocketConfigurationBuilder<Builder>, io.helidon.common.Builder<SocketConfiguration> {
         /**
          * @deprecated remove once WebServer.Builder.addSocket(name, socket) methods are removed
@@ -611,6 +657,7 @@ public interface SocketConfiguration {
          * @param name name of the socket
          * @return updated builder instance
          */
+        @ConfiguredOption(required = true)
         public Builder name(String name) {
             this.name = name;
             return this;

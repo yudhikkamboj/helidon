@@ -17,9 +17,9 @@
 package io.helidon.webserver;
 
 import java.net.InetAddress;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -38,6 +38,8 @@ class ServerBasicConfig implements ServerConfiguration {
     private final int workers;
     private final Tracer tracer;
     private final Map<String, SocketConfiguration> socketConfigs;
+    private final Duration maxShutdownTimeout;
+    private final Duration shutdownQuietPeriod;
     private final ExperimentalConfiguration experimental;
     private final Optional<Transport> transport;
     private final Context context;
@@ -52,6 +54,8 @@ class ServerBasicConfig implements ServerConfiguration {
         this.socketConfig = builder.defaultSocketBuilder().build();
         this.workers = builder.workers();
         this.tracer = builder.tracer();
+        this.maxShutdownTimeout = builder.maxShutdownTimeout();
+        this.shutdownQuietPeriod = builder.shutdownQuietPeriod();
         this.experimental = builder.experimental();
         this.transport = builder.transport();
         this.context = builder.context();
@@ -70,6 +74,11 @@ class ServerBasicConfig implements ServerConfiguration {
     @Override
     public Set<String> enabledSslProtocols() {
         return socketConfig.enabledSslProtocols();
+    }
+
+    @Override
+    public Set<String> allowedCipherSuite() {
+        return socketConfig.allowedCipherSuite();
     }
 
     @Override
@@ -108,6 +117,11 @@ class ServerBasicConfig implements ServerConfiguration {
     }
 
     @Override
+    public Optional<WebServerTls> tls() {
+        return socketConfig.tls();
+    }
+
+    @Override
     public int maxHeaderSize() {
         return socketConfig.maxHeaderSize();
     }
@@ -130,6 +144,16 @@ class ServerBasicConfig implements ServerConfiguration {
     @Override
     public int initialBufferSize() {
         return socketConfig.initialBufferSize();
+    }
+
+    @Override
+    public Duration maxShutdownTimeout() {
+        return maxShutdownTimeout;
+    }
+
+    @Override
+    public Duration shutdownQuietPeriod() {
+        return shutdownQuietPeriod;
     }
 
     @Override
@@ -174,11 +198,9 @@ class ServerBasicConfig implements ServerConfiguration {
         private final int backlog;
         private final int timeoutMillis;
         private final int receiveBufferSize;
-        private final SSLContext sslContext;
-        private final Set<String> enabledSslProtocols;
+        private final WebServerTls webServerTls;
         private final String name;
         private final boolean enabled;
-        private final ClientAuthentication clientAuth;
         private final int maxHeaderSize;
         private final int maxInitialLineLength;
         private final int maxChunkSize;
@@ -205,17 +227,8 @@ class ServerBasicConfig implements ServerConfiguration {
             this.initialBufferSize = builder.initialBufferSize();
             this.enableCompression = builder.enableCompression();
             this.maxPayloadSize = builder.maxPayloadSize();
-
             WebServerTls webServerTls = builder.tlsConfig();
-            if (webServerTls.enabled()) {
-                this.sslContext = webServerTls.sslContext();
-                this.enabledSslProtocols = new HashSet<>(webServerTls.enabledTlsProtocols());
-                this.clientAuth = webServerTls.clientAuth();
-            } else {
-                this.sslContext = null;
-                this.enabledSslProtocols = Set.of();
-                this.clientAuth = ClientAuthentication.NONE;
-            }
+            this.webServerTls = webServerTls.enabled() ? webServerTls : null;
         }
 
         @Override
@@ -244,18 +257,28 @@ class ServerBasicConfig implements ServerConfiguration {
         }
 
         @Override
+        public Optional<WebServerTls> tls() {
+            return Optional.ofNullable(webServerTls);
+        }
+
+        @Override
         public SSLContext ssl() {
-            return sslContext;
+            return tls().map(WebServerTls::sslContext).orElse(null);
         }
 
         @Override
         public Set<String> enabledSslProtocols() {
-            return enabledSslProtocols;
+            return tls().map(WebServerTls::enabledTlsProtocols).map(Set::copyOf).orElseGet(Set::of);
+        }
+
+        @Override
+        public Set<String> allowedCipherSuite() {
+            return tls().map(WebServerTls::cipherSuite).orElseGet(Set::of);
         }
 
         @Override
         public ClientAuthentication clientAuth() {
-            return clientAuth;
+            return tls().map(WebServerTls::clientAuth).orElse(ClientAuthentication.NONE);
         }
 
         @Override

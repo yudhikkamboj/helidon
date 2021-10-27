@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,13 @@ package io.helidon.webserver.examples.websocket;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 import javax.websocket.Encoder;
 import javax.websocket.server.ServerEndpointConfig;
 
 import io.helidon.webserver.Routing;
-import io.helidon.webserver.StaticContentSupport;
 import io.helidon.webserver.WebServer;
+import io.helidon.webserver.staticcontent.StaticContentSupport;
 import io.helidon.webserver.tyrus.TyrusSupport;
 
 import static io.helidon.webserver.examples.websocket.MessageBoardEndpoint.UppercaseEncoder;
@@ -58,23 +57,15 @@ public class Main {
     }
 
     static WebServer startWebServer() {
+        // Wait for webserver to start before returning
         WebServer server = WebServer.builder(createRouting())
                 .port(8080)
-                .build();
+                .build()
+                .start()
+                .await();
 
-        // Start webserver
-        CompletableFuture<Void> started = new CompletableFuture<>();
-        server.start().thenAccept(ws -> {
-            System.out.println("WEB server is up! http://localhost:" + ws.port());
-            started.complete(null);
-        });
+        System.out.println("WEB server is up! http://localhost:" + server.port());
 
-        // Wait for webserver to start before returning
-        try {
-            started.toCompletableFuture().get();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
         return server;
     }
 

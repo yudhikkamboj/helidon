@@ -1,14 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
 <!-- For information see https://jeremylong.github.io/DependencyCheck/general/suppression.html -->
-<!-- Applies to Oracle HTTP Server -->
-<suppress>
-   <notes><![CDATA[
-   file name: helidon-microprofile-server-2.1.0.jar
-   ]]></notes>
-   <packageUrl regex="true">^pkg:maven/io\.helidon\.microprofile\.server/helidon\-microprofile\-server@.*$</packageUrl>
-   <cpe>cpe:/a:oracle:http_server</cpe>
-</suppress>
 
 <!-- Applies to Processing:Processing -->
 <suppress>
@@ -53,63 +45,34 @@
    <cpe>cpe:/a:java-websocket_project:java-websocket</cpe>
 </suppress>
 
-
 <!-- GraalVM -->
-<!-- JDK CVE for remote code execution in Java Web Start and applets running untrusted code.
-     Does not apply to our use of GraalVM -->
+<!-- This suppresses multiple CVEs related to running untrusted Java code.
+     The descriptions of these CVEs have the statement:
+       This vulnerability does not apply to Java deployments, typically in servers, that load and run only trusted code"
+     Therefore these do not apply to Helidon's use of GraalVM
+-->
 <suppress>
    <notes><![CDATA[
-   file name: graal-sdk-20.2.0.jar
+   file name: graal-sdk-21.3.0.jar
    ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.sdk/graal\-sdk@.*$</packageUrl>
-   <cve>CVE-2020-14803</cve>
+   <packageUrl regex="true">^pkg:maven/org\.graalvm.*/.*@.*$</packageUrl>
+   <cve>CVE-2021-2341</cve>
 </suppress>
 <suppress>
    <notes><![CDATA[
-   file name: objectfile-20.2.0.jar
+   file name: graal-sdk-21.3.0.jar
    ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.nativeimage/objectfile@.*$</packageUrl>
-   <cve>CVE-2020-14803</cve>
+   <packageUrl regex="true">^pkg:maven/org\.graalvm.*/.*@.*$</packageUrl>
+   <cve>CVE-2021-2369</cve>
 </suppress>
 <suppress>
    <notes><![CDATA[
-   file name: pointsto-20.2.0.jar
+   file name: graal-sdk-21.3.0.jar
    ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.nativeimage/pointsto@.*$</packageUrl>
-   <cve>CVE-2020-14803</cve>
-</suppress>
-<suppress>
-   <notes><![CDATA[
-   file name: svm-20.2.0.jar
-   ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.nativeimage/svm@.*$</packageUrl>
-   <cve>CVE-2020-14803</cve>
+   <packageUrl regex="true">^pkg:maven/org\.graalvm.*/.*@.*$</packageUrl>
+   <cve>CVE-2021-2388</cve>
 </suppress>
 
-
-<!-- GraalVM -->
-<!-- This suppresses multiple CVEs related to old versions of the JDK -->
-<suppress>
-   <notes><![CDATA[
-   file name: truffle-nfi-20.2.0.jar
-   ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.truffle/truffle\-nfi@.*$</packageUrl>
-   <cpe>cpe:/a:oracle:graalvm</cpe>
-</suppress>
-<suppress>
-   <notes><![CDATA[
-   file name: truffle-nfi-20.2.0.jar
-   ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.truffle/truffle\-nfi@.*$</packageUrl>
-   <cpe>cpe:/a:oracle:openjdk</cpe>
-</suppress>
-<suppress>
-   <notes><![CDATA[
-   file name: truffle-nfi-20.2.0.jar
-   ]]></notes>
-   <packageUrl regex="true">^pkg:maven/org\.graalvm\.truffle/truffle\-nfi@.*$</packageUrl>
-   <cpe>cpe:/a:sun:openjdk</cpe>
-</suppress>
 
 <!-- junit 4 -->
 <!-- This CVE is fixed in junit 4.13.1 and only applies when using Java 1.6
@@ -141,11 +104,56 @@
 -->
 <suppress>
    <notes><![CDATA[
-   file name: google-http-client-1.37.0.jar
+   file name: google-http-client-apache-v2-1.40.1.jar
    ]]></notes>
-   <packageUrl regex="true">^pkg:maven/com\.google\.http\-client/google\-http\-client@.*$</packageUrl>
-   <cpe>cpe:/a:apache:httpclient</cpe>
+   <packageUrl regex="true">^pkg:maven/com\.google\.http\-client/google\-http\-client\-apache\-v2@.*$</packageUrl>
+   <cve>CVE-2020-13956</cve>
 </suppress>
 
+
+<!-- This CVE is against Neo4j through 3.4.18. We use Neo4j 4.2.4
+     Helidon's Neo4j integration triggered a false positive due to it's 
+     version being < 3.4.18
+-->
+<suppress>
+   <notes><![CDATA[
+   file name: io.helidon.integrations.neo4j:helidon-integrations-neo4j:2.4.0-SNAPSHOT
+   ]]></notes>
+   <packageUrl regex="true">^pkg:maven/io\.helidon\.integrations\.neo4j/helidon\-integrations\-neo4j@.*$</packageUrl>
+   <cve>CVE-2021-34371</cve>
+</suppress>
+
+<!-- The Neo4j java driver contains a shaded copy of a couple of Netty artifacts.
+     This CVE is against netty-codec-http2 which is not included in the Neo4j driver.
+-->
+<suppress>
+   <notes><![CDATA[
+   file name: neo4j-java-driver-4.2.4.jar (shaded: io.netty:netty-transport:4.1.60.Final)
+   ]]></notes>
+   <filePath regex="true">.*/neo4j\-java\-driver\-4\.2\.4\.jar.*</filePath>
+   <cve>CVE-2021-21409</cve>
+</suppress>
+
+<!-- This CVE was fixed in the EL implementations com.sun.el:el-ri:3.0.4 and org.glassfish:jakarta.el:3.0.4
+     which we have upgraded to. But the scan triggers a false positive on the API: jakarta.el:jakarta.el-api:3.0.3 -->
+<suppress>
+   <notes><![CDATA[
+   file name: jakarta.el-api-3.0.3.jar
+   ]]></notes>
+   <packageUrl regex="true">^pkg:maven/jakarta\.el/jakarta\.el\-api@.*$</packageUrl>
+   <cve>CVE-2021-28170</cve>
+</suppress>
+
+
+<!-- This file is being detected as an old version of Netty and raises false positives for
+     a number of old Netty CVEs.
+-->
+<suppress>
+   <notes><![CDATA[
+   file name: netty-incubator-transport-native-io_uring-0.0.8.Final-linux-x86_64.jar
+   ]]></notes>
+   <packageUrl regex="true">^pkg:maven/io\.netty\.incubator/netty\-incubator\-transport\-native\-io_uring@.*$</packageUrl>
+   <cpe>cpe:/a:netty:netty</cpe>
+</suppress>
 
 </suppressions>

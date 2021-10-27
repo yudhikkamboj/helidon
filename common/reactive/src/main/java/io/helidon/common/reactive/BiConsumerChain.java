@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,8 +50,17 @@ class BiConsumerChain<T, S>
             return ((BiConsumerChain<T, S>) current).combineWith(another);
         }
         BiConsumerChain<T, S> newChain = new BiConsumerChain<>();
-        newChain.add(current);
-        newChain.add(another);
+        if (current instanceof BiConsumerChain) {
+            newChain.addAll((BiConsumerChain<T, S>) current);
+        } else {
+            newChain.add(current);
+        }
+
+        if (another instanceof BiConsumerChain) {
+            newChain.addAll((BiConsumerChain<T, S>) another);
+        } else {
+            newChain.add(another);
+        }
         return newChain;
     }
 }

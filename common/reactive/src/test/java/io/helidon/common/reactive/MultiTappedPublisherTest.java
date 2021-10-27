@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,17 @@
 
 package io.helidon.common.reactive;
 
-import org.testng.annotations.Test;
-
 import java.io.IOException;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsInstanceOf.instanceOf;
 import static org.hamcrest.core.IsNull.nullValue;
-import static org.testng.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MultiTappedPublisherTest {
 
@@ -35,17 +35,12 @@ public class MultiTappedPublisherTest {
     public void onSubscribeCrash() {
 
         TestSubscriber<Integer> ts = new TestSubscriber<>();
-
-        new MultiTappedPublisher<>(
-                Multi.<Integer>empty(),
-                s -> { throw new IllegalArgumentException(); },
-                null,
-                null,
-                null,
-                null,
-                null
-        )
-        .subscribe(ts);
+        MultiTappedPublisher.builder(Multi.<Integer>empty())
+                .onSubscribeCallback(s -> {
+                    throw new IllegalArgumentException();
+                })
+                .build()
+                .subscribe(ts);
 
         assertThat(ts.getItems().isEmpty(), is(true));
         assertThat(ts.getLastError(), instanceOf(IllegalArgumentException.class));
@@ -59,16 +54,9 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.<Integer>empty(),
-                s -> { calls.getAndIncrement(); },
-                null,
-                null,
-                null,
-                null,
-                null
-        )
+        MultiTappedPublisher.builder(Multi.<Integer>empty())
+                .onSubscribeCallback(i -> calls.getAndIncrement())
+                .build()
                 .subscribe(ts);
 
         assertThat(ts.getItems().isEmpty(), is(true));
@@ -164,20 +152,13 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.singleton(1),
-                null,
-                null,
-                null,
-                null,
-                r -> {
+        MultiTappedPublisher.builder(Multi.singleton(1))
+                .onRequestCallback(r -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                },
-                null
-        )
-        .subscribe(ts);
+                })
+                .build()
+                .subscribe(ts);
 
         ts.requestMax();
 
@@ -195,18 +176,9 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.singleton(1),
-                null,
-                null,
-                null,
-                null,
-                r -> {
-                    calls.getAndIncrement();
-                },
-                null
-        )
+        MultiTappedPublisher.builder(Multi.singleton(1))
+                .onRequestCallback(r -> calls.getAndIncrement())
+                .build()
                 .subscribe(ts);
 
         ts.requestMax();
@@ -224,21 +196,13 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.singleton(1),
-                null,
-                null,
-                e -> {
-                    calls.getAndIncrement();
-                },
-                null,
-                r -> {
+        MultiTappedPublisher.builder(Multi.singleton(1))
+                .onRequestCallback(r -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                },
-                null
-        )
+                })
+                .onErrorCallback(e -> calls.getAndIncrement())
+                .build()
                 .subscribe(ts);
 
         ts.requestMax();
@@ -256,22 +220,16 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.singleton(1),
-                null,
-                null,
-                e -> {
+        MultiTappedPublisher.builder(Multi.singleton(1))
+                .onRequestCallback(r -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                },
-                null,
-                r -> {
+                })
+                .onErrorCallback(e -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                },
-                null
-        )
+                })
+                .build()
                 .subscribe(ts);
 
         ts.requestMax();
@@ -312,21 +270,13 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.singleton(1),
-                null,
-                null,
-                e -> {
-                    calls.getAndIncrement();
-                },
-                null,
-                null,
-                () -> {
+        MultiTappedPublisher.builder(Multi.singleton(1))
+                .onCancelCallback(() -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                }
-        )
+                })
+                .onErrorCallback(e -> calls.getAndIncrement())
+                .build()
                 .subscribe(ts);
 
         ts.getSubcription().cancel();
@@ -344,22 +294,16 @@ public class MultiTappedPublisherTest {
         TestSubscriber<Integer> ts = new TestSubscriber<>();
 
         AtomicInteger calls = new AtomicInteger();
-
-        new MultiTappedPublisher<>(
-                Multi.singleton(1),
-                null,
-                null,
-                e -> {
+        MultiTappedPublisher.builder(Multi.singleton(1))
+                .onCancelCallback(() -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                },
-                null,
-                null,
-                () -> {
+                })
+                .onErrorCallback(e -> {
                     calls.getAndIncrement();
                     throw new IllegalArgumentException();
-                }
-        )
+                })
+                .build()
                 .subscribe(ts);
 
         ts.getSubcription().cancel();

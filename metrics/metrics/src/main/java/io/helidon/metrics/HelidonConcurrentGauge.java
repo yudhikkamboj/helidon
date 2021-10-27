@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,16 +29,22 @@ import org.eclipse.microprofile.metrics.MetricID;
  * Implementation of {@link ConcurrentGauge}.
  */
 final class HelidonConcurrentGauge extends MetricImpl implements ConcurrentGauge {
+
+    private static final String PROMETHEUS_TYPE = "gauge";
+
     private final ConcurrentGauge delegate;
 
     private HelidonConcurrentGauge(String registryType, Metadata metadata, ConcurrentGauge delegate) {
         super(registryType, metadata);
-
         this.delegate = delegate;
     }
 
     static HelidonConcurrentGauge create(String registryType, Metadata metadata) {
-        return create(registryType, metadata, new ConcurrentGaugeImpl());
+        return create(registryType, metadata, Clock.system());
+    }
+
+    static HelidonConcurrentGauge create(String registryType, Metadata metadata, Clock clock) {
+        return create(registryType, metadata, new ConcurrentGaugeImpl(clock));
     }
 
     static HelidonConcurrentGauge create(String registryType, Metadata metadata, ConcurrentGauge metric) {
@@ -113,6 +119,11 @@ final class HelidonConcurrentGauge extends MetricImpl implements ConcurrentGauge
                 .append(" ").append(getMax()).append('\n');
     }
 
+    @Override
+    void prometheusType(StringBuilder sb, String nameWithUnits, String type) {
+        super.prometheusType(sb, nameWithUnits, PROMETHEUS_TYPE);
+    }
+
     static class ConcurrentGaugeImpl implements ConcurrentGauge {
         private final AtomicLong count;
         private final AtomicLong lastMax;
@@ -120,8 +131,10 @@ final class HelidonConcurrentGauge extends MetricImpl implements ConcurrentGauge
         private final AtomicLong currentMax;
         private final AtomicLong currentMin;
         private final AtomicLong lastMinute;
+        private final Clock clock;
 
-        ConcurrentGaugeImpl() {
+        ConcurrentGaugeImpl(Clock clock) {
+            this.clock = clock;
             count = new AtomicLong(0L);
             lastMax = new AtomicLong(Long.MIN_VALUE);
             lastMin = new AtomicLong(Long.MAX_VALUE);
@@ -179,8 +192,8 @@ final class HelidonConcurrentGauge extends MetricImpl implements ConcurrentGauge
             }
         }
 
-        private static long currentTimeMinute() {
-            return System.currentTimeMillis() / 1000 / 60;
+        private long currentTimeMinute() {
+            return clock.milliTime() / 1000 / 60;
         }
 
         @Override
@@ -216,5 +229,14 @@ final class HelidonConcurrentGauge extends MetricImpl implements ConcurrentGauge
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(), delegate);
+    }
+
+    @Override
+    protected String toStringDetails() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(", count='").append(getCount()).append('\'');
+        sb.append(", min='").append(getMin()).append('\'');
+        sb.append(", max='").append(getMax()).append('\'');
+        return sb.toString();
     }
 }

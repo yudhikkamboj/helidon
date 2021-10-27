@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,18 +34,8 @@ public class MainTest {
     private static WebClient webClient;
 
     @BeforeAll
-    public static void startTheServer() throws Exception {
-        webServer = Main.startServer();
-
-        long timeout = 2000; // 2 seconds should be enough to start the server
-        long now = System.currentTimeMillis();
-
-        while (!webServer.isRunning()) {
-            Thread.sleep(100);
-            if ((System.currentTimeMillis() - now) > timeout) {
-                Assertions.fail("Failed to start webserver");
-            }
-        }
+    public static void startTheServer() {
+        webServer = Main.startServer().await();
 
         webClient = WebClient.builder()
                 .baseUri("http://localhost:" + webServer.port())
@@ -54,16 +44,15 @@ public class MainTest {
     }
 
     @AfterAll
-    public static void stopServer() throws Exception {
+    public static void stopServer() {
         if (webServer != null) {
             webServer.shutdown()
-                     .toCompletableFuture()
-                     .get(10, TimeUnit.SECONDS);
+                    .await(10, TimeUnit.SECONDS);
         }
     }
 
     @Test
-    public void testHelloWorld() throws Exception {
+    public void testHelloWorld() {
         webClient.get()
                 .path("/employees")
                 .request()
@@ -71,8 +60,7 @@ public class MainTest {
                     response.close();
                     Assertions.assertEquals(Http.Status.OK_200, response.status(), "HTTP response2");
                 })
-                .toCompletableFuture()
-                .get();
+                .await();
 
         webClient.get()
                 .path("/health")
@@ -81,8 +69,7 @@ public class MainTest {
                     response.close();
                     Assertions.assertEquals(Http.Status.OK_200, response.status(), "HTTP response2");
                 })
-                .toCompletableFuture()
-                .get();
+                .await();
 
         webClient.get()
                 .path("/metrics")
@@ -91,8 +78,7 @@ public class MainTest {
                     response.close();
                     Assertions.assertEquals(Http.Status.OK_200, response.status(), "HTTP response2");
                 })
-                .toCompletableFuture()
-                .get();
+                .await();
     }
 
 }

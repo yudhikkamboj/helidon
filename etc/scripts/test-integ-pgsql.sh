@@ -15,38 +15,25 @@
 # limitations under the License.
 #
 
-set -o pipefail || true  # trace ERR through pipes
-set -o errtrace || true # trace ERR through commands and functions
-set -o errexit || true  # exit the script if any statement returns a non-true return value
-
-on_error(){
-    CODE="${?}" && \
-    set +x && \
-    printf "[ERROR] Error(code=%s) occurred at %s:%s command: %s\n" \
-        "${CODE}" "${BASH_SOURCE}" "${LINENO}" "${BASH_COMMAND}"
-}
-trap on_error ERR
-
 # Path to this script
-if [ -h "${0}" ] ; then
-    readonly SCRIPT_PATH="$(readlink "${0}")"
-else
-    readonly SCRIPT_PATH="${0}"
-fi
+[ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
 
-# Path to the root of the workspace
-readonly WS_DIR=$(cd "$(dirname -- "${SCRIPT_PATH}")" ; cd ../.. ; pwd -P)
+# Load pipeline environment setup and define WS_DIR
+. $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
 
-source ${WS_DIR}/etc/scripts/pipeline-env.sh
+# Setup error handling using default settings (defined in includes/error_handlers.sh)
+error_trap_setup
 
-JAVA_HOME='/tools/graalvm-ce-java11-20.2.0'
-PATH="${PATH}:${JAVA_HOME}/bin"
+# Set Graal VM into JAVA_HOME and PATH (defined in includes/pipeline-env.sh)
+graalvm
 
 mvn ${MAVEN_ARGS} --version
 
+# Temporary workaround until job stages will share maven repository
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-  install -e \
-  -Ppipeline
+    clean install -e \
+    -DskipTests \
+    -Ppipeline
 
 # Run tests in Java VM application
 (cd tests/integration/jpa && \

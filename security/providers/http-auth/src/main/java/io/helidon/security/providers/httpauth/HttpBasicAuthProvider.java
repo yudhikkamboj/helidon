@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ import java.util.regex.Pattern;
 
 import io.helidon.common.serviceloader.HelidonServiceLoader;
 import io.helidon.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.security.AuthenticationResponse;
 import io.helidon.security.EndpointConfig;
 import io.helidon.security.OutboundSecurityResponse;
@@ -38,6 +40,7 @@ import io.helidon.security.ProviderRequest;
 import io.helidon.security.Role;
 import io.helidon.security.SecurityContext;
 import io.helidon.security.SecurityEnvironment;
+import io.helidon.security.SecurityResponse;
 import io.helidon.security.Subject;
 import io.helidon.security.SubjectType;
 import io.helidon.security.providers.common.OutboundConfig;
@@ -45,6 +48,7 @@ import io.helidon.security.providers.common.OutboundTarget;
 import io.helidon.security.providers.httpauth.spi.UserStoreService;
 import io.helidon.security.spi.AuthenticationProvider;
 import io.helidon.security.spi.OutboundSecurityProvider;
+import io.helidon.security.spi.SecurityProvider;
 import io.helidon.security.spi.SynchronousProvider;
 import io.helidon.security.util.TokenHandler;
 
@@ -68,9 +72,10 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
     static final String BASIC_PREFIX = "basic ";
 
     private static final Logger LOGGER = Logger.getLogger(HttpBasicAuthProvider.class.getName());
-    private static final Pattern CREDENTIAL_PATTERN = Pattern.compile("(.*):(.*)");
+    static final Pattern CREDENTIAL_PATTERN = Pattern.compile("(.*?):(.*)");
 
     private final List<SecureUserStore> userStores;
+    private final boolean optional;
     private final String realm;
     private final SubjectType subjectType;
     private final OutboundConfig outboundConfig;
@@ -78,6 +83,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
 
     HttpBasicAuthProvider(Builder builder) {
         this.userStores = new LinkedList<>(builder.userStores);
+        this.optional = builder.optional;
         this.realm = builder.realm;
         this.subjectType = builder.subjectType;
         this.outboundConfig = builder.outboundBuilder.build();
@@ -208,14 +214,15 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
         List<String> authorizationHeader = headers.get(HEADER_AUTHENTICATION);
 
         if (null == authorizationHeader) {
-            return fail("No " + HEADER_AUTHENTICATION + " header");
+            return failOrAbstain("No " + HEADER_AUTHENTICATION + " header");
         }
 
         return authorizationHeader.stream()
                 .filter(header -> header.toLowerCase().startsWith(BASIC_PREFIX))
                 .findFirst()
                 .map(this::validateBasicAuth)
-                .orElseGet(() -> fail("Authorization header does not contain basic authentication: " + authorizationHeader));
+                .orElseGet(() ->
+                        failOrAbstain("Authorization header does not contain basic authentication: " + authorizationHeader));
     }
 
     private AuthenticationResponse validateBasicAuth(String basicAuthHeader) {
@@ -226,13 +233,13 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
             usernameAndPassword = new String(Base64.getDecoder().decode(b64), StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
             // not a base64 encoded string
-            return fail("Basic authentication header with invalid content - not base64 encoded");
+            return failOrAbstain("Basic authentication header with invalid content - not base64 encoded");
         }
 
         Matcher matcher = CREDENTIAL_PATTERN.matcher(usernameAndPassword);
         if (!matcher.matches()) {
             LOGGER.finest(() -> "Basic authentication header with invalid content: " + usernameAndPassword);
-            return fail("Basic authentication header with invalid content");
+            return failOrAbstain("Basic authentication header with invalid content");
         }
 
         final String username = matcher.group(1);
@@ -263,16 +270,23 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
         // extracted to method to make sure we return the same message for invalid user and password
         // DO NOT change this - it is a security problem if the message differs, as it gives too much information
         // to potential attacker
-        return fail("Invalid username or password");
+        return failOrAbstain("Invalid username or password");
     }
 
-    private AuthenticationResponse fail(String message) {
-        return AuthenticationResponse.builder()
-                .statusCode(401)
-                .responseHeader(HEADER_AUTHENTICATION_REQUIRED, buildChallenge())
-                .status(AuthenticationResponse.SecurityStatus.FAILURE)
-                .description(message)
-                .build();
+    private AuthenticationResponse failOrAbstain(String message) {
+        if (optional) {
+            return AuthenticationResponse.builder()
+                    .status(SecurityResponse.SecurityStatus.ABSTAIN)
+                    .description(message)
+                    .build();
+        } else {
+            return AuthenticationResponse.builder()
+                    .statusCode(401)
+                    .responseHeader(HEADER_AUTHENTICATION_REQUIRED, buildChallenge())
+                    .status(AuthenticationResponse.SecurityStatus.FAILURE)
+                    .description(message)
+                    .build();
+        }
     }
 
     private String buildChallenge() {
@@ -295,10 +309,14 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
     /**
      * {@link HttpBasicAuthProvider} fluent API builder.
      */
+    @Configured(prefix = HttpBasicAuthService.PROVIDER_CONFIG_KEY,
+                description = "HTTP Basic Authentication provider",
+                provides = {SecurityProvider.class, AuthenticationProvider.class})
     public static final class Builder implements io.helidon.common.Builder<HttpBasicAuthProvider> {
         private final List<SecureUserStore> userStores = new LinkedList<>();
         private final OutboundConfig.Builder outboundBuilder = OutboundConfig.builder();
 
+        private boolean optional = false;
         private String realm = "helidon";
         private SubjectType subjectType = SubjectType.USER;
 
@@ -311,6 +329,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
          * @return updated builder instance
          */
         public Builder config(Config config) {
+            config.get("optional").asBoolean().ifPresent(this::optional);
             config.get("realm").asString().ifPresent(this::realm);
             config.get("principal-type").asString().as(SubjectType::valueOf).ifPresent(this::subjectType);
 
@@ -361,6 +380,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
          * @param subjectType type of principal
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "principal-type", value = "USER")
         public Builder subjectType(SubjectType subjectType) {
             this.subjectType = subjectType;
 
@@ -392,6 +412,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
          * @param store User store to use
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "users", type = ConfigUserStore.ConfigUser.class, kind = ConfiguredOption.Kind.LIST)
         public Builder userStore(SecureUserStore store) {
             userStores.clear();
             userStores.add(store);
@@ -404,8 +425,23 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
          * @param realm security realm name to send to browser (or any other client) when unauthenticated
          * @return updated builder instance
          */
+        @ConfiguredOption("helidon")
         public Builder realm(String realm) {
             this.realm = realm;
+            return this;
+        }
+
+        /**
+         * Whether authentication is required.
+         * By default, request will fail if the authentication cannot be verified.
+         * If set to false, request will process and this provider will abstain.
+         *
+         * @param optional whether authentication is optional (true) or required (false)
+         * @return updated builder instance
+         */
+        @ConfiguredOption("false")
+        public Builder optional(boolean optional) {
+            this.optional = optional;
             return this;
         }
 

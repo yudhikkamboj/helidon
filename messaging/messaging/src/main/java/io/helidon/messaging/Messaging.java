@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package io.helidon.messaging;
@@ -20,6 +19,8 @@ package io.helidon.messaging;
 import java.util.concurrent.Flow;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import io.helidon.common.reactive.Multi;
 import io.helidon.config.Config;
@@ -63,7 +64,12 @@ public interface Messaging {
         return new Builder();
     }
 
+    /**
+     * Fluent API builder for {@link io.helidon.messaging.Messaging}.
+     */
     final class Builder implements io.helidon.common.Builder<Messaging> {
+
+        private static final Logger LOGGER = Logger.getLogger(Messaging.class.getName());
 
         private final MessagingImpl messaging;
 
@@ -92,7 +98,7 @@ public interface Messaging {
             if (connector instanceof IncomingConnectorFactory) {
                 this.messaging.addIncomingConnector((IncomingConnectorFactory) connector);
             }
-            if (connector instanceof IncomingConnectorFactory) {
+            if (connector instanceof OutgoingConnectorFactory) {
                 this.messaging.addOutgoingConnector((OutgoingConnectorFactory) connector);
             }
             return this;
@@ -209,7 +215,9 @@ public interface Messaging {
                                           Consumer<? super PAYLOAD> consumer) {
             this.messaging.registerChannel(channel);
             channel.setSubscriber(Builder.<PAYLOAD>unwrapProcessorBuilder()
-                    .forEach(consumer)
+                    .peek(consumer)
+                    .onError(t -> LOGGER.log(Level.SEVERE, "Error detected in channel " + channel.name(), t))
+                    .ignore()
                     .build());
             return this;
         }
@@ -346,7 +354,7 @@ public interface Messaging {
          */
         public Messaging build() {
             if (messaging.getConfig() == null) {
-                messaging.setConfig(Config.create());
+                messaging.setConfig(Config.empty());
             }
             return messaging;
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,23 +64,22 @@ class RetryImpl implements Retry {
     }
 
     private <T> Single<T> retrySingle(RetryContext<? extends CompletionStage<T>> context) {
-        long delay = 0;
         int currentCallIndex = context.count.getAndIncrement();
-        if (currentCallIndex != 0) {
-            Optional<Long> maybeDelay = retryPolicy.nextDelayMillis(context.startedMillis,
-                                                                    context.lastDelay.get(),
-                                                                    currentCallIndex);
-            if (maybeDelay.isEmpty()) {
-                return Single.error(context.throwable());
-            }
-            delay = maybeDelay.get();
+        Optional<Long> maybeDelay = computeDelay(context, currentCallIndex);
+        if (maybeDelay.isEmpty()) {
+            return Single.error(context.throwable());
         }
+        long delay = maybeDelay.get();
 
         long nanos = System.nanoTime() - context.startedNanos;
         if (nanos > maxTimeNanos) {
-            return Single.error(new TimeoutException("Execution took too long. Already executing: "
-                                                             + TimeUnit.NANOSECONDS.toMillis(nanos) + " ms, must timeout after: "
-                                                             + TimeUnit.NANOSECONDS.toMillis(maxTimeNanos) + " ms."));
+            TimeoutException te = new TimeoutException("Execution took too long. Already executing: "
+                    + TimeUnit.NANOSECONDS.toMillis(nanos) + " ms, must timeout after: "
+                    + TimeUnit.NANOSECONDS.toMillis(maxTimeNanos) + " ms.");
+            if (context.hasThrowable()) {
+                te.initCause(context.throwable());
+            }
+            return Single.error(te);
         }
 
         if (currentCallIndex > 0) {
@@ -98,6 +97,7 @@ class RetryImpl implements Retry {
                 .onErrorResumeWithSingle(throwable -> {
                     Throwable cause = FaultTolerance.cause(throwable);
                     context.thrown.add(cause);
+                    context.lastDelay.set(delay);
                     if (errorChecker.shouldSkip(cause)) {
                         return Single.error(context.throwable());
                     }
@@ -106,17 +106,12 @@ class RetryImpl implements Retry {
     }
 
     private <T> Multi<T> retryMulti(RetryContext<? extends Flow.Publisher<T>> context) {
-        long delay = 0;
         int currentCallIndex = context.count.getAndIncrement();
-        if (currentCallIndex != 0) {
-            Optional<Long> maybeDelay = retryPolicy.nextDelayMillis(context.startedMillis,
-                                                                    context.lastDelay.get(),
-                                                                    currentCallIndex);
-            if (maybeDelay.isEmpty()) {
-                return Multi.error(context.throwable());
-            }
-            delay = maybeDelay.get();
+        Optional<Long> maybeDelay = computeDelay(context, currentCallIndex);
+        if (maybeDelay.isEmpty()) {
+            return Multi.error(context.throwable());
         }
+        long delay = maybeDelay.get();
 
         long nanos = System.nanoTime() - context.startedNanos;
         if (nanos > maxTimeNanos) {
@@ -140,11 +135,21 @@ class RetryImpl implements Retry {
                 .onErrorResumeWith(throwable -> {
                     Throwable cause = FaultTolerance.cause(throwable);
                     context.thrown.add(cause);
+                    context.lastDelay.set(delay);
                     if (task.hadData() || errorChecker.shouldSkip(cause)) {
                         return Multi.error(context.throwable());
                     }
                     return retryMulti(context);
                 });
+    }
+
+    private Optional<Long> computeDelay(RetryContext<?> context, int currentCallIndex) {
+        if (currentCallIndex != 0) {
+            return retryPolicy.nextDelayMillis(context.startedMillis,
+                    context.lastDelay.get(),
+                    currentCallIndex);
+        }
+        return Optional.of(0L);
     }
 
     @Override
@@ -164,6 +169,10 @@ class RetryImpl implements Retry {
 
         RetryContext(Supplier<U> supplier) {
             this.supplier = supplier;
+        }
+
+        boolean hasThrowable() {
+            return !thrown.isEmpty();
         }
 
         Throwable throwable() {

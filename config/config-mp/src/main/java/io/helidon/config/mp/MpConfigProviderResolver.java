@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import io.helidon.common.GenericType;
@@ -44,6 +45,7 @@ import org.eclipse.microprofile.config.spi.ConfigSource;
  * This class is an implementation of a java service obtained through ServiceLoader.
  */
 public class MpConfigProviderResolver extends ConfigProviderResolver {
+    private static final Logger LOGGER = Logger.getLogger(MpConfigProviderResolver.class.getName());
     private static final Map<ClassLoader, ConfigDelegate> CONFIGS = new IdentityHashMap<>();
     private static final ReadWriteLock RW_LOCK = new ReentrantReadWriteLock();
     // specific for native image - we want to replace config provided during build with runtime configuration
@@ -83,20 +85,31 @@ public class MpConfigProviderResolver extends ConfigProviderResolver {
 
     private Config buildConfig(ClassLoader loader) {
         MpConfigBuilder builder = getBuilder();
-
-        Optional<io.helidon.config.Config> meta = MetaConfig.metaConfig();
-
-        meta.ifPresent(builder::metaConfig);
-
         builder.forClassLoader(loader);
 
-        if (meta.isEmpty()) {
-            builder.addDefaultSources();
+        // MP Meta Configuration
+        Optional<io.helidon.config.Config> meta = MpMetaConfig.metaConfig();
+
+        if (meta.isEmpty()){
+            meta = MetaConfig.metaConfig();
+
+            if (meta.isPresent()) {
+                builder.metaConfig(meta.get());
+                LOGGER.warning("You are using Helidon SE meta configuration in a Helidon MP application. Some features "
+                                       + "work differently, such as environment variable resolving, and mutability");
+            }
+        } else {
+            builder.mpMetaConfig(meta.get());
         }
 
-        return builder.addDiscoveredSources()
-                .addDiscoveredConverters()
-                .build();
+        if (meta.isEmpty()) {
+            // no meta configuration, use defaults
+            builder.addDefaultSources();
+            builder.addDiscoveredSources();
+            builder.addDiscoveredConverters();
+        }
+
+        return builder.build();
     }
 
     @Override
@@ -173,13 +186,23 @@ public class MpConfigProviderResolver extends ConfigProviderResolver {
         Lock lock = RW_LOCK.readLock();
         AtomicReference<ClassLoader> cl = new AtomicReference<>();
 
+        // in case we get our own delegate, we want to remove the exact same instance of delegate
         try {
             lock.lock();
-            for (Map.Entry<ClassLoader, ConfigDelegate> entry : CONFIGS.entrySet()) {
-                Config configFromRef = entry.getValue().delegate();
-                if (config == configFromRef) {
-                    cl.set(entry.getKey());
-                    break;
+            if (config instanceof ConfigDelegate) {
+                for (Map.Entry<ClassLoader, ConfigDelegate> entry : CONFIGS.entrySet()) {
+                    if (config == entry.getValue()) {
+                        cl.set(entry.getKey());
+                        break;
+                    }
+                }
+            } else {
+                for (Map.Entry<ClassLoader, ConfigDelegate> entry : CONFIGS.entrySet()) {
+                    Config configFromRef = entry.getValue().delegate();
+                    if (config == configFromRef) {
+                        cl.set(entry.getKey());
+                        break;
+                    }
                 }
             }
         } finally {
@@ -202,6 +225,7 @@ public class MpConfigProviderResolver extends ConfigProviderResolver {
      * A delegate used to allow replacing configuration at runtime for components
      * that hold a reference to configuration obtained at build time.
      */
+    @Deprecated
     public static final class ConfigDelegate implements io.helidon.config.Config, Config {
         private final AtomicReference<Config> delegate = new AtomicReference<>();
         private final AtomicReference<io.helidon.config.Config> helidonDelegate = new AtomicReference<>();
@@ -259,7 +283,7 @@ public class MpConfigProviderResolver extends ConfigProviderResolver {
         }
 
         @Override
-        public <T> T convert(Class<T> type, String value)  {
+        public <T> T convert(Class<T> type, String value) {
             return getCurrent().convert(type, value);
         }
 

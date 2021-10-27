@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,22 @@
 
 package io.helidon.tests.integration.webclient;
 
-import java.security.Principal;
-import java.util.Collections;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import javax.json.Json;
 import javax.json.JsonBuilderFactory;
 import javax.json.JsonException;
 import javax.json.JsonObject;
+import java.security.Principal;
+import java.util.Collections;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
+import io.helidon.common.http.DataChunk;
 import io.helidon.common.http.FormParams;
 import io.helidon.common.http.Http;
+import io.helidon.common.reactive.Multi;
 import io.helidon.config.Config;
 import io.helidon.security.SecurityContext;
 import io.helidon.webclient.WebClient;
@@ -81,10 +84,22 @@ public class GreetService implements Service {
                 .get("/redirect/infinite", this::redirectInfinite)
                 .post("/form", this::form)
                 .post("/form/content", this::formContent)
+                .post("/contentLength", this::contentLength)
+                .put("/contentLength", this::contentLength)
+                .get("/contentLength", this::contentLength)
                 .get("/secure/basic", this::basicAuth)
                 .get("/secure/basic/outbound", this::basicAuthOutbound)
                 .get("/valuesPropagated", this::valuesPropagated)
-                .put("/greeting", this::updateGreetingHandler);
+                .get("/obtainedQuery", this::obtainedQuery)
+                .get("/pattern with space", this::getDefaultMessageHandler)
+                .put("/greeting", this::updateGreetingHandler)
+                .get("/connectionClose", this::connectionClose);
+    }
+
+    private void contentLength(ServerRequest serverRequest, ServerResponse serverResponse) {
+        serverRequest.headers().contentLength()
+                .ifPresentOrElse(value -> serverResponse.send(Http.Header.CONTENT_LENGTH + " is " + value),
+                                 () -> serverResponse.send("No " + Http.Header.CONTENT_LENGTH + " has been set"));
     }
 
     private void basicAuthOutbound(ServerRequest serverRequest, ServerResponse response) {
@@ -112,6 +127,14 @@ public class GreetService implements Service {
         String fragment = serverRequest.fragment();
         serverResponse.status(Http.Status.OK_200);
         serverResponse.send(queryParam + " " + fragment);
+    }
+
+    private void obtainedQuery(ServerRequest serverRequest, ServerResponse serverResponse) {
+        String queryParam = serverRequest.queryParams().first("param").orElse("Query param not present");
+        String queryValue = serverRequest.queryParams().first(queryParam).orElse("Query " + queryParam + " param not present");
+        String fragment = serverRequest.fragment();
+        serverResponse.status(Http.Status.OK_200);
+        serverResponse.send(queryValue + " " + (fragment == null ? "" : fragment));
     }
 
     private void basicAuth(ServerRequest serverRequest, ServerResponse response) {
@@ -180,6 +203,28 @@ public class GreetService implements Service {
         request.content().as(JsonObject.class)
                 .thenAccept(jo -> updateGreetingFromJson(jo, response))
                 .exceptionally(ex -> processErrors(ex, request, response));
+    }
+
+    private void connectionClose(ServerRequest request, ServerResponse response) {
+        response.send(Multi
+                .interval(100, 500, TimeUnit.MILLISECONDS,
+                        Executors.newSingleThreadScheduledExecutor())
+                .map(i -> "item" + i)
+                .limit(15)
+                .peek(s -> {
+                    if ("item2".equals(s)) {
+                        try {
+                            Main.webServer.shutdown().get(10, TimeUnit.SECONDS);
+                        } catch (Throwable t) {
+                            LOGGER.log(Level.SEVERE, "Webserver failed to shut down!", t);
+                        }
+                    }
+                })
+                .map(String::getBytes)
+                .map(DataChunk::create)
+                // force flush after each chunk
+                .flatMap(bb -> Multi.just(bb, DataChunk.create(true)))
+        );
     }
 
     private void sendResponse(ServerResponse response, String name) {

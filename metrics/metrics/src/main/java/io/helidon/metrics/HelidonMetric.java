@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.util.List;
 
 import javax.json.JsonObjectBuilder;
 
-import org.eclipse.microprofile.metrics.Metadata;
 import org.eclipse.microprofile.metrics.Metric;
 import org.eclipse.microprofile.metrics.MetricID;
 
@@ -28,7 +27,7 @@ import org.eclipse.microprofile.metrics.MetricID;
  * Helidon Extension of {@link Metric}.
  * All metrics should inherit from {@link MetricImpl}.
  */
-interface HelidonMetric extends Metric {
+interface HelidonMetric extends io.helidon.metrics.api.HelidonMetric {
     /**
      * Name of this metric.
      *
@@ -67,11 +66,4 @@ interface HelidonMetric extends Metric {
      * @return Name for metric.
      */
     String prometheusNameWithUnits(MetricID metricID);
-
-    /**
-     * Returns the metadata associated with this metric.
-     *
-     * @return the metric's {@link Metadata}
-     */
-    Metadata metadata();
 }

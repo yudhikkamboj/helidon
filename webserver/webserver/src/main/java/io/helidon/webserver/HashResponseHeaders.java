@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import io.helidon.common.LazyValue;
 import io.helidon.common.http.AlreadyCompletedException;
 import io.helidon.common.http.HashParameters;
 import io.helidon.common.http.Http;
@@ -51,6 +52,9 @@ import io.helidon.common.reactive.Single;
 class HashResponseHeaders extends HashParameters implements ResponseHeaders {
 
     private static final String COMPLETED_EXCEPTION_MESSAGE = "Response headers are already completed (sent to the client)!";
+
+    private static final LazyValue<ZonedDateTime> START_OF_YEAR_1970 = LazyValue.create(
+            () -> ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneId.of("GMT+0")));
 
     // status is by default null, so we can check if it was explicitly set
     private volatile Http.ResponseStatus httpStatus;
@@ -204,6 +208,24 @@ class HashResponseHeaders extends HashParameters implements ResponseHeaders {
     }
 
     @Override
+    public void clearCookie(String name) {
+        SetCookie expiredCookie = SetCookie.builder(name, "deleted")
+                .path("/")
+                .expires(START_OF_YEAR_1970.get())
+                .build();
+
+        List<String> values = remove(Http.Header.SET_COOKIE);
+        if (values.size() == 0) {
+            addCookie(expiredCookie);
+        } else {
+            List<String> newValues = values.stream().map(v ->
+                SetCookie.parse(v).name().equals(name) ? expiredCookie.toString() : v)
+                    .collect(Collectors.toList());
+            put(Http.Header.SET_COOKIE, newValues);
+        }
+    }
+
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -244,7 +266,7 @@ class HashResponseHeaders extends HashParameters implements ResponseHeaders {
     /**
      * Sets an HTTP status code. The code is managed with headers because it has the same lifecycle.
      *
-     * @status an HTTP status code.
+     * @param httpStatusCode an HTTP status code.
      */
     void httpStatus(Http.ResponseStatus httpStatusCode) {
         Objects.requireNonNull(httpStatusCode, "Parameter 'httpStatus' is null!");
@@ -287,23 +309,27 @@ class HashResponseHeaders extends HashParameters implements ResponseHeaders {
     }
 
     @Override
-    public void putAll(Parameters parameters) {
+    public HashResponseHeaders putAll(Parameters parameters) {
         completable.runIfNotCompleted(() -> super.putAll(parameters), COMPLETED_EXCEPTION_MESSAGE);
+        return this;
     }
 
     @Override
-    public void add(String key, String... values) {
+    public HashResponseHeaders add(String key, String... values) {
         completable.runIfNotCompleted(() -> super.add(key, values), COMPLETED_EXCEPTION_MESSAGE);
+        return this;
     }
 
     @Override
-    public void add(String key, Iterable<String> values) {
+    public HashResponseHeaders add(String key, Iterable<String> values) {
         completable.runIfNotCompleted(() -> super.add(key, values), COMPLETED_EXCEPTION_MESSAGE);
+        return this;
     }
 
     @Override
-    public void addAll(Parameters parameters) {
+    public HashResponseHeaders addAll(Parameters parameters) {
         completable.runIfNotCompleted(() -> super.addAll(parameters), COMPLETED_EXCEPTION_MESSAGE);
+        return this;
     }
 
     @Override
@@ -332,7 +358,7 @@ class HashResponseHeaders extends HashParameters implements ResponseHeaders {
     }
 
     /**
-     * If not yet completed then ompletes and return {@code true}, otherwise returns {@code false}.
+     * If not yet completed then completes and return {@code true}, otherwise returns {@code false}.
      * <p>
      * All possible exceptions are forwarded to {@link BareResponse#onError(Throwable)} method.
      *
@@ -348,7 +374,7 @@ class HashResponseHeaders extends HashParameters implements ResponseHeaders {
     private static class CompletionSupport {
 
         private enum State {
-            OPEN, COMPLETING, COMPLETED;
+            OPEN, COMPLETING, COMPLETED
         }
 
         // A simple locking mechanism.
@@ -360,7 +386,7 @@ class HashResponseHeaders extends HashParameters implements ResponseHeaders {
         /**
          * Creates new instance.
          *
-         * @param bareResponse
+         * @param bareResponse bare response
          */
         CompletionSupport(BareResponse bareResponse) {
             this.bareResponse = bareResponse;

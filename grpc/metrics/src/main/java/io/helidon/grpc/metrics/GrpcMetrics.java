@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.grpc.metrics;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +37,7 @@ import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 import io.grpc.Status;
+import org.eclipse.microprofile.metrics.ConcurrentGauge;
 import org.eclipse.microprofile.metrics.Counter;
 import org.eclipse.microprofile.metrics.Histogram;
 import org.eclipse.microprofile.metrics.MetadataBuilder;
@@ -43,6 +45,7 @@ import org.eclipse.microprofile.metrics.Meter;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.eclipse.microprofile.metrics.MetricType;
 import org.eclipse.microprofile.metrics.MetricUnits;
+import org.eclipse.microprofile.metrics.SimpleTimer;
 import org.eclipse.microprofile.metrics.Tag;
 import org.eclipse.microprofile.metrics.Timer;
 
@@ -223,6 +226,26 @@ public class GrpcMetrics
         return new GrpcMetrics(new MetricsRules(MetricType.TIMER));
     }
 
+    /**
+     * A static factory method to create a {@link GrpcMetrics} instance
+     * to time gRPC method calls.
+     *
+     * @return a {@link GrpcMetrics} instance to time gRPC method calls
+     */
+    public static GrpcMetrics concurrentGauge() {
+        return new GrpcMetrics(new MetricsRules(MetricType.CONCURRENT_GAUGE));
+    }
+
+    /**
+     * A static factory method to create a {@link GrpcMetrics} instance
+     * to time gRPC method calls.
+     *
+     * @return a {@link GrpcMetrics} instance to time gRPC method calls
+     */
+    public static GrpcMetrics simplyTimed() {
+        return new GrpcMetrics(new MetricsRules(MetricType.SIMPLE_TIMER));
+    }
+
     @Override
     public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(ServerCall<ReqT, RespT> call,
                                                                  Metadata headers,
@@ -251,6 +274,14 @@ public class GrpcMetrics
                 break;
             case TIMER:
                 serverCall = new TimedServerCall<>(APP_REGISTRY.timer(
+                        rules.metadata(service, methodName), rules.toTags()), call);
+                break;
+            case SIMPLE_TIMER:
+                serverCall = new SimplyTimedServerCall<>(APP_REGISTRY.simpleTimer(
+                        rules.metadata(service, methodName), rules.toTags()), call);
+                break;
+            case CONCURRENT_GAUGE:
+                serverCall = new ConcurrentGaugeServerCall<>(APP_REGISTRY.concurrentGauge(
                         rules.metadata(service, methodName), rules.toTags()), call);
                 break;
             case GAUGE:
@@ -329,6 +360,65 @@ public class GrpcMetrics
 
             long time = System.nanoTime() - startNanos;
             getMetric().update(time, TimeUnit.NANOSECONDS);
+        }
+    }
+
+    /**
+     * A {@link GrpcMetrics.MeteredServerCall} that captures call times.
+     *
+     * @param <ReqT>   the call request type
+     * @param <RespT>  the call response type
+     */
+    private class SimplyTimedServerCall<ReqT, RespT>
+            extends MetricServerCall<ReqT, RespT, SimpleTimer> {
+        /**
+         * The method start time.
+         */
+        private final long startNanos;
+
+        /**
+         * Create a {@link SimplyTimedServerCall}.
+         *
+         * @param delegate the call to time
+         */
+        private SimplyTimedServerCall(SimpleTimer simpleTimer, ServerCall<ReqT, RespT> delegate) {
+            super(simpleTimer, delegate);
+
+            this.startNanos = System.nanoTime();
+        }
+
+        @Override
+        public void close(Status status, Metadata responseHeaders) {
+            super.close(status, responseHeaders);
+
+            long time = System.nanoTime() - startNanos;
+            getMetric().update(Duration.ofNanos(time));
+        }
+    }
+
+    /**
+     * A {@link GrpcMetrics.MeteredServerCall} that captures call times.
+     *
+     * @param <ReqT>   the call request type
+     * @param <RespT>  the call response type
+     */
+    private class ConcurrentGaugeServerCall<ReqT, RespT>
+            extends MetricServerCall<ReqT, RespT, ConcurrentGauge> {
+
+        /**
+         * Create a {@link SimplyTimedServerCall}.
+         *
+         * @param delegate the call to time
+         */
+        private ConcurrentGaugeServerCall(ConcurrentGauge concurrentGauge, ServerCall<ReqT, RespT> delegate) {
+            super(concurrentGauge, delegate);
+        }
+
+        @Override
+        public void close(Status status, Metadata responseHeaders) {
+            super.close(status, responseHeaders);
+
+            getMetric().inc();
         }
     }
 
@@ -473,7 +563,7 @@ public class GrpcMetrics
          *
          * @see org.eclipse.microprofile.metrics.Metadata
          */
-        private String displayName;
+        private Optional<String> displayName = Optional.empty();
 
         /**
          * The unit of the metric.
@@ -533,9 +623,7 @@ public class GrpcMetrics
 
             this.description.ifPresent(builder::withDescription);
             this.units.ifPresent(builder::withUnit);
-
-            String displayName = this.displayName;
-            builder.withDisplayName(displayName == null ? name : displayName);
+            this.displayName.ifPresent(builder::withDisplayName);
 
             return builder.build();
         }
@@ -558,7 +646,7 @@ public class GrpcMetrics
 
         private MetricsRules displayName(String displayName) {
             MetricsRules rules = new MetricsRules(this);
-            rules.displayName = displayName;
+            rules.displayName = Optional.of(displayName);
             return rules;
         }
 

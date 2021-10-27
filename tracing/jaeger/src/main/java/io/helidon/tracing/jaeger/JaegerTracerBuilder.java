@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import io.helidon.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.tracing.TracerBuilder;
 
 import io.jaegertracing.Configuration;
+import io.jaegertracing.internal.JaegerTracer;
 import io.opentracing.Tracer;
 import io.opentracing.noop.NoopTracerFactory;
 import io.opentracing.util.GlobalTracer;
@@ -116,7 +119,7 @@ import io.opentracing.util.GlobalTracer;
  *     <tr>
  *         <td>{@code sampler-type}</td>
  *         <td>library default</td>
- *         <td>Sampler type ({@code probabilistic}, {@code ratelimiting}, or {@code remote}</td>
+ *         <td>Sampler type ({@code const}, {@code probabilistic}, {@code ratelimiting}, or {@code remote})</td>
  *     </tr>
  *     <tr>
  *         <td>{@code sampler-param}</td>
@@ -147,6 +150,7 @@ import io.opentracing.util.GlobalTracer;
  *
  * @see <a href="https://github.com/jaegertracing/jaeger-client-java/blob/master/jaeger-core/README.md">Jaeger configuration</a>
  */
+@Configured(prefix = "tracing", root = true, description = "Jaeger tracer configuration.")
 public class JaegerTracerBuilder implements TracerBuilder<JaegerTracerBuilder> {
     static final Logger LOGGER = Logger.getLogger(JaegerTracerBuilder.class.getName());
 
@@ -281,6 +285,8 @@ public class JaegerTracerBuilder implements TracerBuilder<JaegerTracerBuilder> {
      * @param password password to use
      * @return updated builder instance
      */
+    @ConfiguredOption(key = "username", type = String.class)
+    @ConfiguredOption(key = "password", type = String.class)
     public JaegerTracerBuilder basicAuth(String username, String password) {
         username(username);
         password(password);
@@ -293,6 +299,7 @@ public class JaegerTracerBuilder implements TracerBuilder<JaegerTracerBuilder> {
      * @param propagation propagation value
      * @return updated builder instance
      */
+    @ConfiguredOption(key = "propagation", kind = ConfiguredOption.Kind.LIST, type = Configuration.Propagation.class)
     public JaegerTracerBuilder addPropagation(Configuration.Propagation propagation) {
         this.propagations.add(propagation);
 
@@ -413,6 +420,7 @@ public class JaegerTracerBuilder implements TracerBuilder<JaegerTracerBuilder> {
      * @param logSpans whether to log spans
      * @return updated builder instance
      */
+    @ConfiguredOption
     public JaegerTracerBuilder logSpans(boolean logSpans) {
         this.reporterLogSpans = logSpans;
         return this;
@@ -424,6 +432,7 @@ public class JaegerTracerBuilder implements TracerBuilder<JaegerTracerBuilder> {
      * @param token token to authenticate
      * @return updated builder instance
      */
+    @ConfiguredOption
     public JaegerTracerBuilder token(String token) {
         this.token = token;
         return this;
@@ -444,7 +453,9 @@ public class JaegerTracerBuilder implements TracerBuilder<JaegerTracerBuilder> {
                         "Configuration must at least contain the 'service' key ('tracing.service` in MP) with service name");
             }
 
-            result = jaegerConfig().getTracer();
+            JaegerTracer.Builder builder = jaegerConfig().getTracerBuilder();
+            builder.withScopeManager(new JaegerScopeManager());     // use our scope manager
+            result = builder.build();
             LOGGER.info(() -> "Creating Jaeger tracer for '" + serviceName + "' configured with " + protocol + "://"
                     + host + ":" + port);
         } else {

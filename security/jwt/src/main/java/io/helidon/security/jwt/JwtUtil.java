@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2019 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -248,7 +248,19 @@ public final class JwtUtil {
         return result;
     }
 
-    private static JsonValue toJson(Object object) {
+    /**
+     * Create a {@link javax.json.JsonValue} from an object.
+     * This will use correct types for known primitives, {@link io.helidon.security.jwt.JwtUtil.Address}
+     * otherwise it uses String value.
+     *
+     * @param object object to create json value from
+     * @return json value
+     */
+    public static JsonValue toJson(Object object) {
+        if (object instanceof JsonValue) {
+            return (JsonValue) object;
+        }
+
         if (object instanceof String) {
             return JSON_PROVIDER.createValue((String) object);
         }

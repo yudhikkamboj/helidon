@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,6 +94,9 @@ public class DataChunkInputStream extends InputStream {
 
     @Override
     public void close() {
+        if (subscription != null) {
+            this.subscription.cancel();
+        }
         // Assert: if current != next, next cannot ever be resolved with a chunk that needs releasing
         Optional.ofNullable(current).ifPresent(it -> current.whenComplete(DataChunkInputStream::releaseChunk));
         current = null;

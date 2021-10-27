@@ -15,17 +15,14 @@
 # limitations under the License.
 #
 
-set -o pipefail || true  # trace ERR through pipes
-set -o errtrace || true # trace ERR through commands and functions
-set -o errexit || true  # exit the script if any statement returns a non-true return value
+# Path to this script
+[ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
 
-on_error(){
-    CODE="${?}" && \
-    set +x && \
-    printf "[ERROR] Error(code=%s) occurred at %s:%s command: %s\n" \
-        "${CODE}" "${BASH_SOURCE}" "${LINENO}" "${BASH_COMMAND}"
-}
-trap on_error ERR
+# Load pipeline environment setup and define WS_DIR
+. $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
+
+# Setup error handling using default settings (defined in includes/error_handlers.sh)
+error_trap_setup
 
 usage(){
     cat <<EOF
@@ -34,7 +31,7 @@ DESCRIPTION: Helidon Release Script
 
 USAGE:
 
-$(basename "${0}") [ --build-number=N ] CMD
+$(basename ${0}) [ --build-number=N ] CMD
 
   --version=V
         Override the version to use.
@@ -85,23 +82,11 @@ if [ -z "${COMMAND}" ] ; then
     exit 1
 fi
 
-# Path to this script
-if [ -h "${0}" ] ; then
-    readonly SCRIPT_PATH="$(readlink "${0}")"
-else
-    readonly SCRIPT_PATH="${0}"
-fi
-
-# Path to the root of the workspace
-readonly WS_DIR=$(cd "$(dirname -- "${SCRIPT_PATH}")" ; cd ../.. ; pwd -P)
-
 # Hooks for version substitution work
 readonly PREPARE_HOOKS=( )
 
 # Hooks for deployment work
 readonly PERFORM_HOOKS=( )
-
-source ${WS_DIR}/etc/scripts/pipeline-env.sh
 
 # Resolve FULL_VERSION
 if [ -z "${VERSION+x}" ]; then
@@ -123,7 +108,7 @@ else
 fi
 
 export FULL_VERSION
-printf "\n%s: FULL_VERSION=%s\n\n" "$(basename "${0}")" "${FULL_VERSION}"
+printf "\n%s: FULL_VERSION=%s\n\n" "$(basename ${0})" "${FULL_VERSION}"
 
 update_version(){
     # Update version
@@ -134,27 +119,24 @@ update_version(){
         -DprocessAllModules=true
 
     # Hack to update helidon.version
-    for pom in $(grep -E "<helidon.version>.*</helidon.version>" -r . --include pom.xml | cut -d ':' -f 1 | sort | uniq)
+    for pom in `egrep "<helidon.version>.*</helidon.version>" -r . --include pom.xml | cut -d ':' -f 1 | sort | uniq `
     do
-        # shellcheck disable=SC2002
-        cat "${pom}" | \
+        cat ${pom} | \
             sed -e s@'<helidon.version>.*</helidon.version>'@"<helidon.version>${FULL_VERSION}</helidon.version>"@g \
-            > "${pom}".tmp
-        mv "${pom}".tmp "${pom}"
+            > ${pom}.tmp
+        mv ${pom}.tmp ${pom}
     done
 
     # Hack to update helidon.version in build.gradle files
-    for bfile in $(grep -E "helidonversion = .*" -r . --include build.gradle | cut -d ':' -f 1 | sort | uniq)
+    for bfile in `egrep "helidonversion = .*" -r . --include build.gradle | cut -d ':' -f 1 | sort | uniq `
     do
-        # shellcheck disable=SC2002
-        cat "${bfile}" | \
+        cat ${bfile} | \
             sed -e s@'helidonversion = .*'@"helidonversion = \'${FULL_VERSION}\'"@g \
-            > "${bfile}".tmp
-        mv "${bfile}".tmp "${bfile}"
+            > ${bfile}.tmp
+        mv ${bfile}.tmp ${bfile}
     done
 
     # Invoke prepare hook
-    # shellcheck disable=SC2128
     if [ -n "${PREPARE_HOOKS}" ]; then
         for prepare_hook in ${PREPARE_HOOKS} ; do
             bash "${prepare_hook}"
@@ -173,7 +155,7 @@ release_site(){
     mvn ${MAVEN_ARGS} site
 
     # Sign site jar
-    gpg -ab ${WS_DIR}/target/helidon-project-"${FULL_VERSION}"-site.jar
+    gpg -ab ${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar
 
     # Deploy site.jar and signature file explicitly using deploy-file
     mvn ${MAVEN_ARGS} deploy:deploy-file \
@@ -201,7 +183,6 @@ release_build(){
     update_version
 
     # Update scm/tag entry in the parent pom
-    # shellcheck disable=SC2002
     cat parent/pom.xml | \
         sed -e s@'<tag>HEAD</tag>'@"<tag>${FULL_VERSION}</tag>"@g \
         > parent/pom.xml.tmp
@@ -220,9 +201,8 @@ release_build(){
         -DstagingProfileId="6026dab46eed94" \
         -DstagingDescription="${STAGING_DESC}"
 
-    # shellcheck disable=SC2155
     export STAGING_REPO_ID=$(mvn ${MAVEN_ARGS} nexus-staging:rc-list | \
-        grep -E "^[0-9:,]*[ ]?\[INFO\] iohelidon\-[0-9]+[ ]+OPEN[ ]+${STAGING_DESC}" | \
+        egrep "^[0-9:,]*[ ]?\[INFO\] iohelidon\-[0-9]+[ ]+OPEN[ ]+${STAGING_DESC}" | \
         awk '{print $2" "$3}' | \
         sed -e s@'\[INFO\] '@@g -e s@'OPEN'@@g | \
         head -1)
@@ -236,7 +216,6 @@ release_build(){
       -DretryFailedDeploymentCount="10"
 
     # Invoke perform hooks
-    # shellcheck disable=SC2128
     if [ -n "${PERFORM_HOOKS}" ]; then
       for perform_hook in ${PERFORM_HOOKS} ; do
         bash "${perform_hook}"
@@ -252,7 +231,6 @@ release_build(){
       -DstagingDescription="${STAGING_DESC}"
 
     # Create and push a git tag
-    # shellcheck disable=SC2155
     local GIT_REMOTE=$(git config --get remote.origin.url | \
         sed "s,https://\([^/]*\)/,git@\1:,")
 

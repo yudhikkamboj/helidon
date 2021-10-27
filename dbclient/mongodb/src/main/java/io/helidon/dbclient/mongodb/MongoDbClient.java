@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,6 +63,29 @@ public class MongoDbClient implements DbClient {
         this.db = initMongoDatabase();
     }
 
+    /**
+     * Creates an instance of MongoDB driver handler with MongoDb client and connection
+     * supplied.
+     * Used in jUnit tests to mock MongoDB driver internals.
+     *
+     * @param builder builder for mongoDB database
+     * @param client MongoDB client provided externally
+     * @param db MongoDB database provided externally
+     */
+    MongoDbClient(MongoDbClientProviderBuilder builder, MongoClient client, MongoDatabase db) {
+        this.clientContext = DbClientContext.builder()
+                .dbMapperManager(builder.dbMapperManager())
+                .mapperManager(builder.mapperManager())
+                .clientServices(builder.clientServices())
+                .statements(builder.statements())
+                .build();
+
+        this.config = builder.dbConfig();
+        this.connectionString = config != null ? new ConnectionString(config.url()) : null;
+        this.client = client;
+        this.db = db;
+    }
+
     private static final class MongoSessionSubscriber implements org.reactivestreams.Subscriber<ClientSession> {
 
         private final CompletableFuture<ClientSession> txFuture;
@@ -123,15 +146,24 @@ public class MongoDbClient implements DbClient {
     }
 
     @Override
-    public Single<Void> ping() {
-        return execute(exec -> exec
-                .get("{\"operation\":\"command\",\"query\":{ping:1}}"))
-                .flatMapSingle(it -> Single.empty());
-    }
-
-    @Override
     public String dbType() {
         return MongoDbClientProvider.DB_TYPE;
+    }
+
+    // MongoDB internals are not blocking. Single instance is returned as already completed.
+    @Override
+    public <C> Single<C> unwrap(Class<C> cls) {
+        if (MongoClient.class.isAssignableFrom(cls)) {
+            final CompletableFuture<MongoClient> future = new CompletableFuture<>();
+            future.complete(client);
+            return Single.create(future).map(cls::cast);
+        } else if (MongoDatabase.class.isAssignableFrom(cls)) {
+            final CompletableFuture<MongoDatabase> future = new CompletableFuture<>();
+            future.complete(db);
+            return Single.create(future).map(cls::cast);
+        } else {
+            throw new UnsupportedOperationException(String.format("Class %s is not supported for unwrap", cls.getName()));
+        }
     }
 
     /**

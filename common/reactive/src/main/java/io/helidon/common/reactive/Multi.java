@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
@@ -633,6 +634,21 @@ public interface Multi<T> extends Subscribable<T> {
     }
 
     /**
+     * Transform item with supplied function and flatten resulting {@link java.util.concurrent.CompletionStage} results
+     * to downstream. As reactive streams forbids null values, CompletionStage result is mapped to
+     * {@link java.util.Optional}.
+     *
+     * @param mapper {@link Function} receiving item as parameter and returning {@link java.util.concurrent.CompletionStage}
+     * @param <U>    output item type
+     * @return Multi
+     * @throws NullPointerException if mapper is {@code null}
+     */
+    default <U> Multi<U> flatMapCompletionStage(Function<? super T, ? extends CompletionStage<? extends U>> mapper) {
+        Objects.requireNonNull(mapper, "mapper is null");
+        return flatMap(t -> Multi.create(mapper.apply(t)), 1, false, 1);
+    }
+
+    /**
      * Transform item with supplied function and flatten resulting {@link Iterable} to downstream.
      *
      * @param iterableMapper {@link Function} receiving item as parameter and returning {@link Iterable}
@@ -656,6 +672,22 @@ public interface Multi<T> extends Subscribable<T> {
                                          int prefetch) {
         Objects.requireNonNull(iterableMapper, "iterableMapper is null");
         return new MultiFlatMapIterable<>(this, iterableMapper, prefetch);
+    }
+
+    /**
+     * Transform item with supplied function and flatten resulting {@link java.util.Optional} to downstream
+     * as one item if present or nothing if empty.
+     *
+     * @param mapper {@link Function} receiving item as parameter and returning {@link java.util.Optional}
+     * @param <U>    output item type
+     * @return Multi
+     */
+    default <U> Multi<U> flatMapOptional(Function<? super T, Optional<? extends U>> mapper) {
+        Objects.requireNonNull(mapper, "mapper is null");
+        return flatMap(t -> mapper.apply(t)
+                .map(Multi::just)
+                .orElseGet(Multi::empty)
+        );
     }
 
     /**
@@ -717,13 +749,10 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> onCancel(Runnable onCancel) {
-        return new MultiTappedPublisher<>(this,
-                null,
-                null,
-                null,
-                null,
-                null,
-                onCancel);
+        return MultiTappedPublisher.builder(this)
+                .operatorName("Multi.onCancel")
+                .onCancelCallback(onCancel)
+                .build();
     }
 
     /**
@@ -733,13 +762,10 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> onComplete(Runnable onComplete) {
-        return new MultiTappedPublisher<>(this,
-                null,
-                null,
-                null,
-                onComplete,
-                null,
-                null);
+        return MultiTappedPublisher.builder(this)
+                .operatorName("Multi.onComplete")
+                .onCompleteCallback(onComplete)
+                .build();
     }
 
     /**
@@ -749,13 +775,10 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> onError(Consumer<? super Throwable> onErrorConsumer) {
-        return new MultiTappedPublisher<>(this,
-                null,
-                null,
-                onErrorConsumer,
-                null,
-                null,
-                null);
+        return MultiTappedPublisher.builder(this)
+                .operatorName("Multi.onError")
+                .onErrorCallback(onErrorConsumer)
+                .build();
     }
 
     /**
@@ -807,13 +830,23 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> onTerminate(Runnable onTerminate) {
-        return new MultiTappedPublisher<>(this,
-                null,
-                null,
-                e -> onTerminate.run(),
-                onTerminate,
-                null,
-                onTerminate);
+        return MultiTappedPublisher.builder(this)
+                .operatorName("Multi.onTerminate")
+                .onErrorCallback(t -> onTerminate.run())
+                .onCompleteCallback(onTerminate)
+                .onCancelCallback(onTerminate)
+                .build();
+    }
+
+    /**
+     * Executes given {@link java.lang.Runnable} when stream is finished without value(empty stream).
+     *
+     * @param ifEmpty {@link java.lang.Runnable} to be executed.
+     * @return Multi
+     */
+    default Multi<T> ifEmpty(Runnable ifEmpty) {
+        Objects.requireNonNull(ifEmpty, "ifEmpty callback is null");
+        return new MultiIfEmptyPublisher<>(this, ifEmpty);
     }
 
     /**
@@ -823,8 +856,10 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> peek(Consumer<? super T> consumer) {
-        return new MultiTappedPublisher<>(this, null, consumer,
-                null, null, null, null);
+        return MultiTappedPublisher.builder(this)
+                .operatorName("Multi.peek")
+                .onNextCallback(consumer)
+                .build();
     }
 
     /**
@@ -835,7 +870,7 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> log() {
-        return new MultiLoggingPublisher<>(this, Level.INFO, false);
+        return Multi.create(new LoggingPublisher<>(this, Level.INFO, false));
     }
 
     /**
@@ -847,7 +882,7 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> log(Level level) {
-        return new MultiLoggingPublisher<>(this, level, false);
+        return Multi.create(new LoggingPublisher<>(this, level, false));
     }
 
     /**
@@ -860,7 +895,7 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> log(Level level, String loggerName) {
-        return new MultiLoggingPublisher<>(this, level, loggerName);
+        return Multi.create(new LoggingPublisher<>(this, level, loggerName));
     }
 
     /**
@@ -875,7 +910,7 @@ public interface Multi<T> extends Subscribable<T> {
      * @return Multi
      */
     default Multi<T> log(Level level, boolean trace) {
-        return new MultiLoggingPublisher<>(this, level, trace);
+        return Multi.create(new LoggingPublisher<>(this, level, trace));
     }
 
     /**
@@ -1084,6 +1119,15 @@ public interface Multi<T> extends Subscribable<T> {
 
         this.subscribe(subscriber);
         return single;
+    }
+
+    /**
+     * Terminal stage, ignore all items and complete returned {@code Single<Void>} successfully or exceptionally.
+     *
+     * @return Single completed when the stream terminates
+     */
+    default Single<Void> ignoreElements() {
+        return forEach(t -> {});
     }
 
 }

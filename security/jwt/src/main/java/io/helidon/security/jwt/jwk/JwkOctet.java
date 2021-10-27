@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,6 +89,7 @@ public class JwkOctet extends Jwk {
 
     /**
      * Create an instance from Json object.
+     * Note that the {@code "k"} must be base64 encoded.
      *
      * @param json with definition of this octet web key
      * @return new instance of this class constructed from json
@@ -160,6 +161,7 @@ public class JwkOctet extends Jwk {
 
         /**
          * Update this builder from JWK in json format.
+         * Note that the {@code "k"} must be base64 encoded.
          *
          * @param json JsonObject with the JWK
          * @return updated builder instance, just call {@link #build()} to build the {@link JwkOctet} instance

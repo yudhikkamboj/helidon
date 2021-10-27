@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,6 +74,7 @@ public class KafkaSubscriber<K, V> implements Subscriber<Message<V>> {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public void onNext(Message<V> message) {
         Objects.requireNonNull(message);
         List<CompletableFuture<Void>> futureList = new ArrayList<>(topics.size());
@@ -151,6 +152,7 @@ public class KafkaSubscriber<K, V> implements Subscriber<Message<V>> {
      * @param config configuration to load from
      * @return updated builder instance
      */
+    @SuppressWarnings("unchecked")
     public static <K, V> KafkaSubscriber<K, V> create(Config config) {
         return (KafkaSubscriber<K, V>) builder().config(config).build();
     }
@@ -200,7 +202,7 @@ public class KafkaSubscriber<K, V> implements Subscriber<Message<V>> {
          *
          * This is a mandatory parameter.
          *
-         * @param producerSupplier
+         * @param producerSupplier supply instantiated the KafkaSubscriber
          * @return updated builder instance
          */
         public Builder<K, V> producerSupplier(Supplier<Producer<K, V>> producerSupplier) {
@@ -213,7 +215,7 @@ public class KafkaSubscriber<K, V> implements Subscriber<Message<V>> {
          *
          * The default value is 5.
          *
-         * @param backpressure
+         * @param backpressure number of messages requested
          * @return updated builder instance
          */
         public Builder<K, V> backpressure(long backpressure) {
@@ -226,7 +228,7 @@ public class KafkaSubscriber<K, V> implements Subscriber<Message<V>> {
          *
          * This is a mandatory parameter.
          *
-         * @param topics
+         * @param topics list of the topics
          * @return updated builder instance
          */
         public Builder<K, V> topics(List<String> topics) {

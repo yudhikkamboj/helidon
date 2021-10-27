@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -152,6 +152,52 @@ public interface WebClientRequestBuilder {
     WebClientRequestBuilder headers(Function<WebClientRequestHeaders, Headers> headers);
 
     /**
+     * Adds header values for a specified name.
+     *
+     * @param name   header name
+     * @param values header values
+     * @return this instance of {@link WebClientRequestBuilder}
+     * @throws NullPointerException if the specified name is null.
+     * @see #headers()
+     * @see Parameters#add(String, String...)
+     * @see Http.Header header names constants
+     */
+    default WebClientRequestBuilder addHeader(String name, String... values) {
+        headers().add(name, values);
+        return this;
+    }
+
+    /**
+     * Adds header values for a specified name.
+     *
+     * @param name   header name
+     * @param values header values
+     * @return this instance of {@link WebClientRequestBuilder}
+     * @throws NullPointerException if the specified name is null.
+     * @see #headers()
+     * @see Parameters#add(String, Iterable)
+     * @see Http.Header header names constants
+     */
+    default WebClientRequestBuilder addHeader(String name, Iterable<String> values) {
+        headers().add(name, values);
+        return this;
+    }
+
+    /**
+     * Copies all of the mappings from the specified {@code parameters} to this response headers instance.
+     *
+     * @param parameters to copy.
+     * @return this instance of {@link WebClientRequestBuilder}
+     * @throws NullPointerException if the specified {@code parameters} are null.
+     * @see #headers()
+     * @see Parameters#addAll(Parameters)
+     */
+    default WebClientRequestBuilder addHeaders(Parameters parameters){
+        headers().addAll(parameters);
+        return this;
+    }
+
+    /**
      * Configure query parameters.
      *
      * Appends these query parameters to the query parameters defined in the request uri.
@@ -264,6 +310,14 @@ public interface WebClientRequestBuilder {
      * @return updated builder instance
      */
     WebClientRequestBuilder requestId(long requestId);
+
+    /**
+     * Whether chunked {@link Http.Header#TRANSFER_ENCODING} should be added to the headers if the entity is chunked.
+     *
+     * @param allowChunkedEncoding allow chunked encoding to be added
+     * @return updated builder instance
+     */
+    WebClientRequestBuilder allowChunkedEncoding(boolean allowChunkedEncoding);
 
     /**
      * Performs prepared request and transforms response to requested type.

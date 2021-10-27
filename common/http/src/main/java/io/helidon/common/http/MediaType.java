@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -475,7 +475,7 @@ public final class MediaType implements AcceptPredicate<MediaType> {
     @Override
     public double qualityFactor() {
         String q = parameters.get(AcceptPredicate.QUALITY_FACTOR_PARAMETER);
-        return q == null ? 1D : Double.valueOf(q);
+        return q == null ? 1D : Double.parseDouble(q);
     }
 
     /**
@@ -489,16 +489,16 @@ public final class MediaType implements AcceptPredicate<MediaType> {
     // fixme: Bidirectional wildcard compatibility
     @Override
     public boolean test(MediaType other) {
-        return other != null && // return false if other is null, else
-                (
-                        type.equals(AcceptPredicate.WILDCARD_VALUE)
-                                || other.type.equals(AcceptPredicate.WILDCARD_VALUE)
-                                || (
-                                type.equalsIgnoreCase(other.type)
-                                        && (
-                                        subtype.equals(AcceptPredicate.WILDCARD_VALUE) || other.subtype
-                                                .equals(AcceptPredicate.WILDCARD_VALUE)))
-                                || (type.equalsIgnoreCase(other.type) && this.subtype.equalsIgnoreCase(other.subtype)));
+        return other != null // return false if other is null, else
+                && (
+                type.equals(AcceptPredicate.WILDCARD_VALUE)
+                        || other.type.equals(AcceptPredicate.WILDCARD_VALUE)
+                        || (
+                        type.equalsIgnoreCase(other.type)
+                                && (
+                                subtype.equals(AcceptPredicate.WILDCARD_VALUE) || other.subtype
+                                        .equals(AcceptPredicate.WILDCARD_VALUE)))
+                        || (type.equalsIgnoreCase(other.type) && this.subtype.equalsIgnoreCase(other.subtype)));
     }
 
     /**

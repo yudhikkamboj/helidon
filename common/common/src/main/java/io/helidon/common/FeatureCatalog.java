@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,14 +45,16 @@ final class FeatureCatalog {
                     .description("Server for gRPC services")
                     .path("grpc")
                     .flavor(HelidonFlavor.SE)
-                    .nativeSupported(false));
+                    .nativeSupported(true)
+                    .nativeDescription("Experimental support in native image"));
         add("io.helidon.grpc.client",
             FeatureDescriptor.builder()
                     .name("gRPC Client")
                     .description("Client for gRPC services")
                     .path("grpcClient")
                     .flavor(HelidonFlavor.SE)
-                    .nativeSupported(false));
+                    .nativeSupported(true)
+                    .nativeDescription("Experimental support in native image"));
         addSe("io.helidon.grpc.metrics",
               "Metrics",
               "Metrics for gRPC services",
@@ -144,6 +146,13 @@ final class FeatureCatalog {
               "Jersey",
               "WebServer integration with Jersey",
               "WebServer", "Jersey");
+        add("io.helidon.scheduling",
+                FeatureDescriptor.builder()
+                        .flavor(HelidonFlavor.SE)
+                        .name("Scheduling")
+                        .description("Scheduling of periodical tasks")
+                        .path("Scheduling")
+                        .nativeSupported(true));
         add("io.helidon.webserver.tyrus",
             FeatureDescriptor.builder()
                     .flavor(HelidonFlavor.SE)
@@ -160,7 +169,36 @@ final class FeatureCatalog {
                     .nativeDescription("Experimental support, tested on limited use cases")
                     .flavor(HelidonFlavor.SE)
                     .experimental(true));
-
+        add("io.helidon.integrations.micrometer",
+            FeatureDescriptor.builder()
+                    .name("Micrometer")
+                    .description("Micrometer integration")
+                    .path("Micrometer")
+                    .experimental(true)
+                    .nativeSupported(true)
+                    .flavor(HelidonFlavor.SE));
+        add("io.helidon.integrations.oci.connect",
+            FeatureDescriptor.builder()
+                    .name("OCI")
+                    .description("OCI Integration")
+                    .path("OCI")
+                    .flavor(HelidonFlavor.SE)
+                    .experimental(true));
+        add("io.helidon.integrations.vault",
+            FeatureDescriptor.builder()
+                    .name("HCP Vault")
+                    .description("Hashicorp Vault Integration")
+                    .path("HCP Vault")
+                    .flavor(HelidonFlavor.SE)
+                    .experimental(true));
+        add("io.helidon.integrations.microstream",
+            FeatureDescriptor.builder()
+                    .name("Microstream")
+                    .description("Microstream Integration")
+                    .path("Microstream")
+                    .flavor(HelidonFlavor.SE)
+                    .experimental(true)
+                    .nativeSupported(false));
         /*
          * MP Modules
          */
@@ -324,6 +362,58 @@ final class FeatureCatalog {
                     .experimental(true)
         );
 
+        add("io.helidon.microprofile.scheduling",
+            FeatureDescriptor.builder()
+                    .name("Scheduling")
+                    .description("Task scheduling")
+                    .path("Scheduling")
+                    .flavor(HelidonFlavor.MP)
+                    .nativeSupported(true)
+                    .experimental(true)
+        );
+
+        add("io.helidon.integrations.micrometer.cdi",
+            FeatureDescriptor.builder()
+                    .name("Micrometer")
+                    .description("Micrometer integration")
+                    .path("Micrometer")
+                    .experimental(true)
+                    .nativeSupported(true)
+                    .flavor(HelidonFlavor.MP));
+
+        add("io.helidon.integrations.oci.cdi",
+            FeatureDescriptor.builder()
+                    .name("OCI")
+                    .description("OCI Integration")
+                    .path("OCI")
+                    .flavor(HelidonFlavor.MP)
+                    .experimental(true));
+
+        add("io.helidon.integrations.vault.cdi",
+            FeatureDescriptor.builder()
+                    .name("HCP Vault")
+                    .description("Hashicorp Vault Integration")
+                    .path("HCP Vault")
+                    .flavor(HelidonFlavor.MP)
+                    .experimental(true));
+
+        add("io.helidon.microprofile.lra",
+                FeatureDescriptor.builder()
+                        .name("Long Running Actions")
+                        .description("MicroProfile Long Running Actions")
+                        .path("LRA")
+                        .flavor(HelidonFlavor.MP)
+                        .nativeSupported(true)
+                        .experimental(true));
+
+        add("io.helidon.integrations.microstream.cdi",
+            FeatureDescriptor.builder()
+                    .name("Microstream")
+                    .description("Microstream Integration")
+                    .path("Microstream")
+                    .flavor(HelidonFlavor.MP)
+                    .experimental(true)
+                    .nativeSupported(false));
         /*
          * Common modules
          */
@@ -415,7 +505,8 @@ final class FeatureCatalog {
                     .name("EL")
                     .description("ABAC Jakarta Expression Language policy support")
                     .path("Security", "Provider", "ABAC", "Policy", "EL")
-                    .nativeSupported(false));
+                    .nativeSupported(true)
+                    .nativeDescription("Properties used in expressions must have reflection configuration added"));
         add("io.helidon.security.abac.role",
             "Role",
             "ABAC Role based attribute validator",
@@ -466,6 +557,9 @@ final class FeatureCatalog {
             "HTTP Signatures",
             "Security provider for HTTP Signature authentication and outbound",
             "Security", "Provider", "HttpSign");
+        add("io.helidon.security.providers.config.vault",
+            "Config Vault",
+            "Security", "Provider", "ConfigVault");
         add("io.helidon.security.providers.idcs.mapper",
             FeatureDescriptor.builder()
                     .name("IDCS Role Mapper")
@@ -484,6 +578,10 @@ final class FeatureCatalog {
             "Jaeger",
             "Jaeger tracer integration",
             "Tracing", "Jaeger");
+        add("io.helidon.metrics.jaeger",
+                "Jaeger metrics",
+                "Jaeger tracer metrics integration",
+                "Metrics", "Jaeger");
         add("io.helidon.tracing.jersey",
             "Jersey Server",
             "Tracing integration with Jersey server",
@@ -496,6 +594,23 @@ final class FeatureCatalog {
             "Zipkin",
             "Zipkin tracer integration",
             "Tracing", "Zipkin");
+        add("io.helidon.integrations.neo4j",
+                FeatureDescriptor.builder()
+                        .name("Neo4j integration")
+                        .description("Integration with Neo4j driver")
+                        .path("Neo4j")
+                        .experimental(true)
+                        .nativeSupported(true));
+        add("io.helidon.integrations.neo4j.health",
+                FeatureDescriptor.builder()
+                        .name("Neo4j Health")
+                        .description("Health check for Neo4j integration")
+                        .path("Neo4j", "Health"));
+        add("io.helidon.integrations.neo4j.metrics",
+                FeatureDescriptor.builder()
+                        .name("Neo4j Metrics")
+                        .description("Metrics for Neo4j integration")
+                        .path("Neo4j", "Metrics"));
         add("io.helidon.webclient",
             FeatureDescriptor.builder()
                     .name("Web Client")
@@ -520,6 +635,62 @@ final class FeatureCatalog {
                     .path("Logging", "Log4j")
                     .description("Log4j MDC support")
                     .nativeDescription("Only programmatic configuration supported, does not work with Helidon loggers"));
+        add("io.helidon.webserver.staticcontent",
+            "Static Content",
+            "Static content support for webserver",
+            "WebServer", "Static Content");
+        add("io.helidon.integrations.oci.objectstorage",
+            "OCI Object Storage",
+            "Integration with OCI Object Storage",
+            "OCI", "Object Storage");
+        add("io.helidon.integrations.oci.vault",
+            "OCI Vault",
+            "Integration with OCI Vault",
+            "OCI", "Vault");
+        add("io.helidon.integrations.oci.telemetry",
+            "OCI Telemetry",
+            "Integration with OCI Telemetry",
+            "OCI", "Telemetry");
+        add("io.helidon.integrations.vault.auths.approle",
+            "AppRole",
+            "AppRole Authentication Method",
+            "HCP Vault", "Auth", "AppRole");
+        add("io.helidon.integrations.vault.auths.k8s",
+            "k8s",
+            "Kubernetes Authentication Method",
+            "HCP Vault", "Auth", "k8s");
+        add("io.helidon.integrations.vault.auths.token",
+            "Token",
+            "Token Authentication Method",
+            "HCP Vault", "Auth", "Token");
+        add("io.helidon.integrations.vault.secrets.cubbyhole",
+            "Cubbyhole",
+            "Cubbyhole Secrets Engine",
+            "HCP Vault", "Secrets", "Cubbyhole");
+        add("io.helidon.integrations.vault.secrets.database",
+            "Database",
+            "Database Secrets Engine",
+            "HCP Vault", "Secrets", "Database");
+        add("io.helidon.integrations.vault.secrets.kv1",
+            "K/V 1",
+            "Key/Value Version 1 Secrets Engine",
+            "HCP Vault", "Secrets", "K/V 1");
+        add("io.helidon.integrations.vault.secrets.kv2",
+            "K/V 2",
+            "Key/Value Version 2 Secrets Engine",
+            "HCP Vault", "Secrets", "K/V 2");
+        add("io.helidon.integrations.vault.secrets.pki",
+            "PKI",
+            "PKI Secrets Engine",
+            "HCP Vault", "Secrets", "PKI");
+        add("io.helidon.integrations.vault.secrets.transit",
+            "Transit",
+            "Transit Secrets Engine",
+            "HCP Vault", "Secrets", "Transit");
+        add("io.helidon.integrations.vault.sys",
+            "Sys",
+            "System operations",
+            "HCP Vault", "Sys");
 
         /*
          * Packages that are not a feature
@@ -581,6 +752,8 @@ final class FeatureCatalog {
         exclude("io.helidon.tracing.tracerresolver");
         exclude("io.helidon.webclient.jaxrs");
         exclude("io.helidon.webclient.spi");
+        exclude("io.helidon.common.context.spi");
+        exclude("io.helidon.grpc.core");
     }
 
     static Set<FeatureDescriptor> get(String packageName) {

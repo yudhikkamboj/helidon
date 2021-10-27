@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,25 +58,23 @@ public interface DbClient {
     <U, T extends Subscribable<U>> T execute(Function<DbExecute, T> executor);
 
     /**
-     * Name of the named statement used in database health checks.
-     */
-    String PING_STATEMENT_NAME = "ping";
-
-    /**
-     * Pings the database, completes when DB is up and ready, completes exceptionally if not.
-     * Executes simple SQL query defined as {@code db.statements.ping} configuration property.
-     *
-     * @return stage that completes when the ping finished
-     * @deprecated Use {@code io.helidon.dbclient.health.DbClientHealthCheck} instead.
-     */
-    Single<Void> ping();
-
-    /**
      * Type of this database provider (such as jdbc:mysql, mongoDB etc.).
      *
      * @return name of the database provider
      */
     String dbType();
+
+    /**
+     * Unwrap database client internals.
+     * Only database connection is supported. Any operations based on this connection are <b>blocking</b>.
+     * Reactive support must be implemented in user code.
+     *
+     * @param <C> target class to be unwrapped
+     * @param cls target class to be unwrapped
+     * @return database client internals future matching provided class.
+     * @throws UnsupportedOperationException when provided class is not supported
+     */
+    <C> Single<C> unwrap(Class<C> cls);
 
     /**
      * Create Helidon database handler builder.

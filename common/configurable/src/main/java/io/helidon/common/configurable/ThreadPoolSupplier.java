@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import java.util.logging.Logger;
 import io.helidon.common.LazyValue;
 import io.helidon.common.context.Contexts;
 import io.helidon.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 
 /**
  * Supplier of a custom thread pool.
@@ -58,6 +60,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
     private final int growthRate;
     private final ThreadPool.RejectionHandler rejectionHandler;
     private final LazyValue<ExecutorService> lazyValue = LazyValue.create(() -> Contexts.wrap(getThreadPool()));
+    private final boolean useVirtualThreads;
 
     private ThreadPoolSupplier(Builder builder) {
         this.corePoolSize = builder.corePoolSize;
@@ -71,6 +74,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
         this.growthThreshold = builder.growthThreshold;
         this.growthRate = builder.growthRate;
         this.rejectionHandler = builder.rejectionHandler == null ? DEFAULT_REJECTION_POLICY : builder.rejectionHandler;
+        this.useVirtualThreads = builder.useVirtualThreads || builder.virtualThreadsEnforced;
     }
 
     /**
@@ -102,7 +106,14 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
         return builder().build();
     }
 
-    ThreadPool getThreadPool() {
+    ExecutorService getThreadPool() {
+        if (useVirtualThreads) {
+            if (VirtualExecutorUtil.isVirtualSupported()) {
+                LOGGER.fine("Using unbounded virtual executor service for pool " + name);
+                return VirtualExecutorUtil.executorService();
+            }
+        }
+
         ThreadPool result = ThreadPool.create(name,
                                               corePoolSize,
                                               maxPoolSize,
@@ -137,6 +148,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
     /**
      * A fluent API builder for {@link ThreadPoolSupplier}.
      */
+    @Configured
     public static final class Builder implements io.helidon.common.Builder<ThreadPoolSupplier> {
         private int corePoolSize = DEFAULT_CORE_POOL_SIZE;
         private int maxPoolSize = DEFAULT_MAX_POOL_SIZE;
@@ -149,6 +161,8 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
         private int growthRate = DEFAULT_GROWTH_RATE;
         private ThreadPool.RejectionHandler rejectionHandler = DEFAULT_REJECTION_POLICY;
         private String name;
+        private boolean useVirtualThreads;
+        private boolean virtualThreadsEnforced;
 
         private Builder() {
         }
@@ -162,6 +176,13 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
                 rejectionHandler = DEFAULT_REJECTION_POLICY;
             }
 
+            if (virtualThreadsEnforced) {
+                if (!VirtualExecutorUtil.isVirtualSupported()) {
+                    throw new IllegalStateException("Virtual threads are required, yet not available on this JVM. "
+                                                            + "Please use a Loom build.");
+                }
+            }
+
             return new ThreadPoolSupplier(this);
         }
 
@@ -171,6 +192,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param corePoolSize see {@link ThreadPoolExecutor#getCorePoolSize()}
          * @return updated builder instance
          */
+        @ConfiguredOption("10")
         public Builder corePoolSize(int corePoolSize) {
             this.corePoolSize = corePoolSize;
             return this;
@@ -182,6 +204,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param maxPoolSize see {@link ThreadPoolExecutor#getMaximumPoolSize()}
          * @return updated builder instance
          */
+        @ConfiguredOption("50")
         public Builder maxPoolSize(int maxPoolSize) {
             this.maxPoolSize = maxPoolSize;
             return this;
@@ -193,6 +216,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param keepAliveMinutes see {@link ThreadPoolExecutor#getKeepAliveTime(TimeUnit)}
          * @return updated builder instance
          */
+        @ConfiguredOption("3")
         public Builder keepAliveMinutes(int keepAliveMinutes) {
             this.keepAliveMinutes = keepAliveMinutes;
             return this;
@@ -204,6 +228,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param queueCapacity capacity of the queue backing the executor
          * @return updated builder instance
          */
+        @ConfiguredOption("10000")
         public Builder queueCapacity(int queueCapacity) {
             this.queueCapacity = queueCapacity;
             return this;
@@ -215,6 +240,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param daemon whether the threads are daemon threads
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "is-daemon", value = "true")
         public Builder daemon(boolean daemon) {
             isDaemon = daemon;
             return this;
@@ -237,6 +263,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param growthThreshold the growth threshold
          * @return updated builder instance
          */
+        @ConfiguredOption("256")
         Builder growthThreshold(int growthThreshold) {
             this.growthThreshold = growthThreshold;
             return this;
@@ -256,6 +283,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param growthRate the growth rate
          * @return updated builder instance
          */
+        @ConfiguredOption("5")
         Builder growthRate(int growthRate) {
             this.growthRate = growthRate;
             return this;
@@ -278,6 +306,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param threadNamePrefix prefix of a thread name
          * @return updated builder instance
          */
+        @ConfiguredOption("helidon-")
         public Builder threadNamePrefix(String threadNamePrefix) {
             this.threadNamePrefix = threadNamePrefix;
             return this;
@@ -289,14 +318,16 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          * @param prestart whether to prestart the threads
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "should-prestart", value = "true")
         public Builder prestart(boolean prestart) {
             this.prestart = prestart;
             return this;
         }
 
         /**
-         * Load all properties for this thread pool from configuration.
          * <p>
+         * Load all properties for this thread pool from configuration.
+         * </p>
          * <table class="config">
          * <caption>Optional Configuration Parameters</caption>
          * <tr>
@@ -341,7 +372,7 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
          *     <td>Whether or not all core threads should be started when the pool is created.</td>
          * </tr>
          * </table>
-         * <p>
+         * <br>
          * <table class="config">
          * <caption>Experimental Configuration Parameters (<em>subject to change</em>)</caption>
          * <tr>
@@ -390,13 +421,50 @@ public final class ThreadPoolSupplier implements Supplier<ExecutorService> {
             config.get("growth-rate").asInt().ifPresent(value -> {
                 warnExperimental("growth-rate");
                 growthRate(value);
-
+           });
+            config.get("virtual-threads").asBoolean().ifPresent(value -> {
+                warnExperimental("virtual-threads");
+                virtualIfAvailable(value);
+            });
+            config.get("virtual-enforced").asBoolean().ifPresent(value -> {
+                warnExperimental("virtual-enforced");
+                virtualEnforced(value);
             });
             return this;
         }
 
         private void warnExperimental(String key) {
             LOGGER.warning(String.format("Config key \"executor-service.%s\" is EXPERIMENTAL and subject to change.", key));
+        }
+
+        /**
+         * When configured to {@code true}, virtual thread executor service must be available, otherwise the built
+         * executor would fail to start.
+         *
+         * @param enforceVirtualThreads whether to enforce virtual threads, defaults to {@code false}
+         * @return updated builder instance
+         * @see #virtualIfAvailable(boolean)
+         */
+        @ConfiguredOption(value = "false", experimental = true)
+        public Builder virtualEnforced(boolean enforceVirtualThreads) {
+            this.virtualThreadsEnforced = enforceVirtualThreads;
+            return this;
+        }
+
+        /**
+         * When configured to {@code true}, an unbounded virtual executor service (project Loom) will be used
+         * if available.
+         * This is an experimental feature.
+         * <p>
+         * If enabled and available, all other configuration options of this executor service are ignored!
+         *
+         * @param useVirtualThreads whether to use virtual threads or not, defaults to {@code false}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "virtual-threads", value = "false", experimental = true)
+        public Builder virtualIfAvailable(boolean useVirtualThreads) {
+            this.useVirtualThreads = useVirtualThreads;
+            return this;
         }
     }
 }

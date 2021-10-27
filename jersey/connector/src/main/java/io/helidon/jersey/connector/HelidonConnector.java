@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package io.helidon.jersey.connector;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.AccessController;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,8 +59,8 @@ import org.glassfish.jersey.spi.ExecutorServiceProvider;
  */
 class HelidonConnector implements Connector {
 
-    private static final String HELIDON_VERSION = "Helidon/" + Version.VERSION + " (java " + AccessController
-            .doPrivileged(PropertiesHelper.getSystemProperty("java.runtime.version")) + ")";
+    private static final String HELIDON_VERSION = "Helidon/" + Version.VERSION + " (java "
+            + PropertiesHelper.getSystemProperty("java.runtime.version") + ")";
     static final Logger LOGGER = Logger.getLogger(HelidonConnector.class.getName());
 
     private final WebClient webClient;

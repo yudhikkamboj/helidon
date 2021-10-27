@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
 
 package io.helidon.metrics;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import org.eclipse.microprofile.metrics.Snapshot;
 
 import static java.lang.Math.exp;
 import static java.lang.Math.min;
@@ -45,11 +44,19 @@ import static java.lang.Math.min;
  * @see <a href="http://dimacs.rutgers.edu/~graham/pubs/papers/fwddecay.pdf">
  * Cormode et al. Forward Decay: A Practical Time Decay Model for Streaming Systems. ICDE '09:
  * Proceedings of the 2009 IEEE International Conference on Data Engineering (2009)</a>
+ *
+ * To avoid calculating the current time in seconds during every update, use an executor that runs just a few times each second
+ * to update the current-time-in-seconds value for each instance. Each instance might have a separate {@code Clock} for obtaining
+ * the current time, so we cannot share a single static value for the current time across all instances. So each instance
+ * registers its own {@code Runnable} which updates its own value, and the single executor invokes all of them when it runs.
  */
 class ExponentiallyDecayingReservoir {
+
     private static final int DEFAULT_SIZE = 1028;
     private static final double DEFAULT_ALPHA = 0.015;
     private static final long RESCALE_THRESHOLD = TimeUnit.HOURS.toNanos(1);
+
+    private static final Duration CURRENT_TIME_IN_SECONDS_UPDATE_INTERVAL = Duration.ofMillis(250);
 
     private final ConcurrentSkipListMap<Double, WeightedSnapshot.WeightedSample> values;
     private final ReentrantReadWriteLock lock;
@@ -58,8 +65,8 @@ class ExponentiallyDecayingReservoir {
     private final AtomicLong count;
     private final Clock clock;
     private final AtomicLong nextScaleTime;
+    private volatile long currentTimeInSeconds;
     private volatile long startTime;
-
     /**
      * Creates a new {@link ExponentiallyDecayingReservoir} of 1028 elements, which offers a 99.9%
      * confidence level with a 5% margin of error assuming a normal distribution, and an alpha
@@ -68,7 +75,6 @@ class ExponentiallyDecayingReservoir {
     ExponentiallyDecayingReservoir(Clock clock) {
         this(DEFAULT_SIZE, DEFAULT_ALPHA, clock);
     }
-
     /**
      * Creates a new {@link ExponentiallyDecayingReservoir}.
      *
@@ -83,7 +89,9 @@ class ExponentiallyDecayingReservoir {
         this.alpha = alpha;
         this.size = size;
         this.count = new AtomicLong(0);
-        this.startTime = currentTimeInSeconds();
+        PeriodicExecutor.enroll(this::updateTimeInSeconds, CURRENT_TIME_IN_SECONDS_UPDATE_INTERVAL);
+        this.updateTimeInSeconds();
+        this.startTime = currentTimeInSeconds;
         this.nextScaleTime = new AtomicLong(clock.nanoTick() + RESCALE_THRESHOLD);
     }
 
@@ -91,8 +99,8 @@ class ExponentiallyDecayingReservoir {
         return (int) min(size, count.get());
     }
 
-    public void update(long value) {
-        update(value, currentTimeInSeconds());
+    public void update(long value, String label) {
+        update(value, currentTimeInSeconds, label);
     }
 
     /**
@@ -100,13 +108,14 @@ class ExponentiallyDecayingReservoir {
      *
      * @param value     the value to be added
      * @param timestamp the epoch timestamp of {@code value} in seconds
+     * @param label     the optional label associated with the sample
      */
-    public void update(long value, long timestamp) {
+    public void update(long value, long timestamp, String label) {
         rescaleIfNeeded();
         lockForRegularUsage();
         try {
             final double itemWeight = weight(timestamp - startTime);
-            final WeightedSnapshot.WeightedSample sample = new WeightedSnapshot.WeightedSample(value, itemWeight);
+            final WeightedSnapshot.WeightedSample sample = new WeightedSnapshot.WeightedSample(value, itemWeight, label);
             final double priority = itemWeight / ThreadLocalRandom.current().nextDouble();
 
             final long newCount = count.incrementAndGet();
@@ -134,7 +143,7 @@ class ExponentiallyDecayingReservoir {
         }
     }
 
-    public Snapshot getSnapshot() {
+    public WeightedSnapshot getSnapshot() {
         rescaleIfNeeded();
         lockForRegularUsage();
         try {
@@ -144,8 +153,12 @@ class ExponentiallyDecayingReservoir {
         }
     }
 
-    private long currentTimeInSeconds() {
-        return TimeUnit.MILLISECONDS.toSeconds(clock.milliTime());
+    private void updateTimeInSeconds() {
+        currentTimeInSeconds = TimeUnit.MILLISECONDS.toSeconds(clock.milliTime());
+    }
+
+    long currentTimeInSeconds() {
+        return currentTimeInSeconds;
     }
 
     private double weight(long t) {
@@ -175,7 +188,7 @@ class ExponentiallyDecayingReservoir {
         try {
             if (nextScaleTime.compareAndSet(next, now + RESCALE_THRESHOLD)) {
                 final long oldStartTime = startTime;
-                this.startTime = currentTimeInSeconds();
+                this.startTime = currentTimeInSeconds;
                 final double scalingFactor = exp(-alpha * (startTime - oldStartTime));
                 if (Double.compare(scalingFactor, 0) == 0) {
                     values.clear();
@@ -184,7 +197,11 @@ class ExponentiallyDecayingReservoir {
                     for (Double key : keys) {
                         final WeightedSnapshot.WeightedSample sample = values.remove(key);
                         final WeightedSnapshot.WeightedSample newSample = new WeightedSnapshot.WeightedSample(sample.getValue(),
-                                                                                                              sample.getWeight() * scalingFactor);
+                                                                                                              sample.getWeight() * scalingFactor,
+                                                                                                              sample.label());
+                        if (Double.compare(newSample.getWeight(), 0) == 0) {
+                            continue;
+                        }
                         values.put(key * scalingFactor, newSample);
                     }
                 }

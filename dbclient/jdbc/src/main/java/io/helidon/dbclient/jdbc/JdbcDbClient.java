@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -203,14 +203,20 @@ class JdbcDbClient implements DbClient {
     }
 
     @Override
-    public Single<Void> ping() {
-        return execute(exec -> exec.namedUpdate(PING_STATEMENT_NAME))
-                .flatMapSingle(it -> Single.empty());
+    public String dbType() {
+        return connectionPool.dbType();
     }
 
     @Override
-    public String dbType() {
-        return connectionPool.dbType();
+    public <C> Single<C> unwrap(Class<C> cls) {
+        if (Connection.class.isAssignableFrom(cls)) {
+            return Single.create(
+                    CompletableFuture.supplyAsync(
+                            connectionPool::connection, executorService))
+                    .map(cls::cast);
+        } else {
+            throw new UnsupportedOperationException(String.format("Class %s is not supported for unwrap", cls.getName()));
+        }
     }
 
     private static final class JdbcTxExecute extends JdbcExecute implements DbTransaction {
@@ -371,6 +377,16 @@ class JdbcDbClient implements DbClient {
                         }
                     });
         }
+
+        @Override
+        public <C> Single<C> unwrap(Class<C> cls) {
+            if (Connection.class.isAssignableFrom(cls)) {
+                return Single.create(context.connection()).map(cls::cast);
+            } else {
+                throw new UnsupportedOperationException(String.format("Class %s is not supported for unwrap", cls.getName()));
+            }
+        }
+
     }
 
 }

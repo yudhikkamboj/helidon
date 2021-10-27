@@ -16,23 +16,33 @@
 
 package io.helidon.webserver;
 
+import java.io.IOException;
 import java.lang.ref.ReferenceQueue;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import javax.net.ssl.SSLEngine;
 
+import io.helidon.common.context.Context;
+import io.helidon.common.context.Contexts;
 import io.helidon.common.http.Http;
+import io.helidon.logging.common.HelidonMdc;
 import io.helidon.webserver.ByteBufRequestChunk.DataChunkHoldingQueue;
+import io.helidon.webserver.DirectHandler.TransportResponse;
 import io.helidon.webserver.ReferenceHoldingQueue.IndirectReference;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -42,17 +52,18 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
+import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpRequestDecoder;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
+import io.netty.handler.codec.http2.Http2Error;
+import io.netty.handler.codec.http2.Http2Exception;
 
-import static io.helidon.webserver.HttpInitializer.CERTIFICATE_NAME;
-import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
-import static io.netty.handler.codec.http.HttpResponseStatus.CONTINUE;
-import static io.netty.handler.codec.http.HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE;
+import static io.helidon.webserver.HttpInitializer.CLIENT_CERTIFICATE_NAME;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 /**
@@ -65,6 +76,7 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
 
     private static final Logger LOGGER = Logger.getLogger(ForwardingHandler.class.getName());
     private static final AtomicLong REQUEST_ID_GENERATOR = new AtomicLong(0);
+    private static final String MDC_SCOPE_ID = "io.helidon.scope-id";
 
     private final Routing routing;
     private final NettyWebServer webServer;
@@ -72,6 +84,8 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
     private final ReferenceQueue<Object> queues;
     private final HttpRequestDecoder httpRequestDecoder;
     private final long maxPayloadSize;
+    private final Runnable clearQueues;
+    private final DirectHandlers directHandlers;
 
     // this field is always accessed by the very same thread; as such, it doesn't need to be
     // concurrency aware
@@ -81,9 +95,10 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
     private long actualPayloadSize;
     private boolean ignorePayload;
 
+    private CompletableFuture<ChannelFutureListener> requestEntityAnalyzed;
     private CompletableFuture<?> prevRequestFuture;
     private boolean lastContent;
-    private final Runnable clearQueues;
+    private boolean hadContentAlready;
 
     ForwardingHandler(Routing routing,
                       NettyWebServer webServer,
@@ -91,7 +106,8 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
                       ReferenceQueue<Object> queues,
                       Runnable clearQueues,
                       HttpRequestDecoder httpRequestDecoder,
-                      long maxPayloadSize) {
+                      long maxPayloadSize,
+                      DirectHandlers directHandlers) {
         this.routing = routing;
         this.webServer = webServer;
         this.sslEngine = sslEngine;
@@ -99,10 +115,12 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
         this.httpRequestDecoder = httpRequestDecoder;
         this.maxPayloadSize = maxPayloadSize;
         this.clearQueues = clearQueues;
+        this.directHandlers = directHandlers;
     }
 
     private void reset() {
         lastContent = false;
+        hadContentAlready = false;
         isWebSocketUpgrade = false;
         actualPayloadSize = 0L;
         ignorePayload = false;
@@ -120,231 +138,333 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
             if (lastContent) {
                 // if the last thing that went through channelRead0 was LastHttpContent, then
                 // there is no request handler that should be enforcing backpressure
+                LOGGER.fine(() -> log("Read complete lastContent", ctx));
                 ctx.channel().config().setAutoRead(true);
+            } else {
+                LOGGER.fine(() -> log("Read complete not lastContent", ctx));
             }
             return;
         }
 
-        if (requestContext.publisher().hasRequests()) {
+        if (requestContext.hasRequests()) {
+            LOGGER.fine(() -> log("Read complete has requests: %s", ctx, requestContext));
             ctx.channel().read();
         }
     }
 
     @Override
-    @SuppressWarnings("checkstyle:methodlength")
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
-        LOGGER.fine(() -> String.format("[Handler: %s, Channel: %s] Received object: %s",
-                System.identityHashCode(this), System.identityHashCode(ctx.channel()), msg.getClass()));
-
         if (msg instanceof HttpRequest) {
-            // On new request, use chance to cleanup queues in HttpInitializer
-            clearQueues.run();
+            Context requestScope = Context.create(webServer.context());
+            requestScope.register(WebServer.class.getName() + ".connection",
+                                  "0x" + ctx.channel().id());
 
-            // Turns off auto read
-            ctx.channel().config().setAutoRead(false);
+            HelidonMdc.set(MDC_SCOPE_ID, requestScope.id());
 
-            // Reset internal state on new request
-            reset();
+            boolean shouldReturn = Contexts.runInContext(requestScope,
+                                                         () -> channelReadHttpRequest(ctx, requestScope, msg));
 
-            // Check that HTTP decoding was successful or return 400
-            HttpRequest request = (HttpRequest) msg;
-            try {
-                checkDecoderResult(request);
-            } catch (Throwable e) {
-                send400BadRequest(ctx, e.getMessage());
-                return;
-            }
-
-            // Certificate management
-            request.headers().remove(Http.Header.X_HELIDON_CN);
-            Optional.ofNullable(ctx.channel().attr(CERTIFICATE_NAME).get())
-                    .ifPresent(name -> request.headers().set(Http.Header.X_HELIDON_CN, name));
-
-            // Context, publisher and DataChunk queue for this request/response
-            DataChunkHoldingQueue queue = new DataChunkHoldingQueue();
-            requestContext = new RequestContext(new HttpRequestScopedPublisher(queue), request);
-
-            // Closure local variables that cache mutable instance variables
-            RequestContext requestContextRef = requestContext;
-            HttpRequestScopedPublisher publisherRef = requestContextRef.publisher();
-
-            // Creates an indirect reference between publisher and queue so that when
-            // publisher is ready for collection, we have access to queue by calling its
-            // acquire method. We shall also attempt to release queue on completion of
-            // bareResponse below.
-            IndirectReference<HttpRequestScopedPublisher, DataChunkHoldingQueue> publisherPh =
-                    new IndirectReference<>(publisherRef, queues, queue);
-
-            // Set up read strategy for channel based on consumer demand
-            publisherRef.onRequest((n, demand) -> {
-                if (publisherRef.isUnbounded()) {
-                    LOGGER.finest("Netty autoread: true");
-                    ctx.channel().config().setAutoRead(true);
-                } else {
-                    LOGGER.finest("Netty autoread: false");
-                    ctx.channel().config().setAutoRead(false);
-                }
-
-                if (publisherRef.hasRequests()) {
-                    LOGGER.finest("Requesting next chunks from Netty.");
-                    ctx.channel().read();
-                } else {
-                    LOGGER.finest("No hook action required.");
-                }
-            });
-
-            // New request ID
-            long requestId = REQUEST_ID_GENERATOR.incrementAndGet();
-
-            // If a problem with the request URI, return 400 response
-            BareRequestImpl bareRequest;
-            try {
-                bareRequest = new BareRequestImpl((HttpRequest) msg, requestContextRef.publisher(),
-                        webServer, ctx, sslEngine, requestId);
-            } catch (IllegalArgumentException e) {
-                send400BadRequest(ctx, e.getMessage());
-                return;
-            }
-
-            // If context length is greater than maximum allowed, return 413 response
-            if (maxPayloadSize >= 0) {
-                String contentLength = request.headers().get(Http.Header.CONTENT_LENGTH);
-                if (contentLength != null) {
-                    try {
-                        long value = Long.parseLong(contentLength);
-                        if (value > maxPayloadSize) {
-                            LOGGER.fine(() -> String.format("[Handler: %s, Channel: %s] Payload length over max %d > %d",
-                                    System.identityHashCode(this), System.identityHashCode(ctx.channel()),
-                                    value, maxPayloadSize));
-                            ignorePayload = true;
-                            send413PayloadTooLarge(ctx);
-                            return;
-                        }
-                    } catch (NumberFormatException e) {
-                        send400BadRequest(ctx, Http.Header.CONTENT_LENGTH + " header is invalid");
-                        return;
-                    }
-                }
-            }
-
-            // If prev response is done, the next can start writing right away (HTTP pipelining)
-            if (prevRequestFuture != null && prevRequestFuture.isDone()) {
-                prevRequestFuture = null;
-            }
-
-            // Create response and handler for its completion
-            BareResponseImpl bareResponse =
-                    new BareResponseImpl(ctx, request, publisherRef::isCompleted, prevRequestFuture, requestId);
-            prevRequestFuture = new CompletableFuture<>();
-            CompletableFuture<?> thisResp = prevRequestFuture;
-            bareResponse.whenCompleted()
-                        .thenRun(() -> {
-                            // Mark response completed in context
-                            requestContextRef.responseCompleted(true);
-
-                            // Consume and release any buffers in publisher
-                            publisherRef.clearAndRelease();
-
-                            // Cleanup for these queues is done in HttpInitializer, but
-                            // we try to do it here if possible to reduce memory usage,
-                            // especially for keep-alive connections
-                            if (queue.release()) {
-                                publisherPh.acquire();      // clears reference to other
-                            }
-
-                            // Enables next response to proceed (HTTP pipelining)
-                            thisResp.complete(null);
-                        });
-            if (HttpUtil.is100ContinueExpected(request)) {
-                send100Continue(ctx);
-            }
-
-            // If a problem during routing, return 400 response
-            try {
-                routing.route(bareRequest, bareResponse);
-            } catch (IllegalArgumentException e) {
-                send400BadRequest(ctx, e.getMessage());
-                return;
-            }
-
-            // If WebSockets upgrade, re-arrange pipeline and drop HTTP decoder
-            if (bareResponse.isWebSocketUpgrade()) {
-                LOGGER.fine("Replacing HttpRequestDecoder by WebSocketServerProtocolHandler");
-                ctx.pipeline().replace(httpRequestDecoder, "webSocketsHandler",
-                        new WebSocketServerProtocolHandler(bareRequest.uri().getPath(), null, true));
-                removeHandshakeHandler(ctx);        // already done by Tyrus
-                isWebSocketUpgrade = true;
+            if (shouldReturn) {
+                HelidonMdc.remove(MDC_SCOPE_ID);
                 return;
             }
         }
 
+        if (requestContext != null) {
+            HelidonMdc.set(MDC_SCOPE_ID, requestContext.scope().id());
+        }
+
         if (msg instanceof HttpContent) {
             if (requestContext == null) {
+                LOGGER.fine(() -> log("Received HttpContent: %s", ctx, System.identityHashCode(msg)));
+                HelidonMdc.remove(MDC_SCOPE_ID);
                 throw new IllegalStateException("There is no request context associated with this http content. "
                                                 + "This is never expected to happen!");
             }
-            lastContent = false;
 
-            HttpContent httpContent = (HttpContent) msg;
-
-            ByteBuf content = httpContent.content();
-            if (content.isReadable()) {
-                HttpMethod method = requestContext.request().method();
-
-                // compliance with RFC 7231
-                if (HttpMethod.TRACE.equals(method)) {
-                    // regarding the TRACE method, we're failing when payload is present only when the payload is actually
-                    // consumed; if not, the request might proceed when payload is small enough
-                    LOGGER.finer(() -> "Closing connection because of an illegal payload; method: " + method);
-                    throw new BadRequestException("It is illegal to send a payload with http method: " + method);
-                }
-
-                // compliance with RFC 7231
-                if (requestContext.responseCompleted() && !(msg instanceof LastHttpContent)) {
-                    // payload is not consumed and the response is already sent; we must close the connection
-                    LOGGER.finer(() -> "Closing connection because request payload was not consumed; method: " + method);
-                    ctx.close();
-                } else if (!ignorePayload) {
-                    // Check payload size if a maximum has been set
-                    if (maxPayloadSize >= 0) {
-                        actualPayloadSize += content.readableBytes();
-                        if (actualPayloadSize > maxPayloadSize) {
-                            LOGGER.fine(() -> String.format("[Handler: %s, Channel: %s] Chunked Payload over max %d > %d",
-                                    System.identityHashCode(this), System.identityHashCode(ctx.channel()),
-                                    actualPayloadSize, maxPayloadSize));
-                            ignorePayload = true;
-                            send413PayloadTooLarge(ctx);
-                        } else {
-                            requestContext.publisher().emit(content);
-                        }
-                    } else {
-                        requestContext.publisher().emit(content);
-                    }
-                }
-            }
-
-            if (msg instanceof LastHttpContent) {
-                if (!isWebSocketUpgrade) {
-                    lastContent = true;
-                    requestContext.publisher().complete();
-                    requestContext = null; // just to be sure that current http req/res session doesn't interfere with other ones
-                }
-            } else if (!content.isReadable()) {
-                // this is here to handle the case when the content is not readable but we didn't
-                // exceptionally complete the publisher and close the connection
-                throw new IllegalStateException("It is not expected to not have readable content.");
-            }
+            requestContext.runInScope(() -> channelReadHttpContent(ctx, msg));
         }
 
         // We receive a raw bytebuf if connection was upgraded to WebSockets
         if (msg instanceof ByteBuf) {
             if (!isWebSocketUpgrade) {
+                HelidonMdc.remove(MDC_SCOPE_ID);
                 throw new IllegalStateException("Received ByteBuf without upgrading to WebSockets");
             }
-            // Simply forward raw bytebuf to Tyrus for processing
-            LOGGER.finest(() -> "Received ByteBuf of WebSockets connection" + msg);
-            requestContext.publisher().emit((ByteBuf) msg);
+            requestContext.runInScope(() -> {
+                // Simply forward raw bytebuf to Tyrus for processing
+                if (LOGGER.isLoggable(Level.FINEST)) {
+                    LOGGER.finest(log("Received ByteBuf of WebSockets connection: %s", ctx, msg));
+                }
+                requestContext.emit((ByteBuf) msg);
+            });
         }
+        HelidonMdc.remove(MDC_SCOPE_ID);
+    }
+
+    private void channelReadHttpContent(ChannelHandlerContext ctx, Object msg) {
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(log("Received HttpContent: %s", ctx, System.identityHashCode(msg)));
+        }
+        lastContent = false;
+
+        HttpContent httpContent = (HttpContent) msg;
+
+        ByteBuf content = httpContent.content();
+        if (content.isReadable()) {
+            HttpMethod method = requestContext.request().method();
+
+            // compliance with RFC 7231
+            if (HttpMethod.TRACE.equals(method)) {
+                // regarding the TRACE method, we're failing when payload is present only when the payload is actually
+                // consumed; if not, the request might proceed when payload is small enough
+                requestEntityAnalyzed.complete(ChannelFutureListener.CLOSE);
+                if (LOGGER.isLoggable(Level.FINER)) {
+                    LOGGER.finer(log("Closing connection illegal payload; method: ", ctx, method));
+                }
+                throw new BadRequestException("It is illegal to send a payload with http method: " + method);
+            }
+
+            // compliance with RFC 7231
+            if (requestContext.responseCompleted() && !(msg instanceof LastHttpContent)) {
+                // payload is not consumed and the response is already sent; we must close the connection
+                LOGGER.finer(() -> log("Closing connection unconsumed payload; method: ", ctx, method));
+                ctx.close();
+            } else if (!ignorePayload) {
+                // Check payload size if a maximum has been set
+                if (maxPayloadSize >= 0) {
+                    actualPayloadSize += content.readableBytes();
+                    if (actualPayloadSize > maxPayloadSize) {
+                        LOGGER.finer(() -> log("Chunked Payload over max %d > %d", ctx,
+                                               actualPayloadSize, maxPayloadSize));
+                        ignorePayload = true;
+                        send413PayloadTooLarge(ctx, requestContext.request());
+                    } else {
+                        requestContext.emit(content);
+                    }
+                } else {
+                    requestContext.emit(content);
+                }
+            }
+        }
+
+        if (msg instanceof LastHttpContent) {
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(log("Received LastHttpContent: %s", ctx, System.identityHashCode(msg)));
+            }
+
+            if (!isWebSocketUpgrade) {
+                lastContent = true;
+                requestContext.complete();
+                requestContext = null; // just to be sure that current http req/res session doesn't interfere with other ones
+            }
+            requestEntityAnalyzed.complete(ChannelFutureListener.CLOSE_ON_FAILURE);
+        } else if (!content.isReadable()) {
+            // this is here to handle the case when the content is not readable but we didn't
+            // exceptionally complete the publisher and close the connection
+            throw new IllegalStateException("It is not expected to not have readable content.");
+        } else if (!requestContext.hasRequests()
+                && HttpUtil.isKeepAlive(requestContext.request())
+                && !requestEntityAnalyzed.isDone()) {
+            if (hadContentAlready) {
+                LOGGER.finest(() -> "More than one unhandled content present. Closing the connection.");
+                requestEntityAnalyzed.complete(ChannelFutureListener.CLOSE);
+            } else {
+                //We are checking the unhandled entity, but we cannot be sure if connection should be closed or not.
+                //Next content has to be checked if it is last chunk. If not close connection.
+                hadContentAlready = true;
+                LOGGER.finest(() -> "Requesting the next chunk to determine if the connection should be closed.");
+                ctx.channel().read();
+            }
+        }
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        super.channelInactive(ctx);
+        // Watch for prematurely closed channel
+        if (requestContext != null) {
+            requestContext.fail(new IOException("Channel closed prematurely by other side!"));
+        }
+    }
+
+    @SuppressWarnings("checkstyle:methodlength")
+    private boolean channelReadHttpRequest(ChannelHandlerContext ctx, Context requestScope, Object msg) {
+        hadContentAlready = false;
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(log("Received HttpRequest: %s. Remote address: %s. Scope id: %s",
+                                  ctx,
+                                  System.identityHashCode(msg),
+                                  ctx.channel().remoteAddress(),
+                                  requestScope.id()));
+        }
+
+        // On new request, use chance to cleanup queues in HttpInitializer
+        clearQueues.run();
+
+        // Turns off auto read
+        ctx.channel().config().setAutoRead(false);
+
+        // Reset internal state on new request
+        reset();
+
+        // Check that HTTP decoding was successful or return 400
+        HttpRequest request = (HttpRequest) msg;
+        try {
+            checkDecoderResult(request);
+        } catch (Throwable e) {
+            LOGGER.finest(() -> log("Invalid HTTP request. %s", ctx, e.getMessage()));
+            send400BadRequest(ctx, request, e);
+            return true;
+        }
+
+        if (LOGGER.isLoggable(Level.FINEST)) {
+            LOGGER.finest(log("Requested URI: %s %s", ctx, request.method(), request.uri()));
+        }
+
+        // Certificate management
+        request.headers().remove(Http.Header.X_HELIDON_CN);
+        Optional.ofNullable(ctx.channel().attr(CLIENT_CERTIFICATE_NAME).get())
+                .ifPresent(name -> request.headers().set(Http.Header.X_HELIDON_CN, name));
+
+        // Context, publisher and DataChunk queue for this request/response
+        DataChunkHoldingQueue queue = new DataChunkHoldingQueue();
+        HttpRequestScopedPublisher publisher = new HttpRequestScopedPublisher(queue);
+        requestContext = new RequestContext(publisher, request, requestScope);
+
+        // Closure local variables that cache mutable instance variables
+        RequestContext requestContextRef = requestContext;
+
+        // Creates an indirect reference between publisher and queue so that when
+        // publisher is ready for collection, we have access to queue by calling its
+        // acquire method. We shall also attempt to release queue on completion of
+        // bareResponse below.
+        IndirectReference<HttpRequestScopedPublisher, DataChunkHoldingQueue> publisherRef =
+                new IndirectReference<>(publisher, queues, queue);
+
+        // Set up read strategy for channel based on consumer demand
+        publisher.onRequest((n, demand) -> {
+            if (publisher.isUnbounded()) {
+                LOGGER.finest(() -> log("Netty autoread: true", ctx));
+                ctx.channel().config().setAutoRead(true);
+            } else {
+                LOGGER.finest(() -> log("Netty autoread: false", ctx));
+                ctx.channel().config().setAutoRead(false);
+            }
+
+            if (publisher.hasRequests()) {
+                LOGGER.finest(() -> log("Requesting next chunks from Netty", ctx));
+                ctx.channel().read();
+            } else {
+                LOGGER.finest(() -> log("No hook action required", ctx));
+            }
+        });
+
+        // New request ID
+        long requestId = REQUEST_ID_GENERATOR.incrementAndGet();
+
+        // If a problem with the request URI, return 400 response
+        BareRequestImpl bareRequest;
+        try {
+            bareRequest = new BareRequestImpl((HttpRequest) msg, publisher, webServer, ctx, sslEngine, requestId);
+        } catch (IllegalArgumentException e) {
+            send400BadRequest(ctx, request, e);
+            return true;
+        }
+
+        if (LOGGER.isLoggable(Level.FINEST)) {
+            LOGGER.finest(log("Request id: %s", ctx, bareRequest.requestId()));
+        }
+
+        // If context length is greater than maximum allowed, return 413 response
+        if (maxPayloadSize >= 0) {
+            String contentLength = request.headers().get(Http.Header.CONTENT_LENGTH);
+            if (contentLength != null) {
+                try {
+                    long value = Long.parseLong(contentLength);
+                    if (value > maxPayloadSize) {
+                        LOGGER.fine(() -> log("Payload length over max %d > %d", ctx, value, maxPayloadSize));
+                        ignorePayload = true;
+                        send413PayloadTooLarge(ctx, request);
+                        return true;
+                    }
+                } catch (NumberFormatException e) {
+                    // this cannot happen, content length is validated in decoder
+                    send400BadRequest(ctx, request, e);
+                    return true;
+                }
+            }
+        }
+
+        // If prev response is done, the next can start writing right away (HTTP pipelining)
+        if (prevRequestFuture != null && prevRequestFuture.isDone()) {
+            prevRequestFuture = null;
+        }
+
+        requestEntityAnalyzed = new CompletableFuture<>();
+
+        //If the keep alive is not set, we know we will be closing the connection
+        if (!HttpUtil.isKeepAlive(requestContext.request())) {
+            this.requestEntityAnalyzed.complete(ChannelFutureListener.CLOSE);
+        }
+        // Create response and handler for its completion
+        BareResponseImpl bareResponse =
+                new BareResponseImpl(ctx,
+                                     request,
+                                     requestContext,
+                                     prevRequestFuture,
+                                     requestEntityAnalyzed,
+                                     requestId);
+        prevRequestFuture = new CompletableFuture<>();
+        CompletableFuture<?> thisResp = prevRequestFuture;
+        bareResponse.whenCompleted()
+                .thenRun(() -> {
+                    // Mark response completed in context
+                    requestContextRef.responseCompleted(true);
+
+                    // Consume and release any buffers in publisher
+                    publisher.clearAndRelease();
+
+                    // Cleanup for these queues is done in HttpInitializer, but
+                    // we try to do it here if possible to reduce memory usage,
+                    // especially for keep-alive connections
+                    if (queue.release()) {
+                        publisherRef.acquire();      // clears reference to other
+                    }
+
+                    // Enables next response to proceed (HTTP pipelining)
+                    thisResp.complete(null);
+
+                    if (LOGGER.isLoggable(Level.FINE)) {
+                        LOGGER.fine(log("Response complete: %s", ctx, System.identityHashCode(msg)));
+                    }
+                });
+        if (HttpUtil.is100ContinueExpected(request)) {
+            send100Continue(ctx, request);
+        }
+
+        // If a problem during routing, return 400 response
+        try {
+            requestContext.runInScope(() -> routing.route(bareRequest, bareResponse));
+        } catch (IllegalArgumentException e) {
+            // this probably cannot happen
+            send400BadRequest(ctx, request, e);
+            return true;
+        }
+
+        // If WebSockets upgrade, re-arrange pipeline and drop HTTP decoder
+        if (bareResponse.isWebSocketUpgrade()) {
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(log("Replacing HttpRequestDecoder by WebSocketServerProtocolHandler", ctx));
+            }
+            ctx.pipeline().replace(httpRequestDecoder, "webSocketsHandler",
+                                   new WebSocketServerProtocolHandler(bareRequest.uri().getPath(), null, true));
+            removeHandshakeHandler(ctx);        // already done by Tyrus
+            isWebSocketUpgrade = true;
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -355,6 +475,15 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
      */
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        LOGGER.fine(() -> log("Exception caught: %s", ctx, cause.toString()));
+
+        // We ignore stream resets (RST_STREAM) from HTTP/2
+        if (cause instanceof Http2Exception.StreamException
+                && ((Http2Exception.StreamException) cause).error() == Http2Error.CANCEL) {
+            return;     // no action
+        }
+
+        // Otherwise, we fail publisher and close
         failPublisher(cause);
         ctx.close();
     }
@@ -364,11 +493,11 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
      *
      * @param request The HTTP request.
      */
-    private static void checkDecoderResult(HttpRequest request) {
+    private void checkDecoderResult(HttpRequest request) {
         DecoderResult decoderResult = request.decoderResult();
         if (decoderResult.isFailure()) {
-            LOGGER.info(String.format("Request %s to %s rejected: %s", request.method()
-                            .asciiName(), request.uri(), decoderResult.cause().getMessage()));
+            LOGGER.info(() -> log("Request %s to %s rejected: %s", null,
+                    request.method().asciiName(), request.uri(), decoderResult.cause().getMessage()));
             throw new BadRequestException(String.format("Request was rejected: %s", decoderResult.cause().getMessage()),
                     decoderResult.cause());
         }
@@ -381,7 +510,7 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
      *
      * @param ctx Channel handler context.
      */
-    private static void removeHandshakeHandler(ChannelHandlerContext ctx) {
+    private void removeHandshakeHandler(ChannelHandlerContext ctx) {
         ChannelHandler handshakeHandler = null;
         for (Iterator<Map.Entry<String, ChannelHandler>> it = ctx.pipeline().iterator(); it.hasNext();) {
             ChannelHandler handler = it.next().getValue();
@@ -393,32 +522,43 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
         if (handshakeHandler != null) {
             ctx.pipeline().remove(handshakeHandler);
         } else {
-            LOGGER.warning("Unable to remove WebSockets handshake handler from pipeline");
+            LOGGER.warning(() -> log("Unable to remove WebSockets handshake handler from pipeline", ctx));
         }
     }
 
-    private static void send100Continue(ChannelHandlerContext ctx) {
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, CONTINUE);
+    private void send100Continue(ChannelHandlerContext ctx,
+                                        HttpRequest request) {
+
+        TransportResponse transportResponse = directHandlers.handler(DirectHandler.EventType.CONTINUE)
+                .handle(new DirectHandlerRequest(request),
+                        DirectHandler.EventType.CONTINUE,
+                        Http.Status.CONTINUE_100,
+                        "");
+
+        FullHttpResponse response = toNettyResponse(transportResponse);
         ctx.write(response);
     }
 
     /**
-     * Returns a 400 (Bad Request) response with a message as content.
+     * Returns a 400 (Bad Request) response with a message as content. Message is encoded using
+     * HTML entities to prevent potential XSS attacks even if content type is text/plain.
      *
      * @param ctx Channel context.
-     * @param message The message.
+     * @param request Netty HTTP request
+     * @param t associated throwable
      */
-    private void send400BadRequest(ChannelHandlerContext ctx, String message) {
-        byte[] entity = message.getBytes(StandardCharsets.UTF_8);
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, BAD_REQUEST, Unpooled.wrappedBuffer(entity));
-        response.headers().add(HttpHeaderNames.CONTENT_TYPE, "text/plain");
-        response.headers().add(HttpHeaderNames.CONTENT_LENGTH, entity.length);
-        response.headers().add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
-        ctx.write(response)
-                .addListener(future -> {
-                    ctx.flush();
-                    ctx.close();
-                });
+    private void send400BadRequest(ChannelHandlerContext ctx, HttpRequest request, Throwable t) {
+        TransportResponse handlerResponse = directHandlers.handler(DirectHandler.EventType.BAD_REQUEST)
+                .handle(new DirectHandlerRequest(request),
+                        DirectHandler.EventType.BAD_REQUEST,
+                        Http.Status.BAD_REQUEST_400,
+                        t);
+
+        FullHttpResponse response = toNettyResponse(handlerResponse);
+
+        ctx.writeAndFlush(response)
+                .addListener(future -> ctx.close());
+
         failPublisher(new Error("400: Bad request"));
     }
 
@@ -427,14 +567,37 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
      *
      * @param ctx Channel context.
      */
-    private void send413PayloadTooLarge(ChannelHandlerContext ctx) {
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, REQUEST_ENTITY_TOO_LARGE);
-        ctx.write(response)
-                .addListener(future -> {
-                    ctx.flush();
-                    ctx.close();
-                });
+    private void send413PayloadTooLarge(ChannelHandlerContext ctx, HttpRequest request) {
+        TransportResponse transportResponse = directHandlers.handler(DirectHandler.EventType.PAYLOAD_TOO_LARGE)
+                .handle(new DirectHandlerRequest(request),
+                        DirectHandler.EventType.PAYLOAD_TOO_LARGE,
+                        Http.Status.REQUEST_ENTITY_TOO_LARGE_413,
+                        "");
+
+        FullHttpResponse response = toNettyResponse(transportResponse);
+
+        ctx.writeAndFlush(response)
+                .addListener(future -> ctx.close());
+
         failPublisher(new Error("413: Payload is too large"));
+    }
+
+    private FullHttpResponse toNettyResponse(TransportResponse handlerResponse) {
+        Optional<byte[]> entity = handlerResponse.entity();
+        Http.ResponseStatus status = handlerResponse.status();
+        Map<String, List<String>> headers = handlerResponse.headers();
+
+        HttpResponseStatus nettyStatus = HttpResponseStatus.valueOf(status.code(), status.reasonPhrase());
+
+        FullHttpResponse response = entity.map(bytes -> new DefaultFullHttpResponse(HTTP_1_1,
+                                                                                    nettyStatus,
+                                                                                    Unpooled.wrappedBuffer(bytes)))
+                .orElseGet(() -> new DefaultFullHttpResponse(HTTP_1_1, nettyStatus));
+
+        HttpHeaders nettyHeaders = response.headers();
+        headers.forEach(nettyHeaders::add);
+        nettyHeaders.add(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
+        return response;
     }
 
     /**
@@ -444,7 +607,61 @@ public class ForwardingHandler extends SimpleChannelInboundHandler<Object> {
      */
     private void failPublisher(Throwable cause) {
         if (requestContext != null) {
-            requestContext.publisher().fail(cause);
+            requestContext.fail(cause);
+        }
+    }
+
+    /**
+     * Log message formatter for this class.
+     *
+     * @param template template suffix.
+     * @param ctx channel context.
+     * @param params template suffix params.
+     * @return string to log.
+     */
+    private String log(String template, ChannelHandlerContext ctx, Object... params) {
+        List<Object> list = new ArrayList<>(params.length + 2);
+        list.add(System.identityHashCode(this));
+        list.add(ctx != null ? ctx.channel().id() : "N/A");
+        list.addAll(Arrays.asList(params));
+        return String.format("[Handler: %s, Channel: 0x%s] " + template, list.toArray());
+    }
+
+    private static final class DirectHandlerRequest implements DirectHandler.TransportRequest {
+        private final String protocolVersion;
+        private final String uri;
+        private final String method;
+        private final Map<String, List<String>> headers;
+
+        private DirectHandlerRequest(HttpRequest request) {
+            protocolVersion = request.protocolVersion().text();
+            uri = request.uri();
+            method = request.method().name();
+            Map<String, List<String>> result = new HashMap<>();
+            for (String name : request.headers().names()) {
+                result.put(name, request.headers().getAll(name));
+            }
+            headers = Map.copyOf(result);
+        }
+
+        @Override
+        public String protocolVersion() {
+            return protocolVersion;
+        }
+
+        @Override
+        public String uri() {
+            return uri;
+        }
+
+        @Override
+        public String method() {
+            return method;
+        }
+
+        @Override
+        public Map<String, List<String>> headers() {
+            return headers;
         }
     }
 }

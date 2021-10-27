@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,15 @@
 package io.helidon.service.employee;
 
 import io.helidon.common.LogConfig;
+import io.helidon.common.reactive.Single;
 import io.helidon.config.Config;
 import io.helidon.health.HealthSupport;
 import io.helidon.health.checks.HealthChecks;
 import io.helidon.media.jsonb.JsonbSupport;
 import io.helidon.metrics.MetricsSupport;
 import io.helidon.webserver.Routing;
-import io.helidon.webserver.StaticContentSupport;
 import io.helidon.webserver.WebServer;
+import io.helidon.webserver.staticcontent.StaticContentSupport;
 
 /**
  * Simple Employee rest application.
@@ -49,7 +50,7 @@ public final class Main {
      * Start the server.
      * @return the created {@link WebServer} instance
      */
-    static WebServer startServer() {
+    static Single<WebServer> startServer() {
 
         // load logging configuration
         LogConfig.configureRuntime();
@@ -58,14 +59,13 @@ public final class Main {
         Config config = Config.create();
 
         // Get webserver config from the "server" section of application.yaml and JSON support registration
-        WebServer server = WebServer.builder(createRouting(config))
+        Single<WebServer> server = WebServer.builder(createRouting(config))
                 .config(config.get("server"))
                 .addMediaSupport(JsonbSupport.create())
-                .build();
+                .build()
+                .start();
 
-        // Try to start the server. If successful, print some info and arrange to
-        // print a message at shutdown. If unsuccessful, print the exception.
-        server.start().thenAccept(ws -> {
+        server.thenAccept(ws -> {
             System.out.println("WEB server is up!");
             System.out.println("Web client at: http://localhost:" + ws.port()
                                        + "/public/index.html");

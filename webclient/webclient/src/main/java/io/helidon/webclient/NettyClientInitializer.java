@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package io.helidon.webclient;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -37,11 +38,12 @@ import io.netty.handler.proxy.ProxyHandler;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.util.concurrent.FutureListener;
 
 import static io.helidon.webclient.WebClientRequestBuilderImpl.CONNECTION_IDENT;
 import static io.helidon.webclient.WebClientRequestBuilderImpl.IN_USE;
+import static io.helidon.webclient.WebClientRequestBuilderImpl.RECEIVED;
+import static io.helidon.webclient.WebClientRequestBuilderImpl.RESPONSE_RECEIVED;
 import static io.helidon.webclient.WebClientRequestBuilderImpl.RESULT;
 
 /**
@@ -68,7 +70,7 @@ class NettyClientInitializer extends ChannelInitializer<SocketChannel> {
 
         // read timeout (we also want to timeout waiting on a proxy)
         Duration readTimeout = configuration.readTimout();
-        pipeline.addLast("readTimeout", new ReadTimeoutHandler(readTimeout.toMillis(), TimeUnit.MILLISECONDS));
+        pipeline.addLast("readTimeout", new HelidonReadTimeoutHandler(readTimeout.toMillis(), TimeUnit.MILLISECONDS));
 
         // proxy configuration
         configuration.proxy()
@@ -119,7 +121,8 @@ class NettyClientInitializer extends ChannelInitializer<SocketChannel> {
         @Override
         public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
             if (evt instanceof IdleStateEvent) {
-                if (ctx.channel().attr(IN_USE).get().compareAndSet(false, true)) {
+                if (ctx.channel().hasAttr(IN_USE)
+                        && ctx.channel().attr(IN_USE).get().compareAndSet(false, true)) {
                     ctx.close();
                 }
             }
@@ -129,10 +132,19 @@ class NettyClientInitializer extends ChannelInitializer<SocketChannel> {
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             Channel channel = ctx.channel();
-            WebClientRequestBuilderImpl.ConnectionIdent key = channel.attr(CONNECTION_IDENT).get();
-            LOGGER.finest(() -> "Channel closed -> " + channel.hashCode());
-            if (key != null) {
-                WebClientRequestBuilderImpl.removeChannelFromCache(key, channel);
+            if (ctx.channel().hasAttr(CONNECTION_IDENT)) {
+                WebClientRequestBuilderImpl.ConnectionIdent key = channel.attr(CONNECTION_IDENT).get();
+                LOGGER.finest(() -> "Channel closed -> " + channel.hashCode());
+                if (key != null) {
+                    WebClientRequestBuilderImpl.removeChannelFromCache(key, channel);
+                }
+            }
+            if (!channel.attr(RESPONSE_RECEIVED).get()) {
+                CompletableFuture<WebClientServiceResponse> responseReceived = channel.attr(RECEIVED).get();
+                CompletableFuture<WebClientResponse> responseFuture = channel.attr(RESULT).get();
+                WebClientException exception = new WebClientException("Connection reset by the host");
+                responseReceived.completeExceptionally(exception);
+                responseFuture.completeExceptionally(exception);
             }
             super.channelInactive(ctx);
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
 import io.helidon.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 
 /**
  * Least recently used cache.
@@ -216,6 +218,7 @@ public final class LruCache<K, V> {
      * @param <K> type of keys
      * @param <V> type of values
      */
+    @Configured
     public static class Builder<K, V> implements io.helidon.common.Builder<LruCache<K, V>> {
         private int capacity = DEFAULT_CAPACITY;
 
@@ -241,6 +244,7 @@ public final class LruCache<K, V> {
          * @param capacity maximal number of records in the cache before the oldest one is removed
          * @return updated builder instance
          */
+        @ConfiguredOption("10000")
         public Builder<K, V> capacity(int capacity) {
             this.capacity = capacity;
             return this;

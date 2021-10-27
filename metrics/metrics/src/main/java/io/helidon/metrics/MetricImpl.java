@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -35,6 +37,9 @@ import javax.json.JsonArrayBuilder;
 import javax.json.JsonBuilderFactory;
 import javax.json.JsonObjectBuilder;
 
+import io.helidon.metrics.Sample.Derived;
+import io.helidon.metrics.api.AbstractMetric;
+
 import org.eclipse.microprofile.metrics.Metadata;
 import org.eclipse.microprofile.metrics.MetricID;
 import org.eclipse.microprofile.metrics.MetricUnits;
@@ -43,8 +48,12 @@ import org.eclipse.microprofile.metrics.Tag;
 /**
  * Base for our implementations of various metrics.
  */
-abstract class MetricImpl implements HelidonMetric {
+abstract class MetricImpl extends AbstractMetric implements HelidonMetric {
     static final JsonBuilderFactory JSON = Json.createBuilderFactory(Collections.emptyMap());
+
+    private static final Logger LOGGER = Logger.getLogger(MetricImpl.class.getName());
+
+    private static final int EXEMPLAR_MAX_LENGTH = 128;
 
     private static final Pattern DOUBLE_UNDERSCORE = Pattern.compile("__");
     private static final Pattern COLON_UNDERSCORE = Pattern.compile(":_");
@@ -114,12 +123,11 @@ abstract class MetricImpl implements HelidonMetric {
         return result;
     }
 
-    private final String registryType;
-    private final Metadata metadata;
+    // Efficient check from interceptors to see if the metric is still valid
+    private boolean isDeleted;
 
     MetricImpl(String registryType, Metadata metadata) {
-        this.metadata = metadata;
-        this.registryType = registryType;
+        super(registryType, metadata);
     }
 
     private static void addByteConverter(String metricUnit, long toByteRatio) {
@@ -138,20 +146,15 @@ abstract class MetricImpl implements HelidonMetric {
 
     @Override
     public String getName() {
-        return metadata.getName();
-    }
-
-    @Override
-    public Metadata metadata() {
-        return metadata;
+        return metadata().getName();
     }
 
     @Override
     public String toString() {
         return getClass().getSimpleName() + "{"
-                + "registryType='" + registryType + '\''
-                + ", metadata=" + metadata
-                + ", name='" + getName() + '\''
+                + "registryType='" + registryType() + '\''
+                + ", metadata=" + metadata()
+                + toStringDetails()
                 + '}';
     }
 
@@ -160,10 +163,10 @@ abstract class MetricImpl implements HelidonMetric {
         JsonObjectBuilder metaBuilder =
                 new MetricsSupport.MergingJsonObjectBuilder(JSON.createObjectBuilder());
 
-        addNonEmpty(metaBuilder, "unit", metadata.getUnit().orElse(null));
-        addNonEmpty(metaBuilder, "type", metadata.getType());
-        addNonEmpty(metaBuilder, "description", metadata.getDescription().orElse(null));
-        addNonEmpty(metaBuilder, "displayName", metadata.getDisplayName());
+        addNonEmpty(metaBuilder, "unit", metadata().getUnit().orElse(null));
+        addNonEmpty(metaBuilder, "type", metadata().getType());
+        addNonEmpty(metaBuilder, "description", metadata().getDescription().orElse(null));
+        addNonEmpty(metaBuilder, "displayName", metadata().getDisplayName());
         if (metricIDs != null) {
             for (MetricID metricID : metricIDs) {
                 boolean tagAdded = false;
@@ -180,6 +183,11 @@ abstract class MetricImpl implements HelidonMetric {
         builder.add(getName(), metaBuilder);
     }
 
+    @Override
+    public boolean isDeleted() {
+        return super.isDeleted();
+    }
+
     static String jsonFullKey(String baseName, MetricID metricID) {
         return metricID.getTags().isEmpty() ? baseName
                 : String.format("%s;%s", baseName,
@@ -190,6 +198,11 @@ abstract class MetricImpl implements HelidonMetric {
 
     static String jsonFullKey(MetricID metricID) {
         return jsonFullKey(metricID.getName(), metricID);
+    }
+
+
+    protected String toStringDetails() {
+        return "";
     }
 
     private static String tagForJsonKey(Tag t) {
@@ -218,7 +231,7 @@ abstract class MetricImpl implements HelidonMetric {
         sb.append("# HELP ")
                 .append(nameWithUnits)
                 .append(" ")
-                .append(metadata.getDescription().orElse(""))
+                .append(metadata().getDescription().orElse(""))
                 .append('\n');
     }
 
@@ -226,7 +239,7 @@ abstract class MetricImpl implements HelidonMetric {
     public void prometheusData(StringBuilder sb, MetricID metricID, boolean withHelpType) {
         String nameWithUnits = prometheusNameWithUnits(metricID);
         if (withHelpType) {
-            prometheusType(sb, nameWithUnits, metadata.getType());
+            prometheusType(sb, nameWithUnits, metadata().getType());
             prometheusHelp(sb, nameWithUnits);
         }
         sb.append(nameWithUnits).append(prometheusTags(metricID.getTags())).append(" ").append(prometheusValue()).append('\n');
@@ -240,23 +253,135 @@ abstract class MetricImpl implements HelidonMetric {
     public abstract String prometheusValue();
 
     protected final void prometheusQuantile(StringBuilder sb,
-                                            String tags,
-                                            Units units, String nameUnits,
-                                            String quantile,
-                                            Supplier<Double> value) {
+            PrometheusName name,
+            Units units,
+            String quantile,
+            Derived derived) {
         // application:file_sizes_bytes{quantile="0.5"} 4201
         String quantileTag = "quantile=\"" + quantile + "\"";
-        if (tags.isEmpty()) {
+        String tags = name.prometheusTags();
+        if (name.prometheusTags().isEmpty()) {
             tags = "{" + quantileTag + "}";
         } else {
             tags = tags.substring(0, tags.length() - 1) + "," + quantileTag + "}";
         }
 
-        sb.append(nameUnits)
+        sb.append(name.nameUnits())
                 .append(tags)
                 .append(" ")
-                .append(units.convert(value.get()))
+                .append(units.convert(derived.value()));
+        sb.append(prometheusExemplar(derived.sample(), units));
+        sb.append("\n");
+    }
+
+    void appendPrometheusElement(StringBuilder sb,
+            PrometheusName name,
+            String statName,
+            boolean withHelpType,
+            String typeName,
+            Derived derived) {
+        appendPrometheusElement(sb, name, () -> name.nameStatUnits(statName), withHelpType, typeName, derived.value(),
+                derived.sample());
+    }
+
+    void appendPrometheusElement(StringBuilder sb,
+            PrometheusName name,
+            String statName,
+            boolean withHelpType,
+            String typeName,
+            Sample.Labeled sample) {
+        appendPrometheusElement(sb, name, () -> name.nameStatUnits(statName), withHelpType, typeName, sample.value(),
+                sample);
+    }
+
+    private void appendPrometheusElement(StringBuilder sb,
+            PrometheusName name,
+            Supplier<String> nameToUse,
+            boolean withHelpType,
+            String typeName,
+            double value,
+            Sample.Labeled sample) {
+        if (withHelpType) {
+            prometheusType(sb, nameToUse.get(), typeName);
+        }
+        Object convertedValue = name.units().convert(value);
+        sb.append(nameToUse.get() + name.prometheusTags())
+                .append(" ")
+                .append(convertedValue)
+                .append(prometheusExemplar(sample, name.units()))
                 .append("\n");
+    }
+
+    void appendPrometheusHistogramElements(StringBuilder sb, MetricID metricID,
+            boolean withHelpType, long count, DisplayableLabeledSnapshot snap) {
+        PrometheusName name = PrometheusName.create(this, metricID);
+        appendPrometheusHistogramElements(sb, name, withHelpType, count, snap);
+    }
+
+    void appendPrometheusHistogramElements(StringBuilder sb, PrometheusName name,
+            boolean withHelpType, long count, DisplayableLabeledSnapshot snap) {
+
+        // # TYPE application:file_sizes_mean_bytes gauge
+        // application:file_sizes_mean_bytes 4738.231
+        appendPrometheusElement(sb, name, "mean",  withHelpType, "gauge", snap.mean());
+
+        // # TYPE application:file_sizes_max_bytes gauge
+        // application:file_sizes_max_bytes 31716
+        appendPrometheusElement(sb, name, "max", withHelpType, "gauge", snap.max());
+
+        // # TYPE application:file_sizes_min_bytes gauge
+        // application:file_sizes_min_bytes 180
+        appendPrometheusElement(sb, name, "min", withHelpType, "gauge", snap.min());
+
+        // # TYPE application:file_sizes_stddev_bytes gauge
+        // application:file_sizes_stddev_bytes 1054.7343037063602
+        appendPrometheusElement(sb, name, "stddev", withHelpType, "gauge", snap.stdDev());
+
+        // # TYPE application:file_sizes_bytes summary
+        // # HELP application:file_sizes_bytes Users file size
+        // application:file_sizes_bytes_count 2037
+
+        if (withHelpType) {
+            prometheusType(sb, name.nameUnits(), "summary");
+            prometheusHelp(sb, name.nameUnits());
+        }
+        sb.append(name.nameUnitsSuffixTags("count"))
+                .append(" ")
+                .append(count)
+                .append('\n');
+
+        // application:file_sizes_bytes{quantile="0.5"} 4201
+        // for each supported quantile
+        prometheusQuantile(sb, name, getUnits(), "0.5", snap.median());
+        prometheusQuantile(sb, name, getUnits(), "0.75", snap.sample75thPercentile());
+        prometheusQuantile(sb, name, getUnits(), "0.95", snap.sample95thPercentile());
+        prometheusQuantile(sb, name, getUnits(), "0.98", snap.sample98thPercentile());
+        prometheusQuantile(sb, name, getUnits(), "0.99", snap.sample99thPercentile());
+        prometheusQuantile(sb, name, getUnits(), "0.999", snap.sample999thPercentile());
+
+    }
+
+    String prometheusExemplar(Sample.Labeled sample) {
+        return prometheusExemplar(sample, getUnits());
+    }
+
+    String prometheusExemplar(Sample.Labeled sample, Units units) {
+        return sample == null ? "" : prometheusExemplar(units.convert(sample.value()), sample);
+    }
+
+    String prometheusExemplar(Object value, Sample.Labeled sample) {
+        if (sample == null || sample.label().isBlank()) {
+            return "";
+        }
+        // The loaded service provides the entire label, including enclosing braces. For example, {trace_id=xxx}.
+        String exemplar = String.format(" # %s %s %f", sample.label(), value,
+                sample.timestamp() / 1000.0);
+        if (exemplar.length() <= EXEMPLAR_MAX_LENGTH) {
+            return exemplar;
+        }
+        LOGGER.log(Level.WARNING, String.format("Exemplar string exceeds the maximum length(%d); suppressing '%s'",
+                exemplar.length(), exemplar));
+        return "";
     }
 
     final String prometheusNameWithUnits(String name, Optional<String> unit) {
@@ -264,10 +389,10 @@ abstract class MetricImpl implements HelidonMetric {
     }
 
     final String prometheusName(String name) {
-        return prometheusClean(name, registryType + "_");
+        return prometheusClean(name, registryType() + "_");
     }
 
-    private String prometheusClean(String name, String prefix) {
+    static String prometheusClean(String name, String prefix) {
         name = name.replaceAll("[^a-zA-Z0-9_]", "_");
 
         //Scope is always specified at the start of the metric name.
@@ -318,7 +443,7 @@ abstract class MetricImpl implements HelidonMetric {
 
     // for Gauge and Histogram - must convert
     Units getUnits() {
-        String unit = metadata.getUnit().get();
+        String unit = metadata().getUnit().get();
         if ((null == unit) || unit.isEmpty() || MetricUnits.NONE.equals(unit)) {
             return new Units(null);
         }

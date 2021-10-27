@@ -18,7 +18,6 @@ package io.helidon.microprofile.faulttolerance;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -27,11 +26,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
-import java.util.logging.Logger;
 
-import javax.enterprise.context.control.RequestContextController;
-import javax.enterprise.inject.spi.CDI;
 import javax.interceptor.InvocationContext;
 
 import io.helidon.common.context.Context;
@@ -51,8 +48,6 @@ import org.eclipse.microprofile.faulttolerance.exceptions.BulkheadException;
 import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
 import org.eclipse.microprofile.faulttolerance.exceptions.TimeoutException;
 import org.eclipse.microprofile.metrics.Counter;
-import org.glassfish.jersey.process.internal.RequestContext;
-import org.glassfish.jersey.process.internal.RequestScope;
 
 import static io.helidon.microprofile.faulttolerance.FaultToleranceExtension.isFaultToleranceMetricsEnabled;
 import static io.helidon.microprofile.faulttolerance.FaultToleranceMetrics.BREAKER_CALLS_FAILED_TOTAL;
@@ -91,7 +86,6 @@ import static io.helidon.microprofile.faulttolerance.ThrowableMapper.mapTypes;
  * all invocations of a method, including for circuit breakers and bulkheads.
  */
 class MethodInvoker implements FtSupplier<Object> {
-    private static final Logger LOGGER = Logger.getLogger(MethodInvoker.class.getName());
 
     /**
      * The method being intercepted.
@@ -131,21 +125,6 @@ class MethodInvoker implements FtSupplier<Object> {
     private final Context helidonContext;
 
     /**
-     * Jersey's request scope object. Will be non-null if request scope is active.
-     */
-    private RequestScope requestScope;
-
-    /**
-     * Jersey's request scope object.
-     */
-    private RequestContext requestContext;
-
-    /**
-     * CDI's request scope controller used for activation/deactivation.
-     */
-    private RequestContextController requestController;
-
-    /**
      * Record thread interruption request for later use.
      */
     private final AtomicBoolean mayInterruptIfRunning = new AtomicBoolean(false);
@@ -157,8 +136,12 @@ class MethodInvoker implements FtSupplier<Object> {
     private Thread asyncInterruptThread;
 
     /**
-     * State associated with a method in {@code METHOD_STATES}. This include the
-     * FT handler created for the method.
+     * Helper to properly propagate active request scope to other threads.
+     */
+    private final RequestScopeHelper requestScopeHelper;
+
+    /**
+     * State associated with a method in {@code METHOD_STATES}.
      */
     private static class MethodState {
         private Retry retry;
@@ -170,12 +153,13 @@ class MethodInvoker implements FtSupplier<Object> {
         private long breakerTimerClosed;
         private long breakerTimerHalfOpen;
         private long startNanos;
+        private final ReentrantLock lock = new ReentrantLock();
     }
 
     /**
      * FT handler for this invoker.
      */
-    private FtHandlerTyped<Object> handler;
+    private final FtHandlerTyped<Object> handler;
 
     /**
      * A key used to lookup {@code MethodState} instances, which include FT handlers.
@@ -315,15 +299,8 @@ class MethodInvoker implements FtSupplier<Object> {
         handler = createMethodHandler(methodState);
 
         // Gather information about current request scope if active
-        try {
-            requestController = CDI.current().select(RequestContextController.class).get();
-            requestScope = CDI.current().select(RequestScope.class).get();
-            requestContext = requestScope.referenceCurrent();
-        } catch (Exception e) {
-            requestScope = null;
-            LOGGER.fine(() -> "Request context not active for method " + method
-                    + " on thread " + Thread.currentThread().getName());
-        }
+        requestScopeHelper = new RequestScopeHelper();
+        requestScopeHelper.saveScope();
 
         // Gauges and other metrics for bulkhead and circuit breakers
         if (isFaultToleranceMetricsEnabled()) {
@@ -409,10 +386,8 @@ class MethodInvoker implements FtSupplier<Object> {
 
             // Update resultFuture based on outcome of asyncFuture
             asyncFuture.whenComplete((result, throwable) -> {
-                // Release request context if referenced
-                if (requestContext != null) {
-                    requestContext.release();
-                }
+                // Release request context
+                requestScopeHelper.clearScope();
 
                 if (throwable != null) {
                     if (throwable instanceof CancellationException) {
@@ -455,10 +430,8 @@ class MethodInvoker implements FtSupplier<Object> {
             } catch (Throwable t) {
                 cause = map(t);
             } finally {
-                // Release request context if referenced
-                if (requestContext != null) {
-                    requestContext.release();
-                }
+                // Release request context
+                requestScopeHelper.clearScope();
             }
             updateMetricsAfter(cause);
             if (cause != null) {
@@ -466,41 +439,6 @@ class MethodInvoker implements FtSupplier<Object> {
             }
             return result;
         }
-    }
-
-    /**
-     * Wraps a supplier with additional code to preserve request context (if active)
-     * when running in a different thread. This is required for {@code @Inject} and
-     * {@code @Context} to work properly. Note that it is possible for only CDI's
-     * request scope to be active at this time (e.g. in TCKs).
-     */
-    private FtSupplier<Object> requestContextSupplier(FtSupplier<Object> supplier) {
-        FtSupplier<Object> wrappedSupplier;
-        if (requestScope != null) {                     // Jersey and CDI
-            wrappedSupplier = () -> requestScope.runInScope(requestContext,
-                    (Callable<?>) (() -> {
-                        try {
-                            requestController.activate();
-                            return supplier.get();
-                        } catch (Throwable t) {
-                            throw t instanceof Exception ? ((Exception) t) : new RuntimeException(t);
-                        } finally {
-                            requestController.deactivate();
-                        }
-                    }));
-        } else if (requestController != null) {         // CDI only
-            wrappedSupplier = () -> {
-                try {
-                    requestController.activate();
-                    return supplier.get();
-                } finally {
-                    requestController.deactivate();
-                }
-            };
-        } else {
-            wrappedSupplier = supplier;
-        }
-        return wrappedSupplier;
     }
 
     /**
@@ -612,7 +550,7 @@ class MethodInvoker implements FtSupplier<Object> {
             invocationStartNanos = System.nanoTime();
 
             // Wrap supplier with request context setup
-            FtSupplier wrappedSupplier = requestContextSupplier(supplier);
+            FtSupplier<Object> wrappedSupplier = requestScopeHelper.wrapInScope(supplier);
 
             CompletableFuture<Object> resultFuture = new CompletableFuture<>();
             if (introspector.isAsynchronous()) {
@@ -685,9 +623,12 @@ class MethodInvoker implements FtSupplier<Object> {
         handlerStartNanos = System.nanoTime();
 
         if (introspector.hasCircuitBreaker()) {
-            synchronized (method) {
+            methodState.lock.lock();
+            try {
                 // Breaker state may have changed since we recorded it last
                 methodState.lastBreakerState = methodState.breaker.state();
+            } finally {
+                methodState.lock.unlock();
             }
         }
     }
@@ -702,7 +643,8 @@ class MethodInvoker implements FtSupplier<Object> {
             return;
         }
 
-        synchronized (method) {
+        methodState.lock.lock();
+        try {
             // Calculate execution time
             long executionTime = System.nanoTime() - handlerStartNanos;
 
@@ -802,6 +744,8 @@ class MethodInvoker implements FtSupplier<Object> {
             if (cause != null) {
                 getCounter(method, INVOCATIONS_FAILED_TOTAL).inc();
             }
+        } finally {
+            methodState.lock.unlock();
         }
     }
 

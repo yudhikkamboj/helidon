@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,27 +22,40 @@ import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.json.Json;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
+import javax.json.JsonValue;
 
+import org.eclipse.microprofile.metrics.Histogram;
 import org.eclipse.microprofile.metrics.Metadata;
 import org.eclipse.microprofile.metrics.MetricID;
 import org.eclipse.microprofile.metrics.MetricType;
 import org.eclipse.microprofile.metrics.MetricUnits;
 import org.eclipse.microprofile.metrics.Snapshot;
+import org.eclipse.microprofile.metrics.Tag;
+import org.hamcrest.collection.IsMapContaining;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.metrics.HelidonMetricsMatcher.withinTolerance;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.isEmptyOrNullString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -89,6 +102,19 @@ class HelidonHistogramTest {
             + "application_file_sizes_bytes{quantile=\"0.99\"} 98000\n"
             + "application_file_sizes_bytes{quantile=\"0.999\"} 99000\n";
 
+    private static final Tag[] HISTO_INT_TAGS = new Tag[] {
+            new Tag("tag1", "val1"),
+            new Tag("tag2", "val2")};
+
+    private static final Map<String, String> HISTO_INT_TAGS_AS_MAP =
+            Arrays.stream(HISTO_INT_TAGS).collect(Collectors.toMap(Tag::getTagName, Tag::getTagValue));
+
+    private static final Map<String, String> HISTO_INT_TAGS_AS_MAP_PROM =
+            Arrays.stream(HISTO_INT_TAGS).collect(Collectors.toMap(Tag::getTagName, tag -> "\"" + tag.getTagValue() + "\""));
+
+    // name{tag="val",tag="val"} where the braces and tags within are optional
+    private static final Pattern PROMETHEUS_KEY_PATTERN = Pattern.compile("([^{]+)(?:\\{([^}]+)})?+");
+
     /**
      * Parses a {@code Stream| of text lines (presumably in Prometheus/OpenMetrics format) into a {@code Stream}
      * of {@code Map.Entry}, with the key the value name and the value a {@code Number}
@@ -117,6 +143,7 @@ class HelidonHistogramTest {
     private static Metadata meta;
     private static HelidonHistogram histoInt;
     private static MetricID histoIntID;
+    private static MetricID histoIntIDWithTags;
     private static HelidonHistogram delegatingHistoInt;
     private static HelidonHistogram histoLong;
     private static HelidonHistogram delegatingHistoLong;
@@ -134,6 +161,7 @@ class HelidonHistogramTest {
 
         histoInt = HelidonHistogram.create("application", meta);
         histoIntID = new MetricID("file_sizes");
+        histoIntIDWithTags = new MetricID(histoIntID.getName(), HISTO_INT_TAGS);
         delegatingHistoInt = HelidonHistogram.create("application", meta, HelidonHistogram.create("ignored", meta));
         histoLong = HelidonHistogram.create("application", meta);
         delegatingHistoLong = HelidonHistogram.create("application", meta, HelidonHistogram.create("ignored", meta));
@@ -210,6 +238,36 @@ class HelidonHistogramTest {
     }
 
     @Test
+    void testJsonWithTags() {
+        JsonObjectBuilder builder = Json.createObjectBuilder();
+        histoInt.jsonData(builder, new MetricID("file_sizes", HISTO_INT_TAGS));
+
+        JsonObject result = builder.build();
+
+        JsonObject metricData = result.getJsonObject("file_sizes");
+        assertThat(metricData, notNullValue());
+
+        checkJsonTreeForTags("file_sizes", metricData, HISTO_INT_TAGS_AS_MAP);
+    }
+
+    private static void checkJsonTreeForTags(String key, JsonValue jsonValue, Map<String, String> expectedTags) {
+        if (jsonValue.getValueType() == JsonValue.ValueType.OBJECT) {
+            jsonValue.asJsonObject()
+                    .forEach((childKey, childValue) -> checkJsonTreeForTags(key + "." + childKey, childValue, expectedTags));
+        } else {
+            assertThat("Leaf JSON node with key " + key,
+                    tagsFromJsonKey(key),
+                    MetricsCustomMatchers.MapContains.all(HISTO_INT_TAGS_AS_MAP));
+        }
+    }
+
+    private static Map<String, String> tagsFromJsonKey(String jsonKey) {
+        return jsonKey.contains(";")
+                ? tagsFromDelimitedString(jsonKey.substring(jsonKey.indexOf(';') + 1), ";")
+                : Collections.emptyMap();
+    }
+
+    @Test
     void testPrometheus() throws IOException, ParseException {
         final StringBuilder sb = new StringBuilder();
         histoInt.prometheusData(sb, histoIntID, true);
@@ -220,11 +278,70 @@ class HelidonHistogramTest {
     }
 
     @Test
+    void testPrometheusWithTags() {
+        final StringBuilder sb = new StringBuilder();
+        histoInt.prometheusData(sb, histoIntIDWithTags, true);
+
+        parsePrometheusText(new LineNumberReader(new StringReader(sb.toString())).lines())
+                .forEach(entry -> assertThat("Missing tag labels for " + entry.getKey(),
+                        tagsFromPrometheusKey(entry.getKey()),
+                        MetricsCustomMatchers.MapContains.all(HISTO_INT_TAGS_AS_MAP_PROM)));
+    }
+
+    private static Map<String, String> tagsFromPrometheusKey(String promKey) {
+        // Actual tags will exclude any possible "quantile" settings.
+        List<Tag> result = new ArrayList<>();
+        Matcher m = PROMETHEUS_KEY_PATTERN.matcher(promKey);
+        if (!m.matches()) {
+            fail("Could not parse Prometheus key for tags: " + promKey);
+        }
+        if (m.groupCount() <= 1) {
+            return Collections.emptyMap();
+        }
+
+        String tagExprs = m.group(2);
+        assertThat("Tag expressions from Prometheus key " + promKey, tagExprs, not(isEmptyOrNullString()));
+
+        return tagsFromDelimitedString(m.group(2), ",");
+    }
+
+    private static Map<String, String> tagsFromDelimitedString(String delimitedString, String delimiter) {
+        return Arrays.stream(delimitedString.split(delimiter))
+                .filter(Predicate.not(tagExpr -> tagExpr.startsWith("quantile")))
+                .map(tagExpr -> tagExpr.split("="))
+                .peek(arr -> {
+                    assertThat("Tag expression is name=value giving two segments", arr.length, is(2));
+                })
+                .collect(Collectors.toMap(arr -> arr[0], arr -> arr[1]));
+    }
+
+    @Test
     void testStatisticalValues() {
         testSnapshot(1, "integers", histoInt.getSnapshot(), 50.6, 29.4389);
         testSnapshot(1, "delegating integers", delegatingHistoInt.getSnapshot(), 50.6, 29.4389);
         testSnapshot(10, "longs", histoLong.getSnapshot(), 506.3, 294.389);
         testSnapshot(10, "delegating longs", delegatingHistoLong.getSnapshot(), 506.3, 294.389);
+    }
+
+    @Test
+    void testNaNAvoidance() {
+        Metadata metadata = Metadata.builder()
+                .withName("long_idle_test")
+                .withDisplayName("theDisplayName")
+                .withDescription("Simulates a long idle period")
+                .withType(MetricType.HISTOGRAM)
+                .withUnit(MetricUnits.SECONDS)
+                .build();
+        TestClock testClock = TestClock.create();
+        Histogram idleHistogram = HelidonHistogram.create("application", metadata, testClock);
+
+        idleHistogram.update(100);
+
+        for (int i = 1; i < 48; i++) {
+            testClock.add(1, TimeUnit.HOURS);
+            assertThat("Idle histogram failed after simulating " + i + " hours", idleHistogram.getSnapshot().getMean(),
+                    not(equalTo(Double.NaN)));
+        }
     }
 
     private void testSnapshot(int factor, String description, Snapshot snapshot, double mean, double stddev) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.WebTarget;
 
 import io.helidon.config.mp.MpConfigSources;
+import io.helidon.config.yaml.mp.YamlMpConfigSource;
 
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.spi.ConfigBuilder;
@@ -78,6 +79,8 @@ class HelidonJunitExtension implements BeforeAllCallback,
     private static final Set<Class<? extends Annotation>> HELIDON_TEST_ANNOTATIONS =
             Set.of(AddBean.class, AddConfig.class, AddExtension.class, Configuration.class);
     private static final Map<Class<? extends Annotation>, Annotation> BEAN_DEFINING = new HashMap<>();
+
+    private static final List<String> YAML_SUFFIXES = List.of(".yml", ".yaml");
 
     static {
         BEAN_DEFINING.put(ApplicationScoped.class, ApplicationScoped.Literal.INSTANCE);
@@ -283,9 +286,14 @@ class HelidonJunitExtension implements BeforeAllCallback,
             ConfigBuilder builder = configProviderResolver.getBuilder();
 
             configMeta.additionalSources.forEach(it -> {
-                builder.withSources(MpConfigSources.classPath(it).toArray(new ConfigSource[0]));
+                // If not using a YAML extension, assume properties file
+                String fileName = it.trim();
+                if (YAML_SUFFIXES.stream().anyMatch(fileName::endsWith)) {
+                    builder.withSources(YamlMpConfigSource.classPath(it).toArray(new ConfigSource[0]));
+                } else {
+                    builder.withSources(MpConfigSources.classPath(it).toArray(new ConfigSource[0]));
+                }
             });
-
             config = builder
                     .withSources(MpConfigSources.create(configMeta.additionalKeys))
                     .addDefaultSources()
@@ -499,6 +507,7 @@ class HelidonJunitExtension implements BeforeAllCallback,
         private final Map<String, String> additionalKeys = new HashMap<>();
         private final List<String> additionalSources = new ArrayList<>();
         private boolean useExisting;
+        private String profile;
 
         private ConfigMeta() {
             // to allow SeContainerInitializer (forbidden by default because of native image)
@@ -508,6 +517,8 @@ class HelidonJunitExtension implements BeforeAllCallback,
             additionalKeys.put("server.port", "0");
             // higher ordinal then all the defaults, system props and environment variables
             additionalKeys.putIfAbsent(ConfigSource.CONFIG_ORDINAL, "1000");
+            // profile
+            additionalKeys.put("mp.config.profile", "test");
         }
 
         private void addConfig(AddConfig[] configs) {
@@ -521,7 +532,10 @@ class HelidonJunitExtension implements BeforeAllCallback,
                 return;
             }
             useExisting = config.useExisting();
+            profile = config.profile();
             additionalSources.addAll(List.of(config.configSources()));
+            //set additional key for profile
+            additionalKeys.put("mp.config.profile", profile);
         }
 
         ConfigMeta nextMethod() {
@@ -530,6 +544,7 @@ class HelidonJunitExtension implements BeforeAllCallback,
             methodMeta.additionalKeys.putAll(this.additionalKeys);
             methodMeta.additionalSources.addAll(this.additionalSources);
             methodMeta.useExisting = this.useExisting;
+            methodMeta.profile = this.profile;
 
             return methodMeta;
         }

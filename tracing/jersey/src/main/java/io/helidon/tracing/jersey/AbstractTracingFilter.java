@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -89,11 +89,13 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
             Span span = spanBuilder.start();
             Scope spanScope = tracer.scopeManager().activate(span);
 
+            context.register(span);
+            context.register(spanScope);
+            context.register(ClientTracingFilter.class, span.context());
             requestContext.setProperty(SPAN_PROPERTY, span);
             requestContext.setProperty(SPAN_SCOPE_PROPERTY, spanScope);
-            context.register(ClientTracingFilter.class, span.context());
 
-            if (!context.get(TracingContext.class).isPresent()) {
+            if (context.get(TracingContext.class).isEmpty()) {
                 context.register(TracingContext.create(tracer, requestContext.getHeaders()));
             }
 
@@ -165,9 +167,11 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
         requestContext.setProperty(SPAN_FINISHED_PROPERTY, true);
         span.finish();
 
-        Scope spanScope = (Scope) requestContext.getProperty(SPAN_SCOPE_PROPERTY);
-        if (null != spanScope) {
-            spanScope.close();
+        // using the helidon context is not supported here, as we may be executing in a completion stage returned
+        // from a third party component
+        Scope scope = (Scope) requestContext.getProperty(SPAN_SCOPE_PROPERTY);
+        if (scope != null) {
+            scope.close();
         }
     }
 

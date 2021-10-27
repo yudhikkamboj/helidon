@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 
-    Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+    Copyright (c) 2018, 2021 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,15 +20,31 @@
 :h1Prefix: SE
 :description: Helidon Reactive WebServer static content support
 :keywords: helidon, reactive, reactive streams, reactive java, reactive webserver
+:feature-name: Static Content Support
+:common-deps-page-prefix-inc: ../../shared/dependencies/common_shared.adoc
+
+include::{common-deps-page-prefix-inc}[tag=maven-dependency]
+
+[source,xml]
+----
+<dependency>
+    <groupId>io.helidon.webserver</groupId>
+    <artifactId>helidon-webserver-static-content</artifactId>
+</dependency>
+----
 
 == Static Content Support
 
-Use the `StaticContentSupport` class to serve files and classpath resources. 
+Use the `io.helidon.webserver.staticcontent.StaticContentSupport` class to serve files and classpath resources.
 `StaticContentSupport` can be created for any readable directory or classpath
  context root and registered on a path in `Routing`.
 
 You can combine dynamic handlers with `StaticContentSupport` objects: if no file matches the request path, then the request is forwarded to
- the next handler. 
+ the next handler.
+
+=== Registering Static Content
+
+To register static content based on a file system (`/pictures`), and classpath (`/`):
 
 [source,java]
 ----

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@ import java.net.URI;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLException;
@@ -105,7 +105,7 @@ class WebClientConfiguration {
         this.context = builder.context;
         this.readerContext = builder.readerContext;
         this.writerContext = builder.writerContext;
-        this.clientServices = Collections.unmodifiableList(builder.clientServices);
+        this.clientServices = List.copyOf(builder.clientServices);
         this.uri = builder.uri;
         this.keepAlive = builder.keepAlive;
         this.validateHeaders = builder.validateHeaders;
@@ -116,8 +116,8 @@ class WebClientConfiguration {
      *
      * @return a new builder instance
      */
-    static Builder builder() {
-        return new Builder();
+    static Builder<?, ?> builder() {
+        return new Builder<>();
     }
 
     /**
@@ -125,8 +125,8 @@ class WebClientConfiguration {
      *
      * @return a new builder instance
      */
-    Builder derive() {
-        return new Builder().update(this);
+    Builder<?, ?> derive() {
+        return new Builder<>().update(this);
     }
 
     Optional<SslContext> sslContext() {
@@ -149,6 +149,9 @@ class WebClientConfiguration {
                 if (webClientTls.trustAll()) {
                     sslContextBuilder.trustManager(InsecureTrustManagerFactory.INSTANCE);
                 }
+                if (!webClientTls.allowedCipherSuite().isEmpty()) {
+                    sslContextBuilder.ciphers(webClientTls.allowedCipherSuite());
+                }
 
                 sslContext = sslContextBuilder.build();
             }
@@ -159,8 +162,9 @@ class WebClientConfiguration {
     }
 
     private SslContext nettySslFromJavaNet(SSLContext javaNetContext) {
+        Set<String> allowedCipherSuite = webClientTls.allowedCipherSuite();
         return new JdkSslContext(
-                javaNetContext, true, null,
+                javaNetContext, true, allowedCipherSuite.isEmpty() ? null : allowedCipherSuite,
                 IdentityCipherSuiteFilter.INSTANCE, null,
                 ClientAuth.OPTIONAL, null, false);
     }
@@ -283,6 +287,7 @@ class WebClientConfiguration {
 
         private final WebClientRequestHeaders clientHeaders;
         private final Map<String, String> defaultCookies;
+        private final List<WebClientService> clientServices;
 
         private Config config;
         private Context context;
@@ -300,7 +305,6 @@ class WebClientConfiguration {
         private URI uri;
         private MessageBodyReaderContext readerContext;
         private MessageBodyWriterContext writerContext;
-        private List<WebClientService> clientServices;
         private boolean validateHeaders;
         @SuppressWarnings("unchecked")
         private B me = (B) this;
@@ -315,6 +319,7 @@ class WebClientConfiguration {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public T build() {
             return (T) new WebClientConfiguration(this);
         }
@@ -562,7 +567,8 @@ class WebClientConfiguration {
         }
 
         B clientServices(List<WebClientService> clientServices) {
-            this.clientServices = clientServices;
+            this.clientServices.clear();
+            this.clientServices.addAll(clientServices);
             return me;
         }
 

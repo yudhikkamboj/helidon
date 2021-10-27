@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,18 @@
  * href="https://github.com/xetorthio/jedis/blob/master/README.md">Jedis
  * Redis client</a>.
  */
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.integrations.jedis.cdi {
-    requires java.desktop; // For java.beans
-    requires jakarta.enterprise.cdi.api;
+    requires transitive java.desktop; // For java.beans
+    requires transitive jakarta.enterprise.cdi.api;
     requires jakarta.inject.api;
     requires java.sql;
-    requires microprofile.config.api;
-    requires jedis;
-    requires commons.pool2;
+    requires transitive microprofile.config.api;
+    requires redis.clients.jedis;
+    requires org.apache.commons.pool2;
 
     exports io.helidon.integrations.jedis.cdi;
+
+    provides javax.enterprise.inject.spi.Extension
+            with io.helidon.integrations.jedis.cdi.JedisExtension;
 }
