@@ -32,7 +32,7 @@
 
     <organization>
         <name>Oracle Corporation</name>
-        <url>http://www.oracle.com/</url>
+        <url>https://www.oracle.com/</url>
     </organization>
 
     <inceptionYear>2018</inceptionYear>
@@ -181,6 +181,7 @@
                         <nexusUrl>https://oss.sonatype.org/</nexusUrl>
                         <autoReleaseAfterClose>true</autoReleaseAfterClose>
                         <skipStagingRepositoryClose>true</skipStagingRepositoryClose>
+                        <!--suppress UnresolvedMavenProperty, MavenModelInspection -->
                         <skipNexusStagingDeployMojo>${maven.deploy.skip}</skipNexusStagingDeployMojo>
                     </configuration>
                 </plugin>

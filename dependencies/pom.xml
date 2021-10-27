@@ -540,7 +540,7 @@
                 <artifactId>google-api-client</artifactId>
                 <version>${version.lib.google-api-client}</version>
                 <exclusions>
-                    <!-- For depenedency convergence. Defer to newer version from google-http-client -->
+                    <!-- For dependency convergence. Defer to newer version from google-http-client -->
                     <exclusion>
                         <groupId>org.apache.httpcomponents</groupId>
                         <artifactId>httpclient</artifactId>
@@ -762,7 +762,7 @@
                 <type>pom</type>
             </dependency>
 
-            <!-- Microstream related -->
+            <!-- MicroStream related -->
             <dependency>
                 <groupId>one.microstream</groupId>
                 <artifactId>microstream-storage-embedded</artifactId>

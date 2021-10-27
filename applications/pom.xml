@@ -146,6 +146,7 @@
                         <arguments>
                             <argument>-classpath</argument>
                             <classpath/>
+                            <!--suppress MavenModelInspection -->
                             <argument>${mainClass}</argument>
                         </arguments>
                     </configuration>

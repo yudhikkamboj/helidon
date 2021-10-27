@@ -17,7 +17,9 @@
 
 -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
     <parent>
@@ -189,8 +191,6 @@
         <module>service-common</module>
     </modules>
 
-
-
     <build>
         <extensions>
             <extension>
@@ -199,7 +199,6 @@
                 <version>${version.plugin.os}</version>
             </extension>
         </extensions>
-
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -402,6 +401,11 @@
                         <argLine>${failsafe.argLine} ${failsafe.coverage.argline}</argLine>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${version.plugin.site}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.commonjava.maven.plugins</groupId>
@@ -1609,7 +1613,6 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                 <plugins>
                     <plugin>
                         <groupId>io.helidon.build-tools</groupId>
-                        <!--suppress MavenModelInspection -->
                         <artifactId>helidon-build-cache-maven-plugin</artifactId>
                         <extensions>true</extensions>
                         <configuration>
