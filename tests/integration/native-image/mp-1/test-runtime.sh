@@ -30,7 +30,10 @@ readonly MY_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; pwd -P)
 cd "${MY_DIR}"
 
 # populate cache
-mvn -f ../../../pom.xml validate -Ppipeline
+mvn -f ../../../pom.xml validate \
+  -Dcache.loadArchive=true \
+  -Dcache.archiveFile=../../../target/build-cache.tar \
+  -Ppipeline
 
 # build the binary
 mvn clean package -DskipTests -Ppipeline
