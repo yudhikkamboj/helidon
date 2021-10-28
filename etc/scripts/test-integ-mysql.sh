@@ -29,12 +29,14 @@ graalvm
 
 mvn ${MAVEN_ARGS} --version
 
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+
 # Run tests in Java VM application
 (cd tests/integration/jpa && \
   mvn ${MAVEN_ARGS} -e \
       -Dmaven.test.failure.ignore=true \
       -Dmysql \
-      -Ppipeline
       -pl model,appl \
       clean verify)
 

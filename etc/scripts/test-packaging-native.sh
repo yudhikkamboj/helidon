@@ -35,6 +35,10 @@ if [ ! -x "${GRAALVM_HOME}/bin/native-image" ]; then
 fi
 
 mvn ${MAVEN_ARGS} --version
+
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+
 echo "GRAALVM_HOME=${GRAALVM_HOME}";
 ${GRAALVM_HOME}/bin/native-image --version;
 
@@ -49,9 +53,7 @@ mvn ${MAVEN_ARGS} -e clean install
 readonly native_image_tests="se-1 mp-1 mp-3"
 for native_test in ${native_image_tests}; do
     cd ${WS_DIR}/tests/integration/native-image/${native_test}
-    mvn ${MAVEN_ARGS} -e \
-      -Pnative-image,pipeline \
-      clean package
+    mvn ${MAVEN_ARGS} -e -Pnative-image clean package
 done
 
 # Run this one because it has no pre-reqs and self-tests

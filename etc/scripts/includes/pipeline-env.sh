@@ -83,7 +83,7 @@ if [ -z "${__PIPELINE_ENV_INCLUDED__}" ]; then
         if [ -n "${NPM_CONFIG_REGISTRY}" ] ; then
             MAVEN_ARGS="${MAVEN_ARGS} -Dnpm.download.root=${NPM_CONFIG_REGISTRY}/npm/-/"
         fi
-        MAVEN_ARGS="${MAVEN_ARGS} -Dcache.loadArchive=true -Dcache.archiveFile=${WS_DIR}/target/build-cache.tar -Ppipeline"
+        MAVEN_ARGS="${MAVEN_ARGS} -Ppipeline"
         export MAVEN_ARGS
 
         if [ -n "${https_proxy}" ] && [[ ! "${https_proxy}" =~ ^http:// ]] ; then

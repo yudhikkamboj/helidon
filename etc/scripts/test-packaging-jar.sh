@@ -26,12 +26,12 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-# Run native image tests
-cd ${WS_DIR}/tests/integration/native-image
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
 # Prime build all native-image tests
 mvn ${MAVEN_ARGS} -e \
-  -Ppipeline \
+  -f ${WS_DIR}/tests/integration/native-image/pom.xml \
   clean install
 
 # Run tests with classpath and then module path

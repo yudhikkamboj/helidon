@@ -26,10 +26,11 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-# Run integrations tests for Vault
-cd tests/integration/vault
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
+# Run integrations tests for Vault
 mvn ${MAVEN_ARGS} -e \
-      -Dmaven.test.failure.ignore=true \
-      -Ppipeline \
-      clean verify
+  -f ${WS_DIR}/tests/integration/vault/pom.xml \
+  -Dmaven.test.failure.ignore=true \
+  clean verify

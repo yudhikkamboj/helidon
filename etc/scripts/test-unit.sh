@@ -30,5 +30,4 @@ mvn ${MAVEN_ARGS} -e \
   -f ${WS_DIR}/pom.xml \
   -Dmaven.test.failure.ignore=true \
   -DskipTests=false \
-  -Ppipeline \
   test

@@ -26,6 +26,9 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+
 # Run native image tests
 cd ${WS_DIR}/tests/integration/native-image
 
@@ -38,7 +41,7 @@ readonly native_image_tests="se-1 mp-1 mp-3"
 for native_test in ${native_image_tests}; do
     cd ${WS_DIR}/tests/integration/native-image/${native_test}
     mvn ${MAVEN_ARGS} -e \
-      -Pjlink-image,staging,pipeline \
+      -Pjlink-image,staging \
       -Djlink.image.addClassDataSharingArchive=false \
       -Djlink.image.testImage=false \
       package

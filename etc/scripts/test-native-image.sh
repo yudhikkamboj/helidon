@@ -44,6 +44,9 @@ ${GRAALVM_HOME}/bin/native-image --version;
 # The first integration test tests all MP features except for JPA/JTA
 # with multiple JAX-RS applications including security
 
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+
 tests/integration/native-image/mp-1/test-runtime.sh
 # The third integration test tests Helidon Quickstart MP
 tests/integration/native-image/mp-3/test-runtime.sh

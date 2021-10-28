@@ -29,14 +29,8 @@ readonly MY_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; pwd -P)
 # cd the my dir, so we can start the application with correct current directory
 cd "${MY_DIR}"
 
-# populate cache
-mvn -f ../../../pom.xml validate \
-  -Dcache.loadArchive=true \
-  -Dcache.archiveFile=../../../target/build-cache.tar \
-  -Ppipeline
-
 # build the binary
-mvn clean package -DskipTests -Ppipeline
+mvn clean package -DskipTests
 
 # Attempt to run this example as a java -jar
 # This is a self-testing application
