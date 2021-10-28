@@ -109,8 +109,8 @@ for ((i=0;i<${#ARGS[@]};i++))
   esac
 }
 
-[ -z "${COMMAND}" ] && die "ERROR: no command provided"
-[ -z "${VERSION}" ] && die "ERROR: no version provided. Please use --version option to specify a version"
+[ -z "${COMMAND}" ] && die "ERROR: no command provided" || true
+[ -z "${VERSION}" ] && die "ERROR: no version provided. Please use --version option to specify a version" || true
 
 readonly MAVEN_ARGS=""
 readonly SCRIPT_DIR=$(dirname ${SCRIPT_PATH})
@@ -118,8 +118,8 @@ readonly DATESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
 mkdir -p /var/tmp/helidon-smoke
 readonly SCRATCH=$(mktemp -d /var/tmp/helidon-smoke/${VERSION}-${DATESTAMP}.XXXX)
 
-[ -z "${GIT_URL}" ] && GIT_URL=$(cd ${SCRIPT_DIR} && git remote get-url origin)
-[ -z "${GIT_URL}" ] && die "ERROR: can't determine URL of git repository. Please use --giturl option"
+[ -z "${GIT_URL}" ] && GIT_URL=$(cd ${SCRIPT_DIR} && git remote get-url origin) || true
+[ -z "${GIT_URL}" ] && die "ERROR: can't determine URL of git repository. Please use --giturl option" || true
 
 set -u
 

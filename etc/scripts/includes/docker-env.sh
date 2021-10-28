@@ -29,8 +29,8 @@ die() {
 
 # WS_DIR variable verification.
 if [ -z "${WS_DIR}" ]; then
-  [ -z "${1}" ] && die "ERROR: Missing required script path, exiting"
-  [ -z "${2}" ] && die "ERROR: Missing required cd to Helidon root directory from script path, exiting"
+  [ -z "${1}" ] && die "ERROR: Missing required script path, exiting" || true
+  [ -z "${2}" ] && die "ERROR: Missing required cd to Helidon root directory from script path, exiting" || true
   readonly WS_DIR=$(cd $(dirname -- "${1}") ; cd "${2}" ; pwd -P)
 fi
 
