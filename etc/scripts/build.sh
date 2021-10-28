@@ -26,7 +26,8 @@ error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-    clean install -e \
-    -Ppipeline
-
+mvn ${MAVEN_ARGS} -e \
+    -f ${WS_DIR}/pom.xml \
+    -DskipTests=true \
+    -Dcache.createArchive=true \
+    clean install

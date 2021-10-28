@@ -1603,26 +1603,5 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                 </pluginManagement>
             </build>
         </profile>
-        <profile>
-            <id>pipeline</id>
-            <properties>
-                <!--suppress UnresolvedMavenProperty -->
-                <skipTests>true</skipTests>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>io.helidon.build-tools</groupId>
-                        <artifactId>helidon-build-cache-maven-plugin</artifactId>
-                        <extensions>true</extensions>
-                        <configuration>
-                            <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
-                            <loadArchive>true</loadArchive>
-                            <createArchive>true</createArchive>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
     </profiles>
 </project>

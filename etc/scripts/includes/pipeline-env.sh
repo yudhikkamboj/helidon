@@ -21,18 +21,18 @@
 # Arguments: $1 - Script path
 #            $2 - cd to Helidon root directory from script path
 #
-# Atleast WS_DIR or both arguments must be passed.
+# At least WS_DIR or both arguments must be passed.
 
 # WS_DIR variable verification.
 if [ -z "${WS_DIR}" ]; then
 
     if [ -z "${1}" ]; then
-        echo "ERROR: Missing required script path, exitting"
+        echo "ERROR: Missing required script path, exiting"
         exit 1
     fi
 
     if [ -z "${2}" ]; then
-        echo "ERROR: Missing required cd to Helidon root directory from script path, exitting"
+        echo "ERROR: Missing required cd to Helidon root directory from script path, exiting"
         exit 1
     fi
 
@@ -83,6 +83,7 @@ if [ -z "${__PIPELINE_ENV_INCLUDED__}" ]; then
         if [ -n "${NPM_CONFIG_REGISTRY}" ] ; then
             MAVEN_ARGS="${MAVEN_ARGS} -Dnpm.download.root=${NPM_CONFIG_REGISTRY}/npm/-/"
         fi
+        MAVEN_ARGS="${MAVEN_ARGS} -Dcache.loadArchive=true -Dcache.archiveFile=${WS_DIR}/target/build-cache.tar -Ppipeline"
         export MAVEN_ARGS
 
         if [ -n "${https_proxy}" ] && [[ ! "${https_proxy}" =~ ^http:// ]] ; then
