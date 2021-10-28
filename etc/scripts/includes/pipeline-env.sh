@@ -54,7 +54,7 @@ check_graalvm_home() {
 graalvm() {
   check_graalvm_home
   JAVA_HOME=${GRAALVM_HOME}
-  PATH="${PATH}:${JAVA_HOME}/bin"
+  PATH="${JAVA_HOME}/bin:${PATH}"
 }
 
 check_native-image() {
