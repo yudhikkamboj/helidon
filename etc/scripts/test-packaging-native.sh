@@ -29,7 +29,9 @@ echo "GRAALVM_HOME=${GRAALVM_HOME}";
 ${GRAALVM_HOME}/bin/native-image --version;
 
 # populate cache
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+if [ "${PIPELINE}" = "true" ] ; then
+  mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+fi
 
 # Prime build all native-image tests
 mvn ${MAVEN_ARGS} \
@@ -39,10 +41,8 @@ mvn ${MAVEN_ARGS} \
 # Build native images
 # mp-2 is too big, waiting for more memory
 for i in "se-1" "mp-1" "mp-3"; do
-    mvn ${MAVEN_ARGS} \
-      -f ${WS_DIR}/tests/integration/native-image/${i}/pom.xml \
-      -Pnative-image \
-      package
+  cd ${WS_DIR}/tests/integration/native-image/${i}
+  mvn ${MAVEN_ARGS} -Pnative-image package
 done
 
 # Run this one because it has no pre-reqs and self-tests

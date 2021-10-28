@@ -23,7 +23,9 @@ error_trap_setup
 mvn ${MAVEN_ARGS} --version
 
 # populate cache
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+if [ "${PIPELINE}" = "true" ] ; then
+  mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+fi
 
 # Prime build all native-image tests
 mvn ${MAVEN_ARGS} \

@@ -64,7 +64,9 @@ fi
     readonly FLAG_J='1'
 
 # populate cache
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+if [ "${PIPELINE}" = "true" ] ; then
+  mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+fi
 
 # Run remote application tests in Java VM mode
 [ -n "${FLAG_J}" ] && \
