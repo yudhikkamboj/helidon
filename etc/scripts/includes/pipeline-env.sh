@@ -23,104 +23,79 @@
 #
 # At least WS_DIR or both arguments must be passed.
 
+die() {
+  echo "${1}" ; exit 1
+}
+
 # WS_DIR variable verification.
 if [ -z "${WS_DIR}" ]; then
-
-    if [ -z "${1}" ]; then
-        echo "ERROR: Missing required script path, exiting"
-        exit 1
-    fi
-
-    if [ -z "${2}" ]; then
-        echo "ERROR: Missing required cd to Helidon root directory from script path, exiting"
-        exit 1
-    fi
-
-    readonly WS_DIR=$(cd $(dirname -- "${1}") ; cd ${2} ; pwd -P)
-
+  [ -z "${1}" ] && die "ERROR: Missing required script path, exiting"
+  [ -z "${2}" ] && die "ERROR: Missing required cd to Helidon root directory from script path, exiting"
+  readonly WS_DIR=$(cd $(dirname -- "${1}") ; cd "${2}" ; pwd -P)
 fi
 
 # Multiple definition protection.
-if [ -z "${__PIPELINE_ENV_INCLUDED__}" ]; then
-    readonly __PIPELINE_ENV_INCLUDED__='true'
+if [ -n "${__PIPELINE_ENV_INCLUDED__}" ]; then
+  echo "WARNING: ${WS_DIR}/etc/scripts/includes/pipeline-env.sh included multiple times."
+  exit 0
+fi
 
-    . ${WS_DIR}/etc/scripts/includes/error_handlers.sh
+readonly __PIPELINE_ENV_INCLUDED__='true'
+. ${WS_DIR}/etc/scripts/includes/error_handlers.sh
 
-    if [ -z "${GRAALVM_HOME}" ]; then
-        export GRAALVM_HOME="/tools/graalvm-ce-java11-21.3.0"
-    fi
+require_env() {
+  [ -z "$(eval echo \$${1})" ] && die "ERROR: ${1} not set in the environment"
+}
 
-    require_env() {
-        if [ -z "$(eval echo \$${1})" ] ; then
-            echo "ERROR: ${1} not set in the environment"
-            return 1
-        fi
-    }
+check_graalvm_home() {
+  [ -z "${GRAALVM_HOME}" ]  && die "ERROR: GRAALVM_HOME is not set"
+}
 
-    # Set Graal VM into JAVA_HOME and PATH
-    # Modified shell variables: JAVA_HOME - JDK home directory
-    #                           PATH      - executables search path
-    graalvm() {
-        JAVA_HOME=${GRAALVM_HOME}
-        PATH="${PATH}:${JAVA_HOME}/bin"
-    }
+graalvm() {
+  check_graalvm_home
+  JAVA_HOME=${GRAALVM_HOME}
+  PATH="${PATH}:${JAVA_HOME}/bin"
+}
 
-    if [ -n "${JENKINS_HOME}" ] ; then
-        export PIPELINE="true"
-        export JAVA_HOME="/tools/jdk-11.0.12"
-        MAVEN_OPTS="${MAVEN_OPTS} -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn"
-        MAVEN_OPTS="${MAVEN_OPTS} -Dorg.slf4j.simpleLogger.showDateTime=true"
-        MAVEN_OPTS="${MAVEN_OPTS} -Dorg.slf4j.simpleLogger.dateTimeFormat=HH:mm:ss,SSS"
-        export MAVEN_OPTS
-        export PATH="/tools/apache-maven-3.6.3/bin:${JAVA_HOME}/bin:/tools/node-v12/bin:${PATH}"
-        if [ -n "${GITHUB_SSH_KEY}" ] ; then
-            export GIT_SSH_COMMAND="ssh -i ${GITHUB_SSH_KEY}"
-        fi
-        MAVEN_ARGS="${MAVEN_ARGS} -B"
-        if [ -n "${MAVEN_SETTINGS_FILE}" ] ; then
-            MAVEN_ARGS="${MAVEN_ARGS} -s ${MAVEN_SETTINGS_FILE}"
-        fi
-        if [ -n "${NPM_CONFIG_REGISTRY}" ] ; then
-            MAVEN_ARGS="${MAVEN_ARGS} -Dnpm.download.root=${NPM_CONFIG_REGISTRY}/npm/-/"
-        fi
-        MAVEN_ARGS="${MAVEN_ARGS} -Ppipeline"
-        export MAVEN_ARGS
+check_native-image() {
+  check_graalvm_home
+  [ ! -x "${GRAALVM_HOME}/bin/native-image" ] && \
+    die "ERROR: ${GRAALVM_HOME}/bin/native-image does not exist or is not executable"
+}
 
-        if [ -n "${https_proxy}" ] && [[ ! "${https_proxy}" =~ ^http:// ]] ; then
-            export https_proxy="http://${https_proxy}"
-        fi
-        if [ -n "${http_proxy}" ] && [[ ! "${http_proxy}" =~ ^http:// ]] ; then
-            export http_proxy="http://${http_proxy}"
-        fi
-        if [ ! -e "${HOME}/.npmrc" ] ; then
-            if [ -n "${NPM_CONFIG_REGISTRY}" ] ; then
-                echo "registry = ${NPM_CONFIG_REGISTRY}" >> ${HOME}/.npmrc
-            fi
-            if [ -n "${https_proxy}" ] ; then
-                echo "https-proxy = ${https_proxy}" >> ${HOME}/.npmrc
-            fi
-            if [ -n "${http_proxy}" ] ; then
-                echo "proxy = ${http_proxy}" >> ${HOME}/.npmrc
-            fi
-            if [ -n "${NO_PROXY}" ] ; then
-                echo "noproxy = ${NO_PROXY}" >> ${HOME}/.npmrc
-            fi
-        fi
+if [ -n "${JENKINS_HOME}" ] ; then
+  export PIPELINE="true"
+  export JAVA_HOME="/tools/jdk-11.0.12"
+  [ -z "${GRAALVM_HOME}" ] && export GRAALVM_HOME="/tools/graalvm-ce-java11-21.3.0"
 
-        if [ -n "${GPG_PUBLIC_KEY}" ] ; then
-            gpg --import --no-tty --batch ${GPG_PUBLIC_KEY}
-        fi
-        if [ -n "${GPG_PRIVATE_KEY}" ] ; then
-            gpg --allow-secret-key-import --import --no-tty --batch ${GPG_PRIVATE_KEY}
-        fi
-        if [ -n "${GPG_PASSPHRASE}" ] ; then
-            echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
-            gpg-connect-agent reloadagent /bye
-            GPG_KEYGRIP=$(gpg --with-keygrip -K | grep "Keygrip" | head -1 | awk '{print $3}')
-            /usr/lib/gnupg/gpg-preset-passphrase --preset "${GPG_KEYGRIP}" <<< "${GPG_PASSPHRASE}"
-        fi
-    fi
+  MAVEN_OPTS="${MAVEN_OPTS} -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn"
+  MAVEN_OPTS="${MAVEN_OPTS} -Dorg.slf4j.simpleLogger.showDateTime=true"
+  MAVEN_OPTS="${MAVEN_OPTS} -Dorg.slf4j.simpleLogger.dateTimeFormat=HH:mm:ss,SSS"
+  export MAVEN_OPTS
+  export PATH="/tools/apache-maven-3.6.3/bin:${JAVA_HOME}/bin:/tools/node-v12/bin:${PATH}"
 
-else
-    echo "WARNING: ${WS_DIR}/etc/scripts/includes/pipeline-env.sh included multiple times."
+  [ -n "${GITHUB_SSH_KEY}" ] &&  export GIT_SSH_COMMAND="ssh -i ${GITHUB_SSH_KEY}"
+
+  MAVEN_ARGS="${MAVEN_ARGS} -B -e -Ppipeline,ossrh-releases,ossrh-staging,staging"
+  [ -n "${MAVEN_SETTINGS_FILE}" ] && MAVEN_ARGS="${MAVEN_ARGS} -s ${MAVEN_SETTINGS_FILE}"
+  [ -n "${NPM_CONFIG_REGISTRY}" ] && MAVEN_ARGS="${MAVEN_ARGS} -Dnpm.download.root=${NPM_CONFIG_REGISTRY}/npm/-/"
+  export MAVEN_ARGS
+
+  [ -n "${https_proxy}" ] && [[ ! "${https_proxy}" =~ ^http:// ]] && export https_proxy="http://${https_proxy}"
+  [ -n "${http_proxy}" ] && [[ ! "${http_proxy}" =~ ^http:// ]] && export http_proxy="http://${http_proxy}"
+  if [ ! -e "${HOME}/.npmrc" ] ; then
+      [ -n "${NPM_CONFIG_REGISTRY}" ] && echo "registry = ${NPM_CONFIG_REGISTRY}" >> ${HOME}/.npmrc
+      [ -n "${https_proxy}" ] && echo "https-proxy = ${https_proxy}" >> ${HOME}/.npmrc
+      [ -n "${http_proxy}" ] && echo "proxy = ${http_proxy}" >> ${HOME}/.npmrc
+      [ -n "${NO_PROXY}" ] && echo "noproxy = ${NO_PROXY}" >> ${HOME}/.npmrc
+  fi
+
+  [ -n "${GPG_PUBLIC_KEY}" ]  && gpg --import --no-tty --batch ${GPG_PUBLIC_KEY}
+  [ -n "${GPG_PRIVATE_KEY}" ] && gpg --allow-secret-key-import --import --no-tty --batch ${GPG_PRIVATE_KEY}
+  if [ -n "${GPG_PASSPHRASE}" ] ; then
+      echo "allow-preset-passphrase" >> ~/.gnupg/gpg-agent.conf
+      gpg-connect-agent reloadagent /bye
+      GPG_KEYGRIP=$(gpg --with-keygrip -K | grep "Keygrip" | head -1 | awk '{print $3}')
+      /usr/lib/gnupg/gpg-preset-passphrase --preset "${GPG_KEYGRIP}" <<< "${GPG_PASSPHRASE}"
+  fi
 fi

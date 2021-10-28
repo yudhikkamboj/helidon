@@ -15,13 +15,8 @@
 # limitations under the License.
 #
 
-# Path to this script
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 usage(){
@@ -56,30 +51,29 @@ EOF
 ARGS=( "${@}" )
 for ((i=0;i<${#ARGS[@]};i++))
 {
-    ARG=${ARGS[${i}]}
-    case ${ARG} in
-    "--version="*)
-        VERSION=${ARG#*=}
-        ;;
-    "--help")
-        usage
-        exit 0
-        ;;
-    *)
-        if [ "${ARG}" = "update_version" ] || [ "${ARG}" = "release_build" ] ; then
-            readonly COMMAND="${ARG}"
-        else
-            echo "ERROR: unknown argument: ${ARG}"
-            exit 1
-        fi
-        ;;
-    esac
+  ARG=${ARGS[${i}]}
+  case ${ARG} in
+  "--version="*)
+    VERSION=${ARG#*=}
+    ;;
+  "--help")
+    usage
+    exit 0
+    ;;
+  *)
+    if [ "${ARG}" = "update_version" ] || [ "${ARG}" = "release_build" ] ; then
+      readonly COMMAND="${ARG}"
+    else
+      die "ERROR: unknown argument: ${ARG}"
+    fi
+    ;;
+  esac
 }
 
 if [ -z "${COMMAND}" ] ; then
-    echo "ERROR: no command provided"
-    usage
-    exit 1
+  echo "ERROR: no command provided"
+  usage
+  exit 1
 fi
 
 # Hooks for version substitution work
@@ -91,154 +85,153 @@ readonly PERFORM_HOOKS=( )
 # Resolve FULL_VERSION
 if [ -z "${VERSION+x}" ]; then
 
-    # get maven version
-    MVN_VERSION=$(mvn ${MAVEN_ARGS} \
-        -q \
-        -f ${WS_DIR}/pom.xml \
-        -Dexec.executable="echo" \
-        -Dexec.args="\${project.version}" \
-        --non-recursive \
-        org.codehaus.mojo:exec-maven-plugin:1.3.1:exec)
+  # get maven version
+  MVN_VERSION=$(mvn ${MAVEN_ARGS} \
+    -q \
+    -f ${WS_DIR}/pom.xml \
+    -Dexec.executable="echo" \
+    -Dexec.args="\${project.version}" \
+    --non-recursive \
+    org.codehaus.mojo:exec-maven-plugin:1.3.1:exec)
 
-    # strip qualifier
-    readonly VERSION="${MVN_VERSION%-*}"
-    readonly FULL_VERSION="${VERSION}"
+  # strip qualifier
+  readonly VERSION="${MVN_VERSION%-*}"
+  readonly FULL_VERSION="${VERSION}"
 else
-    readonly FULL_VERSION="${VERSION}"
+  readonly FULL_VERSION="${VERSION}"
 fi
 
 export FULL_VERSION
 printf "\n%s: FULL_VERSION=%s\n\n" "$(basename ${0})" "${FULL_VERSION}"
 
 update_version(){
-    # Update version
-    mvn ${MAVEN_ARGS} -f ${WS_DIR}/parent/pom.xml versions:set versions:set-property \
-        -DgenerateBackupPoms=false \
-        -DnewVersion="${FULL_VERSION}" \
-        -Dproperty=helidon.version \
-        -DprocessAllModules=true
+  # Update version
+  mvn ${MAVEN_ARGS} \
+    -f ${WS_DIR}/parent/pom.xml versions:set \
+    -DgenerateBackupPoms=false \
+    -DnewVersion="${FULL_VERSION}" \
+    -Dproperty=helidon.version \
+    -DprocessAllModules=true \
+    versions:set-property
 
-    # Hack to update helidon.version
-    for pom in `egrep "<helidon.version>.*</helidon.version>" -r . --include pom.xml | cut -d ':' -f 1 | sort | uniq `
-    do
-        cat ${pom} | \
-            sed -e s@'<helidon.version>.*</helidon.version>'@"<helidon.version>${FULL_VERSION}</helidon.version>"@g \
-            > ${pom}.tmp
-        mv ${pom}.tmp ${pom}
-    done
+  # Hack to update helidon.version
+  for pom in $(grep -E "<helidon.version>.*</helidon.version>" -r . --include pom.xml | cut -d ':' -f 1 | sort | uniq )
+  do
+    sed -e s@'<helidon.version>.*</helidon.version>'@"<helidon.version>${FULL_VERSION}</helidon.version>"@g ${pom} > ${pom}.tmp
+    mv ${pom}.tmp ${pom}
+  done
 
-    # Hack to update helidon.version in build.gradle files
-    for bfile in `egrep "helidonversion = .*" -r . --include build.gradle | cut -d ':' -f 1 | sort | uniq `
-    do
-        cat ${bfile} | \
-            sed -e s@'helidonversion = .*'@"helidonversion = \'${FULL_VERSION}\'"@g \
-            > ${bfile}.tmp
-        mv ${bfile}.tmp ${bfile}
-    done
+  # Hack to update helidon.version in build.gradle files
+  for bfile in $(grep -E "helidonversion = .*" -r . --include build.gradle | cut -d ':' -f 1 | sort | uniq )
+  do
+      sed -e s@'helidonversion = .*'@"helidonversion = \'${FULL_VERSION}\'"@g ${bfile} > ${bfile}.tmp
+      mv ${bfile}.tmp ${bfile}
+  done
 
-    # Invoke prepare hook
-    if [ -n "${PREPARE_HOOKS}" ]; then
-        for prepare_hook in ${PREPARE_HOOKS} ; do
-            bash "${prepare_hook}"
-        done
-    fi
+  # Invoke prepare hook
+  if [ ${#PREPARE_HOOKS[*]} -gt 0 ]; then
+      for prepare_hook in ${PREPARE_HOOKS[*]} ; do
+          bash "${prepare_hook}"
+      done
+  fi
 }
 
+readonly OSSRH_STAGING="https://oss.sonatype.org/service/local/staging"
 release_site(){
-    if [ -n "${STAGING_REPO_ID}" ] ; then
-        readonly MAVEN_REPO_URL="https://oss.sonatype.org/service/local/staging/deployByRepositoryId/${STAGING_REPO_ID}/"
-    else
-        readonly MAVEN_REPO_URL="https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-    fi
+  [ -n "${STAGING_REPO_ID}" ] \
+    && readonly MAVEN_REPO_URL="${OSSRH_STAGING}/deployByRepositoryId/${STAGING_REPO_ID}/" \
+    || readonly MAVEN_REPO_URL="${OSSRH_STAGING}/deploy/maven2/"
 
-    # Generate site
-    mvn ${MAVEN_ARGS} site
+  # Generate site
+  mvn ${MAVEN_ARGS} site
 
-    # Sign site jar
-    gpg -ab ${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar
+  # Sign site jar
+  gpg -ab ${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar
 
-    # Deploy site.jar and signature file explicitly using deploy-file
-    mvn ${MAVEN_ARGS} deploy:deploy-file \
-        -Dfile="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar" \
-        -Dfiles="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar.asc" \
-        -Dclassifier="site" \
-        -Dclassifiers="site" \
-        -Dtypes="jar.asc" \
-        -DgeneratePom="false" \
-        -DgroupId="io.helidon" \
-        -DartifactId="helidon-project" \
-        -Dversion="${FULL_VERSION}" \
-        -Durl="${MAVEN_REPO_URL}" \
-        -DrepositoryId="ossrh" \
-        -DretryFailedDeploymentCount="10"
+  # Deploy site.jar and signature file explicitly using deploy-file
+  mvn ${MAVEN_ARGS} \
+    -Dfile="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar" \
+    -Dfiles="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar.asc" \
+    -Dclassifier="site" \
+    -Dclassifiers="site" \
+    -Dtypes="jar.asc" \
+    -DgeneratePom="false" \
+    -DgroupId="io.helidon" \
+    -DartifactId="helidon-project" \
+    -Dversion="${FULL_VERSION}" \
+    -Durl="${MAVEN_REPO_URL}" \
+    -DrepositoryId="ossrh" \
+    -DretryFailedDeploymentCount="10" \
+    deploy:deploy-file
 }
 
 release_build(){
-    # Do the release work in a branch
-    local GIT_BRANCH="release/${FULL_VERSION}"
-    git branch -D "${GIT_BRANCH}" > /dev/null 2>&1 || true
-    git checkout -b "${GIT_BRANCH}"
+  local GIT_BRANCH GIT_REMOTE STAGING_REPO_ID STAGING_DESC
 
-    # Invoke update_version
-    update_version
+  # Do the release work in a branch
+  GIT_BRANCH="release/${FULL_VERSION}"
+  git branch -D "${GIT_BRANCH}" > /dev/null 2>&1 || true
+  git checkout -b "${GIT_BRANCH}"
 
-    # Update scm/tag entry in the parent pom
-    cat parent/pom.xml | \
-        sed -e s@'<tag>HEAD</tag>'@"<tag>${FULL_VERSION}</tag>"@g \
-        > parent/pom.xml.tmp
-    mv parent/pom.xml.tmp parent/pom.xml
+  # Invoke update_version
+  update_version
 
-    # Git user info
-    git config user.email || git config --global user.email "info@helidon.io"
-    git config user.name || git config --global user.name "Helidon Robot"
+  # Update scm/tag entry in the parent pom
+  sed -e s@'<tag>HEAD</tag>'@"<tag>${FULL_VERSION}</tag>"@g parent/pom.xml > parent/pom.xml.tmp
+  mv parent/pom.xml.tmp parent/pom.xml
 
-    # Commit version changes
-    git commit -a -m "Release ${FULL_VERSION} [ci skip]"
+  # Git user info
+  git config user.email || git config --global user.email "info@helidon.io"
+  git config user.name || git config --global user.name "Helidon Robot"
 
-    # Create the nexus staging repository
-    local STAGING_DESC="Helidon v${FULL_VERSION}"
-    mvn ${MAVEN_ARGS} nexus-staging:rc-open \
-        -DstagingProfileId="6026dab46eed94" \
-        -DstagingDescription="${STAGING_DESC}"
+  # Commit version changes
+  git commit -a -m "Release ${FULL_VERSION} [ci skip]"
 
-    export STAGING_REPO_ID=$(mvn ${MAVEN_ARGS} nexus-staging:rc-list | \
-        egrep "^[0-9:,]*[ ]?\[INFO\] iohelidon\-[0-9]+[ ]+OPEN[ ]+${STAGING_DESC}" | \
-        awk '{print $2" "$3}' | \
-        sed -e s@'\[INFO\] '@@g -e s@'OPEN'@@g | \
-        head -1)
-    echo "Nexus staging repository ID: ${STAGING_REPO_ID}"
+  # Create the nexus staging repository
+  STAGING_DESC="Helidon v${FULL_VERSION}"
+  mvn ${MAVEN_ARGS} \
+    -DstagingProfileId="6026dab46eed94" \
+    -DstagingDescription="${STAGING_DESC}" \
+    nexus-staging:rc-open
 
-    # Perform deployment
-    mvn ${MAVEN_ARGS} clean deploy \
-       -Prelease,archetypes \
-      -DskipTests \
-      -DstagingRepositoryId="${STAGING_REPO_ID}" \
-      -DretryFailedDeploymentCount="10"
+  STAGING_REPO_ID=$(mvn ${MAVEN_ARGS} nexus-staging:rc-list | \
+    grep -E "^[0-9:,]*[ ]?\[INFO\] iohelidon\-[0-9]+[ ]+OPEN[ ]+${STAGING_DESC}" | \
+    awk '{print $2" "$3}' | \
+    sed -e s@'\[INFO\] '@@g -e s@'OPEN'@@g | \
+    head -1)
+  echo "Nexus staging repository ID: ${STAGING_REPO_ID}"
 
-    # Invoke perform hooks
-    if [ -n "${PERFORM_HOOKS}" ]; then
-      for perform_hook in ${PERFORM_HOOKS} ; do
-        bash "${perform_hook}"
-      done
-    fi
+  # Perform deployment
+  mvn ${MAVEN_ARGS} clean deploy \
+    -Prelease,archetypes \
+    -DskipTests \
+    -DstagingRepositoryId="${STAGING_REPO_ID}" \
+    -DretryFailedDeploymentCount="10"
 
-    # Release site (documentation, javadocs)
-    release_site
+  # Invoke perform hooks
+  if [ ${#PERFORM_HOOKS[*]} -gt 0 ]; then
+    for perform_hook in ${PERFORM_HOOKS[*]} ; do
+      bash "${perform_hook}"
+    done
+  fi
 
-    # Close the nexus staging repository
-    mvn ${MAVEN_ARGS} nexus-staging:rc-close \
-      -DstagingRepositoryId="${STAGING_REPO_ID}" \
-      -DstagingDescription="${STAGING_DESC}"
+  # Release site (documentation, javadocs)
+  release_site
 
-    # Create and push a git tag
-    local GIT_REMOTE=$(git config --get remote.origin.url | \
-        sed "s,https://\([^/]*\)/,git@\1:,")
+  # Close the nexus staging repository
+  mvn ${MAVEN_ARGS} nexus-staging:rc-close \
+    -DstagingRepositoryId="${STAGING_REPO_ID}" \
+    -DstagingDescription="${STAGING_DESC}"
 
-    git remote add release "${GIT_REMOTE}" > /dev/null 2>&1 || \
-    git remote set-url release "${GIT_REMOTE}"
+  # Create and push a git tag
+  GIT_REMOTE=$(git config --get remote.origin.url | \
+      sed "s,https://\([^/]*\)/,git@\1:,")
 
-    git tag -f "${FULL_VERSION}"
-    git push --force release refs/tags/"${FULL_VERSION}":refs/tags/"${FULL_VERSION}"
+  git remote add release "${GIT_REMOTE}" > /dev/null 2>&1 || \
+  git remote set-url release "${GIT_REMOTE}"
+
+  git tag -f "${FULL_VERSION}"
+  git push --force release refs/tags/"${FULL_VERSION}":refs/tags/"${FULL_VERSION}"
 }
 
 # Invoke command

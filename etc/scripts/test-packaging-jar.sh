@@ -15,13 +15,9 @@
 # limitations under the License.
 #
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
@@ -30,33 +26,31 @@ mvn ${MAVEN_ARGS} --version
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
 # Prime build all native-image tests
-mvn ${MAVEN_ARGS} -e \
+mvn ${MAVEN_ARGS} \
   -f ${WS_DIR}/tests/integration/native-image/pom.xml \
-  clean install
+  install
 
 # Run tests with classpath and then module path
 
-#
 # Run SE-1 (does not contain module-info.java)
-#
 cd ${WS_DIR}/tests/integration/native-image/se-1
+
 # Classpath
 java -Dexit.on.started=! -jar target/helidon-tests-native-image-se-1.jar
 
-#
 # Run MP-1
-#
 cd ${WS_DIR}/tests/integration/native-image/mp-1
+
 # Classpath
 java -jar target/helidon-tests-native-image-mp-1.jar
+
 # Module Path
 java --module-path target/helidon-tests-native-image-mp-1.jar:target/libs \
   --module helidon.tests.nimage.mp/io.helidon.tests.integration.nativeimage.mp1.Mp1Main
 
-#
 # Run MP-3 (just start and stop)
-#
 cd ${WS_DIR}/tests/integration/native-image/mp-3
+
 # Classpath
 java -Dexit.on.started=! -jar target/helidon-tests-native-image-mp-3.jar
 

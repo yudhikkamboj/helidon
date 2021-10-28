@@ -22,21 +22,10 @@
 #    https://oss.sonatype.org/content/groups/staging/ as a repository
 #    See bottom of RELEASE.md for details
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load error handling functions and define error handling
-. $(dirname -- "${SCRIPT_PATH}")/includes/error_handlers.sh
-
-# Local error handler
-smoketest_on_error(){
-    on_error
-    echo "===== Log file: ${OUTPUTFILE} ====="
-    # In case there is a process left running
-}
-
-# Setup error handling using local error handler (defined in includes/error_handlers.sh)
-error_trap_setup 'smoketest_on_error'
+. $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
+error_trap_setup
 
 usage(){
     cat <<EOF
@@ -73,7 +62,7 @@ $(basename ${0}) [ --staged ] [ --giturl=URL ] [ --clean ] [--help ] --version=V
     full
         Runs full smoke test against released version:
         1. archetypes
-        2. functional tests in workspace 
+        2. functional tests in workspace
         3. builds examples
 
     quick
@@ -81,7 +70,7 @@ $(basename ${0}) [ --staged ] [ --giturl=URL ] [ --clean ] [--help ] --version=V
 
 
   Example:
-    smoketest.sh --staged --clean --version=1.4.1 full
+    $(basename ${0}) --staged --clean --version=1.4.1 full
 EOF
 }
 
@@ -92,62 +81,45 @@ CLEAN_MVN_REPO=""
 ARGS=( "${@}" )
 for ((i=0;i<${#ARGS[@]};i++))
 {
-    ARG=${ARGS[${i}]}
-    case ${ARG} in
-    "--staged")
-        readonly STAGED_PROFILE="-Possrh-staging"
-        ;;
-    "--clean")
-        readonly CLEAN_MVN_REPO="true"
-        ;;
-    "--version="*)
-        VERSION=${ARG#*=}
-        ;;
-    "--giturl="*)
-        GIT_URL=${ARG#*=}
-        ;;
-    "--help")
-        usage
-        exit 0
-        ;;
-    *)
-        if [ "${ARG}" = "full" ] || [ "${ARG}" = "quick" ] ; then
-            readonly COMMAND="${ARG}"
-        else
-            echo "ERROR: unknown argument: ${ARG}"
-            exit 1
-        fi
-        ;;
-    esac
+  ARG=${ARGS[${i}]}
+  case ${ARG} in
+  "--staged")
+    readonly STAGED_PROFILE="-Possrh-staging"
+    ;;
+  "--clean")
+    readonly CLEAN_MVN_REPO="true"
+    ;;
+  "--version="*)
+    VERSION=${ARG#*=}
+    ;;
+  "--giturl="*)
+    GIT_URL=${ARG#*=}
+    ;;
+  "--help")
+    usage
+    exit 0
+    ;;
+  *)
+    if [ "${ARG}" = "full" ] || [ "${ARG}" = "quick" ] ; then
+      readonly COMMAND="${ARG}"
+    else
+      die "ERROR: unknown argument: ${ARG}"
+    fi
+    ;;
+  esac
 }
 
-if [ -z "${COMMAND}" ] ; then
-    echo "ERROR: no command provided"
-    exit 1
-fi
-
-if [ -z "${VERSION}" ] ; then
-    echo "ERROR: no version provided. Please use --version option to specify a version"
-    exit 1
-fi
+[ -z "${COMMAND}" ] && die "ERROR: no command provided"
+[ -z "${VERSION}" ] && die "ERROR: no version provided. Please use --version option to specify a version"
 
 readonly MAVEN_ARGS=""
-
 readonly SCRIPT_DIR=$(dirname ${SCRIPT_PATH})
-
 readonly DATESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
 mkdir -p /var/tmp/helidon-smoke
 readonly SCRATCH=$(mktemp -d /var/tmp/helidon-smoke/${VERSION}-${DATESTAMP}.XXXX)
 
-if [ -z "${GIT_URL}" ] ; then
-    cd ${SCRIPT_DIR}
-    GIT_URL=$(git remote get-url origin)
-fi
-
-if [ -z "${GIT_URL}" ] ; then
-    echo "ERROR: can't determine URL of git repository. Pleas use --giturl option"
-    exit 1
-fi
+[ -z "${GIT_URL}" ] && GIT_URL=$(cd ${SCRIPT_DIR} && git remote get-url origin)
+[ -z "${GIT_URL}" ] && die "ERROR: can't determine URL of git repository. Please use --giturl option"
 
 set -u
 
@@ -194,20 +166,20 @@ full(){
         echo "WARNING! GRAALVM_HOME is not set. Skipping native image tests"
     else
         echo "GRAALVM_HOME=${GRAALVM_HOME}"
-        readonly native_image_tests="se-1 mp-1 mp-2 mp-3"
-        for native_test in ${native_image_tests}; do
-            cd ${SCRATCH}/helidon/tests/integration/native-image/${native_test}
-            mvn ${MAVEN_ARGS} clean package -Pnative-image ${STAGED_PROFILE}
+        for i in "se-1" "mp-1" "mp-2" "mp-3"; do
+            mvn ${MAVEN_ARGS} \
+              -f ${SCRATCH}/helidon/tests/integration/native-image/${i}/pom.xml \
+              -Pnative-image ${STAGED_PROFILE} \
+              clean package
         done
 
         # Run this one because it has no pre-reqs and self-tests
         cd ${SCRATCH}/helidon/tests/integration/native-image/mp-1
         target/helidon-tests-native-image-mp-1
     fi
-
 }
 
-waituntilready() {
+waitUntilReady() {
     # Give app a chance to start --retry will retry until it is up
     # --retry-connrefused requires curl 7.51.0 or newer
     sleep 6
@@ -218,7 +190,7 @@ waituntilready() {
 
 testGET() {
     echo "GET $1"
-    http_code=`curl -s -o /dev/null -w "%{http_code}" -X GET $1`
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" -X GET $1)
     if [ ${http_code} -ne "200" ]; then
         echo "ERROR: Bad HTTP code. Expected 200 got ${http_code}. GET $1"
         kill ${PID}
@@ -231,11 +203,13 @@ testGET() {
 # $1 = archetype name: "quickstart-se"
 buildAndTestArchetype(){
     archetype_name=$1
-    archetype_pkg=`echo ${archetype_name} | tr "\-" "\."`
+    archetype_pkg=$(echo ${archetype_name} | tr "\-" "\.")
 
     echo "===== Testing Archetype ${archetype_name} ====="
 
-    mvn ${MAVEN_ARGS} -U archetype:generate -DinteractiveMode=false \
+    mvn ${MAVEN_ARGS} \
+        -U archetype:generate \
+        -DinteractiveMode=false \
         -DarchetypeGroupId=io.helidon.archetypes \
         -DarchetypeArtifactId=helidon-${archetype_name} \
         -DarchetypeVersion=${VERSION} \
@@ -267,7 +241,7 @@ buildAndTestArchetype(){
 
 testApp(){
     # Wait for app to come up
-    waituntilready
+    waitUntilReady
 
     # Hit some endpoints
     if [ "${archetype_name}" = "quickstart-se" -o  "${archetype_name}" = "quickstart-mp" ]; then
@@ -279,7 +253,7 @@ testApp(){
 }
 
 quick(){
-    readonly archetypes=" 
+    readonly archetypes="
       quickstart-se \
       quickstart-mp \
       bare-se \
@@ -300,18 +274,18 @@ quick(){
 
 cd ${SCRATCH}
 
-readonly OUTPUTFILE=${SCRATCH}/helidon-smoketest-log.txt
+readonly OUTPUT_FILE=${SCRATCH}/helidon-smoketest-log.txt
 readonly LOCAL_MVN_REPO=$(mvn ${MAVEN_ARGS} help:evaluate -Dexpression=settings.localRepository | grep -v '\[INFO\]')
 
 echo "===== Running in ${SCRATCH} ====="
-echo "===== Log file: ${OUTPUTFILE} ====="
+echo "===== Log file: ${OUTPUT_FILE} ====="
 
-if [ ! -z "${CLEAN_MVN_REPO}" -a -d "${LOCAL_MVN_REPO}" ]; then
+if [ -n "${CLEAN_MVN_REPO}" -a -d "${LOCAL_MVN_REPO}" ]; then
     echo "===== Cleaning release from local maven repository ${LOCAL_MVN_REPO}  ====="
     find ${LOCAL_MVN_REPO}/io/helidon -depth  -name ${VERSION} -type d -exec rm -rf {} \;
 fi
 
 # Invoke command
-${COMMAND} | tee $OUTPUTFILE
+${COMMAND} | tee $OUTPUT_FILE
 
-echo "===== Log file: ${OUTPUTFILE} ====="
+echo "===== Log file: ${OUTPUT_FILE} ====="

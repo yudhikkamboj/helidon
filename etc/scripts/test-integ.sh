@@ -15,18 +15,15 @@
 # limitations under the License.
 #
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
 
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml \
-  verify -e \
+mvn ${MAVEN_ARGS} \
+  -f ${WS_DIR}/pom.xml \
   -Dmaven.test.failure.ignore=true \
-  -Ptests
+  -Ptests \
+  verify

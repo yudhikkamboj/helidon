@@ -15,13 +15,9 @@
 # limitations under the License.
 #
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 mvn ${MAVEN_ARGS} --version
@@ -29,18 +25,16 @@ mvn ${MAVEN_ARGS} --version
 # populate cache
 mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
-# Run native image tests
-cd ${WS_DIR}/tests/integration/native-image
-
 # Prime build all native-image tests
-mvn ${MAVEN_ARGS} -e clean install
+mvn ${MAVEN_ARGS} \
+  -f ${WS_DIR}/tests/integration/native-image/pom.xml \
+  install
 
 # Build jlink images
 # mp-2 fails because of https://github.com/oracle/helidon-build-tools/issues/478
-readonly native_image_tests="se-1 mp-1 mp-3"
-for native_test in ${native_image_tests}; do
-    cd ${WS_DIR}/tests/integration/native-image/${native_test}
-    mvn ${MAVEN_ARGS} -e \
+for i in "se-1" "mp-1" "mp-3"; do
+    mvn ${MAVEN_ARGS} \
+      -f ${WS_DIR}/tests/integration/native-image/${i}/pom.xml \
       -Pjlink-image,staging \
       -Djlink.image.addClassDataSharingArchive=false \
       -Djlink.image.testImage=false \

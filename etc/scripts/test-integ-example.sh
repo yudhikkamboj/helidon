@@ -15,26 +15,24 @@
 # limitations under the License.
 #
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 # Set Graal VM into JAVA_HOME and PATH (defined in includes/pipeline-env.sh)
 graalvm
 
 print_help() {
-    echo 'Usage: test-integ-example.sh [-hjn] -d <database>'
-    echo ''
-    echo '  -h print this help and exit'
-    echo '  -j execute remote application tests in Java VM mode (default)'
-    echo '  -n execute remote application tests in native image mode'
-    echo '  -d <database> select database'
-    echo '     <database> :: mysql | pgsql'
+  cat <<EOF
+Usage: test-integ-example.sh [-hjn] -d <database>
+
+  -h print this help and exit
+  -j execute remote application tests in Java VM mode (default)
+  -n execute remote application tests in native image mode
+  -d <database> select database
+     <database> :: mysql | pgsql
+EOF
 }
 
 # Evaluate command line arguments
@@ -54,10 +52,10 @@ if [ -n "${FLAG_D}" ]; then
     case "${FLAG_D}" in
         mysql) . ${WS_DIR}/etc/scripts/includes/mysql.sh;;
         pgsql) . ${WS_DIR}/etc/scripts/includes/pgsql.sh;;
-        *)     echo 'ERROR: Unknown database name, exitting.' && exit 1;;
+        *)     echo 'ERROR: Unknown database name, exiting.' && exit 1;;
     esac
 else
-    echo 'ERROR: No database was selected, exitting.'
+    echo 'ERROR: No database was selected, exiting.'
     exit 1
 fi
 
@@ -65,16 +63,21 @@ fi
 [ -z "${FLAG_J}" -a -z "${FLAG_N}" ] && \
     readonly FLAG_J='1'
 
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
+
 # Run remote application tests in Java VM mode
 [ -n "${FLAG_J}" ] && \
     (cd ${WS_DIR}/tests/integration/tools/example && \
-        echo mvn -P${DB_PROFILE} \
+        echo mvn ${MAVEN_ARGS} \
+            -P${DB_PROFILE} \
             -Dapp.config=${TEST_CONFIG} \
             -Ddb.user=${DB_USER} \
             -Ddb.password=${DB_PASSWORD} \
             -Ddb.url="${DB_URL}" \
             verify && \
-        mvn -P${DB_PROFILE} \
+        mvn ${MAVEN_ARGS} \
+            -P${DB_PROFILE} \
             -Dapp.config=${TEST_CONFIG} \
             -Ddb.user=${DB_USER} \
             -Ddb.password=${DB_PASSWORD} \
@@ -84,13 +87,17 @@ fi
 # Run remote application tests in native image mode
 [ -n "${FLAG_N}" ] && \
     (cd ${WS_DIR}/tests/integration/tools/example && \
-        echo mvn -P${DB_PROFILE} -Pnative-image \
+        echo mvn ${MAVEN_ARGS} \
+            -P${DB_PROFILE} \
+            -Pnative-image \
             -Dapp.config=${TEST_CONFIG} \
             -Ddb.user=${DB_USER} \
             -Ddb.password=${DB_PASSWORD} \
             -Ddb.url="${DB_URL}" \
             verify && \
-        mvn -P${DB_PROFILE} -Pnative-image \
+        mvn ${MAVEN_ARGS} \
+            -P${DB_PROFILE} \
+            -Pnative-image \
             -Dapp.config=${TEST_CONFIG} \
             -Ddb.user=${DB_USER} \
             -Ddb.password=${DB_PASSWORD} \

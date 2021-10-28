@@ -15,13 +15,9 @@
 # limitations under the License.
 #
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 # Set Graal VM into JAVA_HOME and PATH (defined in includes/pipeline-env.sh)
@@ -34,13 +30,17 @@ mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
 # Run tests in Java VM application
 (cd tests/integration/jpa && \
-  mvn ${MAVEN_ARGS} -e \
-      -Dmaven.test.failure.ignore=true -Dpgsql \
+  mvn ${MAVEN_ARGS} \
+      -Dmaven.test.failure.ignore=true \
+      -Dpgsql \
       -pl model,appl \
-      clean verify)
+      verify)
 
 # Run tests in native image application
 (cd tests/integration/jpa && \
-  mvn ${MAVEN_ARGS} clean verify \
+  mvn ${MAVEN_ARGS} \
       -Dmaven.test.failure.ignore=true -Dpgsql \
-      -Pnative-image -Dnative-image -pl model,appl)
+      -Pnative-image \
+      -Dnative-image \
+      -pl model,appl \
+      verify)

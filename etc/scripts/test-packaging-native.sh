@@ -15,45 +15,34 @@
 # limitations under the License.
 #
 
-# Path to this script
+# shellcheck disable=SC2015
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
-if [ -z "${GRAALVM_HOME}" ]; then
-    echo "ERROR: GRAALVM_HOME is not set";
-    exit 1
-fi
-
-if [ ! -x "${GRAALVM_HOME}/bin/native-image" ]; then
-    echo "ERROR: ${GRAALVM_HOME}/bin/native-image does not exist or is not executable";
-    exit 1
-fi
+graalvm
+check_native-image
 
 mvn ${MAVEN_ARGS} --version
-
-# populate cache
-mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
 echo "GRAALVM_HOME=${GRAALVM_HOME}";
 ${GRAALVM_HOME}/bin/native-image --version;
 
-# Run native image tests
-cd ${WS_DIR}/tests/integration/native-image
+# populate cache
+mvn ${MAVEN_ARGS} -f ${WS_DIR}/pom.xml validate
 
 # Prime build all native-image tests
-mvn ${MAVEN_ARGS} -e clean install
+mvn ${MAVEN_ARGS} \
+  -f ${WS_DIR}/tests/integration/native-image/pom.xml \
+  install
 
 # Build native images
 # mp-2 is too big, waiting for more memory
-readonly native_image_tests="se-1 mp-1 mp-3"
-for native_test in ${native_image_tests}; do
-    cd ${WS_DIR}/tests/integration/native-image/${native_test}
-    mvn ${MAVEN_ARGS} -e -Pnative-image clean package
+for i in "se-1" "mp-1" "mp-3"; do
+    mvn ${MAVEN_ARGS} \
+      -f ${WS_DIR}/tests/integration/native-image/${i}/pom.xml \
+      -Pnative-image \
+      package
 done
 
 # Run this one because it has no pre-reqs and self-tests

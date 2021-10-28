@@ -15,13 +15,8 @@
 # limitations under the License.
 #
 
-# Path to this script
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load error handling functions and define error handling
-. $(dirname -- "${SCRIPT_PATH}")/includes/error_handlers.sh
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
+. $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
 error_trap_setup
 
 usage(){
@@ -88,7 +83,7 @@ readonly MEDIA_TYPE="application/vnd.github.v3+json"
 readonly GITHUB_OWNER="oracle"
 readonly REPO="helidon"
 
-BODY=$(cat ${CHANGELOG} | awk '{printf "%s\\n", $0;}' | sed -e 's/"/\\"/g')
+BODY=$(awk '{printf "%s\\n", $0;}' ${CHANGELOG} | sed -e 's/"/\\"/g')
 PAYLOAD="{
   \"tag_name\": \"${VERSION}\",
   \"name\": \"${VERSION}\",

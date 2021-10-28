@@ -15,26 +15,20 @@
 # limitations under the License.
 #
 
-# Path to this script
 [ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
-
-# Load pipeline environment setup and define WS_DIR
 . $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
 error_trap_setup
 
 readonly LOG_FILE=$(mktemp -t XXXcheckstyle-log)
-
 readonly RESULT_FILE=$(mktemp -t XXXcheckstyle-result)
 
-die() { echo "${1}" ; exit 1 ;}
+mvn ${MAVEN_ARGS} \
+  -f ${WS_DIR}/pom.xml \
+  -Dcheckstyle.output.format="plain" \
+  -Dcheckstyle.output.file="${RESULT_FILE}" \
+  -Pexamples \
+  checkstyle:checkstyle-aggregate \
+  > ${LOG_FILE} 2>&1 || (cat ${LOG_FILE} ; exit 1)
 
-mvn ${MAVEN_ARGS} checkstyle:checkstyle-aggregate \
-    -f ${WS_DIR}/pom.xml \
-    -Dcheckstyle.output.format="plain" \
-    -Dcheckstyle.output.file="${RESULT_FILE}" \
-    -Pexamples,ossrh-releases > ${LOG_FILE} 2>&1 || (cat ${LOG_FILE} ; exit 1)
-
-grep "^\[ERROR\]" ${RESULT_FILE} \
-    && die "CHECKSTYLE ERROR" || echo "CHECKSTYLE OK"
+grep "^\[ERROR\]" ${RESULT_FILE} && \
+  die "CHECKSTYLE ERROR" || echo "CHECKSTYLE OK"
