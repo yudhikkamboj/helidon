@@ -29,6 +29,9 @@ readonly MY_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; pwd -P)
 # cd the my dir, so we can start the application with correct current directory
 cd "${MY_DIR}"
 
+# populate cache
+mvn -f ../../../pom.xml validate -Ppipeline
+
 # build the binary
 mvn clean package -DskipTests -Ppipeline
 
