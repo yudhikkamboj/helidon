@@ -42,7 +42,7 @@ mvn ${MAVEN_ARGS} \
 # mp-2 is too big, waiting for more memory
 for i in "se-1" "mp-1" "mp-3"; do
   cd ${WS_DIR}/tests/integration/native-image/${i}
-  mvn ${MAVEN_ARGS} -Pnative-image package
+  mvn ${MAVEN_ARGS} -Pnative-image package -X
 done
 
 # Run this one because it has no pre-reqs and self-tests
