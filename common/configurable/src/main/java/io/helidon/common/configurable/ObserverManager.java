@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.common.configurable;
 
-import java.lang.reflect.Method;
+import java.lang.System.Logger.Level;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import io.helidon.common.LazyValue;
@@ -46,22 +48,19 @@ import io.helidon.common.configurable.spi.ExecutorServiceSupplierObserver;
  */
 class ObserverManager {
 
-    private static final Logger LOGGER = Logger.getLogger(ObserverManager.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(ObserverManager.class.getName());
 
     private static final LazyValue<List<ExecutorServiceSupplierObserver>> OBSERVERS = LazyValue
             .create(ObserverManager::loadObservers);
 
-    private static final Map<Supplier<? extends ExecutorService>, SupplierInfo> SUPPLIERS = new ConcurrentHashMap<>();
+    private static final Map<Supplier<? extends ExecutorService>, SupplierInfo> SUPPLIERS = new HashMap<>();
+    private static final ReadWriteLock SUPPLIERS_LOCK = new ReentrantReadWriteLock();
 
     // A given supplier category can have multiple suppliers, so keep track of the next available index by category.
     private static final Map<String, AtomicInteger> SUPPLIER_CATEGORY_NEXT_INDEX_VALUES = new ConcurrentHashMap<>();
 
     private static final Map<ExecutorService, SupplierInfo> EXECUTOR_SERVICES = new ConcurrentHashMap<>();
 
-    // Defer building list until use to avoid loading problems if this JDK does not support ThreadPerTaskExecutor.
-    private static final LazyValue<List<ExecutorServiceSupplierObserver.MethodInvocation>> METRICS_RELATED_METHOD_INVOCATIONS =
-            LazyValue.create(() -> List.of(
-                    MethodInvocationImpl.create("Thread count", "thread-count", "threadCount")));
 
     private ObserverManager() {
     }
@@ -72,33 +71,22 @@ class ObserverManager {
      * @param supplier the supplier of {@code ExecutorService} instances
      * @param supplierCategory category of the supplier (e.g., scheduled, server)
      * @param executorServiceCategory category of executor services the supplier creates (e.g., ad-hoc)
-     * @param useVirtualThreads whether virtual threads should be used
-     */
-    static void registerSupplier(Supplier<? extends ExecutorService> supplier,
-                                 String supplierCategory,
-                                 String executorServiceCategory,
-                                 boolean useVirtualThreads) {
-        int supplierIndex = SUPPLIER_CATEGORY_NEXT_INDEX_VALUES.computeIfAbsent(supplierCategory, key -> new AtomicInteger())
-                .getAndIncrement();
-        SUPPLIERS.computeIfAbsent(supplier,
-                                  s -> SupplierInfo.create(s,
-                                                           executorServiceCategory,
-                                                           supplierCategory,
-                                                           supplierIndex,
-                                                           useVirtualThreads));
-    }
-
-    /**
-     * Registers a supplier which will never use thread-per-task thread pools.
-     *
-     * @param supplier the supplier of {@code ExecutorService} instances
-     * @param supplierCategory category of the supplier (e.g., server, scheduled)
-     * @param executorServiceCategory category of thread pools which the supplier provides
      */
     static void registerSupplier(Supplier<? extends ExecutorService> supplier,
                                  String supplierCategory,
                                  String executorServiceCategory) {
-        registerSupplier(supplier, supplierCategory, executorServiceCategory, false);
+        SUPPLIERS_LOCK.writeLock().lock();
+        try {
+            int supplierIndex = SUPPLIER_CATEGORY_NEXT_INDEX_VALUES.computeIfAbsent(supplierCategory, key -> new AtomicInteger())
+                    .getAndIncrement();
+            SUPPLIERS.computeIfAbsent(supplier,
+                                      s -> SupplierInfo.create(s,
+                                                               executorServiceCategory,
+                                                               supplierCategory,
+                                                               supplierIndex));
+        } finally {
+            SUPPLIERS_LOCK.writeLock().unlock();
+        }
     }
 
     /**
@@ -111,7 +99,13 @@ class ObserverManager {
      * @throws IllegalStateException if the supplier has not previously registered itself
      */
     static <E extends ExecutorService> E registerExecutorService(Supplier<E> supplier, E executorService) {
-        SupplierInfo supplierInfo = SUPPLIERS.get(supplier);
+        SUPPLIERS_LOCK.readLock().lock();
+        SupplierInfo supplierInfo;
+        try {
+            supplierInfo = SUPPLIERS.get(supplier);
+        } finally {
+            SUPPLIERS_LOCK.readLock().unlock();
+        }
         if (supplierInfo == null) {
             throw new IllegalStateException("Attempt to register an executor service to an unregistered supplier");
         }
@@ -151,44 +145,31 @@ class ObserverManager {
         private final String executorServiceCategory;
         private final String supplierCategory;
         private final int supplierIndex;
-        private final boolean useVirtualThreads;
         private final AtomicInteger nextThreadPoolIndex = new AtomicInteger(0);
         private final List<ExecutorServiceSupplierObserver.SupplierObserverContext> observerContexts;
 
         private static SupplierInfo create(Supplier<? extends ExecutorService> supplier,
                                            String executorServiceCategory,
                                            String supplierCategory,
-                                           int supplierIndex,
-                                           boolean useVirtualThreads) {
-            return new SupplierInfo(supplier, supplierCategory, executorServiceCategory, supplierIndex, useVirtualThreads);
+                                           int supplierIndex) {
+            return new SupplierInfo(supplier, supplierCategory, executorServiceCategory, supplierIndex);
         }
 
         private SupplierInfo(Supplier<? extends ExecutorService> supplier,
                              String supplierCategory,
                              String executorServiceCategory,
-                             int supplierIndex,
-                             boolean useVirtualThreads) {
+                             int supplierIndex) {
             this.supplier = supplier;
             this.supplierCategory = supplierCategory;
             this.executorServiceCategory = executorServiceCategory;
             this.supplierIndex = supplierIndex;
-            this.useVirtualThreads = useVirtualThreads;
             observerContexts = collectObserverContexts();
         }
 
         private List<ExecutorServiceSupplierObserver.SupplierObserverContext> collectObserverContexts() {
             return OBSERVERS.get()
                     .stream()
-                    .map(observer ->
-                                 useVirtualThreads
-                                         ? observer.registerSupplier(supplier,
-                                                                     supplierIndex,
-                                                                     supplierCategory,
-                                                                     METRICS_RELATED_METHOD_INVOCATIONS.get())
-                                         : observer.registerSupplier(supplier,
-                                                                     supplierIndex,
-                                                                     supplierCategory))
-
+                    .map(this::apply)
                     .collect(Collectors.toList());
         }
 
@@ -204,57 +185,11 @@ class ObserverManager {
                     .forEach(observer -> observer.unregisterExecutorService(executorService));
             EXECUTOR_SERVICES.remove(executorService);
         }
-    }
 
-    /**
-     * Encapsulation of information needed to invoke methods on {@code ThreadPerTaskExecutor} and to create metrics from the
-     * returned values.
-     */
-    private static class MethodInvocationImpl implements ExecutorServiceSupplierObserver.MethodInvocation {
-        private final String displayName;
-        private final String description;
-        private final Method method;
-        private final Class<?> type;
-
-        private static final LazyValue<ExecutorService> VIRTUAL_EXECUTOR_SERVICE = LazyValue
-                .create(VirtualExecutorUtil::executorService);
-
-        static MethodInvocationImpl create(String displayName, String description, String methodName)  {
-            ExecutorService executorService = VIRTUAL_EXECUTOR_SERVICE.get();
-            Method method = null;
-            try {
-                method = executorService.getClass().getDeclaredMethod(methodName);
-            } catch (NoSuchMethodException e) {
-                throw new RuntimeException(e);
-            }
-            return new MethodInvocationImpl(displayName, description, method);
-        }
-
-        MethodInvocationImpl(String displayName, String description, Method method) {
-            this.displayName = displayName;
-            this.description = description;
-            this.method = method;
-            this.type = method.getReturnType();
-        }
-
-        @Override
-        public String displayName() {
-            return displayName;
-        }
-
-        @Override
-        public String description() {
-            return description;
-        }
-
-        @Override
-        public Method method() {
-            return method;
-        }
-
-        @Override
-        public Class<?> type() {
-            return type;
+        private ExecutorServiceSupplierObserver.SupplierObserverContext apply(ExecutorServiceSupplierObserver observer) {
+            return observer.registerSupplier(supplier,
+                    supplierIndex,
+                    supplierCategory);
         }
     }
 }

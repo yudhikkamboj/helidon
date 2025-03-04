@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,44 +15,38 @@
  */
 package io.helidon.webclient.metrics;
 
-import io.helidon.common.reactive.Single;
-import io.helidon.webclient.WebClientServiceRequest;
+import java.util.concurrent.atomic.AtomicLong;
 
-import org.eclipse.microprofile.metrics.ConcurrentGauge;
-import org.eclipse.microprofile.metrics.MetricType;
+import io.helidon.metrics.api.Gauge;
+import io.helidon.webclient.api.WebClientServiceRequest;
+import io.helidon.webclient.api.WebClientServiceResponse;
 
 /**
  * Gauge which counts all requests in progress.
  */
 class WebClientGaugeInProgress extends WebClientMetric {
 
+    private final AtomicLong holder = new AtomicLong();
+
     WebClientGaugeInProgress(Builder builder) {
         super(builder);
     }
 
     @Override
-    MetricType metricType() {
-        return MetricType.CONCURRENT_GAUGE;
-    }
-
-    @Override
-    public Single<WebClientServiceRequest> request(WebClientServiceRequest request) {
-        ConcurrentGauge gauge = metricRegistry().concurrentGauge(createMetadata(request, null));
-        boolean shouldBeHandled = handlesMethod(request.method());
-        if (!shouldBeHandled) {
-            return Single.just(request);
-        } else {
-            gauge.inc();
+    public WebClientServiceResponse handle(Chain chain, WebClientServiceRequest request) {
+        Metadata metadata = createMetadata(request, null);
+        meterRegistry().getOrCreate(Gauge.builder(metadata.name(), holder::get)
+                                            .description(metadata.description()));
+        boolean update = handlesMethod(request.method());
+        try {
+            if (update) {
+                holder.incrementAndGet();
+            }
+            return chain.proceed(request);
+        } finally {
+            if (update) {
+                holder.decrementAndGet();
+            }
         }
-
-        request.whenComplete()
-                .thenAccept(response -> gauge.dec())
-                .exceptionally(throwable -> {
-                    gauge.dec();
-                    return null;
-                });
-
-        return Single.just(request);
     }
-
 }

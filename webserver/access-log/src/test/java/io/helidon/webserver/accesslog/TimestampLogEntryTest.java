@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import static org.mockito.Mockito.when;
  */
 class TimestampLogEntryTest {
     private static final ZonedDateTime TEST_TIME = ZonedDateTime.now();
+
     @Test
     void testDefaultFormat() {
         TimestampLogEntry entry = TimestampLogEntry.create();
@@ -47,7 +48,7 @@ class TimestampLogEntryTest {
 
         // this is as used by Apache HTTP server for common log format
         DateTimeFormatter defaultPattern = DateTimeFormatter.ofPattern("dd/MMM/YYYY:HH:mm:ss ZZZ");
-        assertThat(value.substring(1, value.length() -1), is(defaultPattern.format(TEST_TIME)));
+        assertThat(value.substring(1, value.length() - 1), is(defaultPattern.format(TEST_TIME)));
     }
 
     @Test
@@ -62,7 +63,6 @@ class TimestampLogEntryTest {
         when(context.requestDateTime()).thenReturn(TEST_TIME);
 
         String value = entry.doApply(context);
-
 
         assertThat(value, is(dateTimeFormatter.format(TEST_TIME)));
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package io.helidon.tests.functional.context.hello;
 
-import io.helidon.webserver.ServerRequest;
+import io.helidon.webserver.http.ServerRequest;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -91,6 +91,6 @@ public class HelloResource {
     @CircuitBreaker
     public String getRemoteAddress() {
         ServerRequest serverRequest = supplier.get();
-        return serverRequest.remoteAddress();
+        return serverRequest.remotePeer().host();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,26 @@
 
 package io.helidon.integrations.vault.auths.approle;
 
+import java.lang.System.Logger.Level;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.common.http.Http;
-import io.helidon.common.reactive.Single;
+import io.helidon.http.HeaderName;
+import io.helidon.http.HeaderNames;
+import io.helidon.http.Method;
 import io.helidon.integrations.common.rest.ApiRequest;
 import io.helidon.integrations.vault.VaultTokenBase;
 import io.helidon.integrations.vault.auths.common.VaultRestApi;
-import io.helidon.webclient.WebClientRequestBuilder;
+import io.helidon.webclient.api.HttpClientRequest;
 
 class AppRoleRestApi extends VaultRestApi {
-    private static final Logger LOGGER = Logger.getLogger(AppRoleRestApi.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(AppRoleRestApi.class.getName());
+
+    private static final HeaderName VAULT_TOKEN_HEADER_NAME =  HeaderNames.create("X-Vault-Token");
 
     private final AtomicReference<VaultTokenBase> currentToken = new AtomicReference<>();
 
-    private final AppRoleAuthRx auth;
+    private final AppRoleAuth auth;
     private final String appRoleId;
     private final String secretId;
 
@@ -48,34 +50,37 @@ class AppRoleRestApi extends VaultRestApi {
     static Builder appRoleBuilder() {
         return new Builder();
     }
+
     @Override
-    protected Single<WebClientRequestBuilder> updateRequestBuilderCommon(WebClientRequestBuilder requestBuilder,
-                                                                         String path,
-                                                                         ApiRequest<?> request,
-                                                                         Http.RequestMethod method,
-                                                                         String requestId) {
+    protected HttpClientRequest updateRequestBuilderCommon(HttpClientRequest requestBuilder,
+                                                           String path,
+                                                           ApiRequest<?> request,
+                                                           Method method,
+                                                           String requestId) {
         VaultTokenBase currentToken = this.currentToken.get();
 
         if (currentToken != null) {
             if (!currentToken.renewable() || currentToken.created().plus(currentToken.leaseDuration()).isAfter(Instant.now())) {
-                requestBuilder.headers().add("X-Vault-Token", currentToken.token());
-                return Single.just(requestBuilder);
+                requestBuilder.header(VAULT_TOKEN_HEADER_NAME, currentToken.token());
+                return requestBuilder;
             }
         }
 
-        // we need to renew the token - this may be a concurrent operation as we do not care who wins
-        return auth.login(Login.Request.create(appRoleId, secretId))
-                .map(it -> {
-                    VaultTokenBase token = it.token();
-                    this.currentToken.set(token);
-                    requestBuilder.headers().add("X-Vault-Token", token.token());
-                    return requestBuilder;
-                })
-                .onError(throwable -> LOGGER.log(Level.WARNING, "Failed to renew AppRole token", throwable));
+        try {
+            // we need to renew the token - this may be a concurrent operation as we do not care who wins
+            Login.Response response = auth.login(Login.Request.create(appRoleId, secretId));
+            VaultTokenBase token = response.token();
+            this.currentToken.set(token);
+            requestBuilder.header(VAULT_TOKEN_HEADER_NAME, token.token());
+            return requestBuilder;
+        } catch (Throwable ex) {
+            LOGGER.log(Level.WARNING, "Failed to renew AppRole token", ex);
+            throw ex;
+        }
     }
 
     static class Builder extends VaultRestApi.BuilderBase<Builder> {
-        private AppRoleAuthRx auth;
+        private AppRoleAuth auth;
         private VaultTokenBase token;
         private String secretId;
         private String appRoleId;
@@ -83,7 +88,7 @@ class AppRoleRestApi extends VaultRestApi {
         private Builder() {
         }
 
-        public Builder auth(AppRoleAuthRx auth) {
+        public Builder auth(AppRoleAuth auth) {
             this.auth = auth;
             return this;
         }

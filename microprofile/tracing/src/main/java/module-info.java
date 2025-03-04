@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,24 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Eclipse Microprofile Tracing implementation for helidon microprofile.
  *
  * @see org.eclipse.microprofile.opentracing
  */
+@Feature(value = "Tracing",
+        description = "MicroProfile tracing spec implementation",
+        in = HelidonFlavor.MP,
+        path = "Tracing",
+        since = "1.0.0")
+@Deprecated(since="4.0.0", forRemoval = true)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.microprofile.tracing {
-    requires java.logging;
+    requires static io.helidon.common.features.api;
+
     requires jakarta.annotation;
 
     requires jakarta.ws.rs;
@@ -29,25 +40,28 @@ module io.helidon.microprofile.tracing {
 
     requires static jakarta.cdi;
     requires static jakarta.inject;
-    requires static jakarta.interceptor.api;
 
     requires io.helidon.microprofile.server;
     requires transitive io.helidon.microprofile.config;
     requires io.helidon.common;
     requires io.helidon.webserver;
     requires io.helidon.jersey.common;
+    requires io.helidon.webserver.observe.tracing;
     requires transitive io.helidon.tracing;
+    requires io.helidon.tracing.config;
     requires transitive io.helidon.tracing.jersey;
     requires io.helidon.tracing.tracerresolver;
+    requires io.helidon.tracing.providers.opentelemetry;
 
     requires transitive microprofile.opentracing.api;
     requires microprofile.rest.client.api;
-
+    requires io.opentracing.util;
+    requires io.opentelemetry.opentracingshim;
 
     exports io.helidon.microprofile.tracing;
 
-    // this is needed for CDI extensions that use non-public observer methods
-    opens io.helidon.microprofile.tracing to weld.core.impl,hk2.utils, io.helidon.microprofile.cdi;
+    // this is needed for CDI extensions that use non-public observer methods, and for constructor injection
+    opens io.helidon.microprofile.tracing;
 
     provides jakarta.enterprise.inject.spi.Extension
             with io.helidon.microprofile.tracing.TracingCdiExtension;
@@ -57,4 +71,5 @@ module io.helidon.microprofile.tracing {
             with io.helidon.microprofile.tracing.MpTracingClientRegistrar;
     provides org.eclipse.microprofile.rest.client.spi.RestClientListener
             with io.helidon.microprofile.tracing.MpTracingRestClientListener;
+	
 }

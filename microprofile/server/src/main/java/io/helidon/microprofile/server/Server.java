@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,15 @@
 
 package io.helidon.microprofile.server;
 
+import java.lang.System.Logger.Level;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.function.Supplier;
-import java.util.logging.Logger;
+import java.util.Objects;
 
-import io.helidon.common.configurable.ServerThreadPoolSupplier;
 import io.helidon.common.context.Contexts;
-import io.helidon.config.mp.MpConfig;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.config.mp.MpConfigSources;
 import io.helidon.microprofile.cdi.HelidonContainer;
 
@@ -45,11 +44,10 @@ public interface Server {
      *
      * @param applications application(s) to use
      * @return Server instance to be started
-     * @throws MpException in case the server fails to be created
      * @see #builder()
      */
     @SafeVarargs
-    static Server create(Application... applications) throws MpException {
+    static Server create(Application... applications) {
         Builder builder = builder();
         Arrays.stream(applications).forEach(builder::addApplication);
         return builder.build();
@@ -60,11 +58,10 @@ public interface Server {
      *
      * @param applicationClasses application class(es) to use
      * @return Server instance to be started
-     * @throws MpException in case the server fails to be created
      * @see #builder()
      */
     @SafeVarargs
-    static Server create(Class<? extends Application>... applicationClasses) throws MpException {
+    static Server create(Class<? extends Application>... applicationClasses) {
         Builder builder = builder();
         Arrays.stream(applicationClasses).forEach(builder::addApplication);
         return builder.build();
@@ -74,10 +71,9 @@ public interface Server {
      * Create a server instance for discovered JAX-RS application (through CDI).
      *
      * @return Server instance to be started
-     * @throws MpException in case the server fails to be created
      * @see #builder()
      */
-    static Server create() throws MpException {
+    static Server create() {
         return builder().build();
     }
 
@@ -95,18 +91,16 @@ public interface Server {
      * This is a blocking call.
      *
      * @return Server instance, started
-     * @throws MpException in case the server fails to start
      */
-    Server start() throws MpException;
+    Server start();
 
     /**
      * Stop this server immediately (can only be used on a started server).
      * This is a blocking call.
      *
      * @return Server instance, stopped
-     * @throws MpException in case the server fails to stop
      */
-    Server stop() throws MpException;
+    Server stop();
 
     /**
      * Get the host this server listens on.
@@ -126,8 +120,9 @@ public interface Server {
     /**
      * Builder to build {@link Server} instance.
      */
-    final class Builder {
-        private static final Logger STARTUP_LOGGER = Logger.getLogger("io.helidon.microprofile.startup.builder");
+    @Configured(prefix = "server", description = "Configuration of Helidon Microprofile Server", root = true)
+    final class Builder implements io.helidon.common.Builder<Builder, Server> {
+        private static final System.Logger STARTUP_LOGGER = System.getLogger("io.helidon.microprofile.startup.builder");
 
         private final List<Class<?>> resourceClasses = new LinkedList<>();
         private final List<JaxRsApplication> applications = new LinkedList<>();
@@ -135,7 +130,6 @@ public interface Server {
         private String host;
         private String basePath;
         private int port = -1;
-        private Supplier<? extends ExecutorService> defaultExecutorService;
         private JaxRsCdiExtension jaxRs;
         private boolean retainDiscovered = false;
 
@@ -167,10 +161,10 @@ public interface Server {
          * Build a server based on this builder.
          *
          * @return Server instance to be started
-         * @throws MpException in case the server fails to be created
          */
+        @Override
         public Server build() {
-            STARTUP_LOGGER.entering(Builder.class.getName(), "build");
+            STARTUP_LOGGER.log(Level.TRACE, Builder.class.getName() + " build ENTRY");
 
             // configuration must be initialized before we start the container
             ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -204,20 +198,11 @@ public interface Server {
                     .getBeanManager()
                     .getExtension(ServerCdiExtension.class);
 
-            if (null == defaultExecutorService) {
-                defaultExecutorService = ServerThreadPoolSupplier.builder()
-                        .name("server")
-                        .config(MpConfig.toHelidonConfig(config)
-                                        .get("server.executor-service"))
-                        .build();
-            }
-
-            server.defaultExecutorService(defaultExecutorService);
             if (null != basePath) {
                 server.basePath(basePath);
             }
 
-            STARTUP_LOGGER.finest("Configuration obtained");
+            STARTUP_LOGGER.log(Level.TRACE, "Configuration obtained");
 
             // explicit application configuration
             // if there are any resource classes explicitly added, create an application for them
@@ -247,7 +232,7 @@ public interface Server {
                 jaxRs.addSyntheticApplication(resourceClasses);
             }
 
-            STARTUP_LOGGER.finest("Jersey resource configuration");
+            STARTUP_LOGGER.log(Level.TRACE, "Jersey resource configuration");
 
             if (null == host) {
                 host = config.getOptionalValue("server.host", String.class).orElse("0.0.0.0");
@@ -266,6 +251,7 @@ public interface Server {
          * @param host hostname
          * @return modified builder
          */
+        @ConfiguredOption
         public Builder host(String host) {
             this.host = host;
             return this;
@@ -287,24 +273,12 @@ public interface Server {
         }
 
         /**
-         * Set a supplier of an executor service to use for tasks connected with application
-         * processing (JAX-RS).
-         *
-         * @param supplier executor service supplier, only called when an application is configured without its own executor
-         *                 service
-         * @return updated builder instance
-         */
-        public Builder defaultExecutorServiceSupplier(Supplier<? extends ExecutorService> supplier) {
-            this.defaultExecutorService = supplier;
-            return this;
-        }
-
-        /**
          * Configure listen port.
          *
          * @param port port
          * @return modified builder
          */
+        @ConfiguredOption
         public Builder port(int port) {
             this.port = port;
             return this;
@@ -319,7 +293,7 @@ public interface Server {
         public Builder config(io.helidon.config.Config config) {
             this.config = ConfigProviderResolver.instance()
                     .getBuilder()
-                    .withSources(MpConfigSources.create(config))
+                    .withSources(MpConfigSources.create(Objects.requireNonNull(config, "Config cannot be null")))
                     .build();
 
             return this;

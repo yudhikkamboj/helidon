@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,21 @@
 
 package io.helidon.security.providers.oidc.common;
 
+import java.lang.System.Logger.Level;
 import java.time.Duration;
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 import io.helidon.common.Errors;
-import io.helidon.media.jsonp.JsonpSupport;
-import io.helidon.security.providers.common.OutboundConfig;
-import io.helidon.webclient.Proxy;
-import io.helidon.webclient.WebClient;
+import io.helidon.common.config.Config;
+import io.helidon.common.socket.SocketOptions;
+import io.helidon.http.media.MediaContext;
+import io.helidon.http.media.jsonp.JsonpSupport;
+import io.helidon.webclient.api.Proxy;
+import io.helidon.webclient.api.WebClient;
+import io.helidon.webclient.api.WebClientConfig;
 import io.helidon.webclient.tracing.WebClientTracing;
 
-import jakarta.ws.rs.client.ClientBuilder;
-import org.glassfish.jersey.client.ClientProperties;
-
 final class OidcUtil {
-    private static final Logger LOGGER = Logger.getLogger(OidcUtil.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(OidcUtil.class.getName());
 
     private OidcUtil() {
     }
@@ -40,7 +39,7 @@ final class OidcUtil {
         if (serverType != null) {
             // explicit server type
             if (!"idcs".equals(serverType) && !OidcConfig.Builder.DEFAULT_SERVER_TYPE.equals(serverType)) {
-                LOGGER.warning("OIDC server-type is configured to " + serverType + ", currently only \"idcs\", and"
+                LOGGER.log(Level.WARNING, "OIDC server-type is configured to " + serverType + ", currently only \"idcs\", and"
                                        + " \"" + OidcConfig.Builder.DEFAULT_SERVER_TYPE + "\" are supported");
                 return OidcConfig.Builder.DEFAULT_SERVER_TYPE;
             }
@@ -50,37 +49,31 @@ final class OidcUtil {
         return serverType;
     }
 
-    static ClientBuilder clientBaseBuilder(String proxyProtocol, String proxyHost, int proxyPort) {
-        ClientBuilder clientBuilder = ClientBuilder.newBuilder();
-
-        clientBuilder.property(OutboundConfig.PROPERTY_DISABLE_OUTBOUND, Boolean.TRUE);
-
-        if (proxyHost != null) {
-            clientBuilder.property(ClientProperties.PROXY_URI, proxyProtocol
-                    + "://"
-                    + proxyHost
-                    + ":"
-                    + proxyPort);
-        }
-
-        return clientBuilder;
-    }
-
-    static WebClient.Builder webClientBaseBuilder(String proxyHost,
-                                                  int proxyPort,
-                                                  Duration clientTimeout) {
-        WebClient.Builder webClientBuilder = WebClient.builder()
+    static WebClientConfig.Builder webClientBaseBuilder(String proxyProtocol,
+                                                        String proxyHost,
+                                                        int proxyPort,
+                                                        boolean relativeUris,
+                                                        Duration clientTimeout) {
+        WebClientConfig.Builder webClientBuilder = WebClient.builder()
                 .addService(WebClientTracing.create())
-                .addMediaSupport(JsonpSupport.create())
-                .connectTimeout(clientTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                .readTimeout(clientTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                .servicesDiscoverServices(false)
+                .mediaContext(MediaContext.builder()
+                                      .mediaSupportsDiscoverServices(false)
+                                      .addMediaSupport(JsonpSupport.create(Config.empty()))
+                                      .build())
+                .socketOptions(SocketOptions.builder()
+                                       .connectTimeout(clientTimeout)
+                                       .readTimeout(clientTimeout)
+                                       .build());
 
         if (proxyHost != null) {
+            Proxy.ProxyType proxyType = Proxy.ProxyType.valueOf(proxyProtocol.toUpperCase());
             webClientBuilder.proxy(Proxy.builder()
-                                           .type(Proxy.ProxyType.HTTP)
+                                           .type(proxyType)
                                            .host(proxyHost)
                                            .port(proxyPort)
-                                           .build());
+                                           .build())
+                    .relativeUris(relativeUris);
         }
         return webClientBuilder;
     }

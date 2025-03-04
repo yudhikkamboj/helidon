@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,19 +23,19 @@ import io.helidon.integrations.micronaut.cdi.data.app.DbOwnerRepository;
 import io.helidon.integrations.micronaut.cdi.data.app.DbPetRepository;
 import io.helidon.integrations.micronaut.cdi.data.app.Owner;
 import io.helidon.integrations.micronaut.cdi.data.app.Pet;
-import io.helidon.microprofile.tests.junit5.AddBean;
-import io.helidon.microprofile.tests.junit5.Configuration;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.AddBean;
+import io.helidon.microprofile.testing.junit5.Configuration;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.constraints.Pattern;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.config.testing.OptionalMatcher.present;
+import static io.helidon.common.testing.junit5.OptionalMatcher.optionalPresent;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
@@ -56,7 +56,7 @@ class MicronautDataCdiExtensionTest {
     @Test
     void testPet() {
         Optional<Pet> dinoOptional = petRepository.findByName("Dino");
-        assertThat(dinoOptional, is(present()));
+        assertThat(dinoOptional, is(optionalPresent()));
 
         Pet pet = dinoOptional.get();
         assertThat(pet.getName(), is("Dino"));
@@ -68,7 +68,7 @@ class MicronautDataCdiExtensionTest {
     @Test
     void testOwner() {
         Optional<Owner> maybeBarney = ownerRepository.findByName("Barney");
-        assertThat(maybeBarney, is(present()));
+        assertThat(maybeBarney, is(optionalPresent()));
 
         Owner barney = maybeBarney.get();
         assertThat(barney.getName(), is("Barney"));
@@ -80,7 +80,6 @@ class MicronautDataCdiExtensionTest {
         assertThat(myBean.getOwner("Hoppy"), is("Barney"));
     }
 
-    @Disabled("3.0.0-JAKARTA")
     @Test
     void testBeanValidation() {
         assertThrows(ConstraintViolationException.class, () -> myBean.getOwner("wrong name"), "Name should not contain spaces");
@@ -108,9 +107,8 @@ class MicronautDataCdiExtensionTest {
         @Inject
         CdiOnly cdiOnly;
 
-        // TODO 3.0.0-JAKARTA - javax.validation used by Micronaut
         @Transactional
-        public String getOwner(/*@Pattern(regexp = "\\w+")*/ String pet) {
+        public String getOwner(@Pattern(regexp = "\\w+") String pet) {
             assertThat(connection, notNullValue());
             assertThat(cdiOnly.message(), is("Hello"));
             return petRepository.findByName(pet)

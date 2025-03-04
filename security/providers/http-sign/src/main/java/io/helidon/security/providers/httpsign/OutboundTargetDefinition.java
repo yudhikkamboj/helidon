@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.logging.Logger;
 
-import io.helidon.common.pki.KeyConfig;
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.common.pki.Keys;
 import io.helidon.security.util.TokenHandler;
 
 /**
@@ -32,7 +31,7 @@ import io.helidon.security.util.TokenHandler;
 public final class OutboundTargetDefinition {
     private final String keyId;
     private final String algorithm;
-    private final KeyConfig keyConfig;
+    private final Keys keyConfig;
     private final HttpSignHeader header;
     private final byte[] hmacSharedSecret;
     private final SignedHeadersConfig signedHeadersConfig;
@@ -114,7 +113,7 @@ public final class OutboundTargetDefinition {
      *
      * @return private key location and configuration or empty optional if not configured
      */
-    public Optional<KeyConfig> keyConfig() {
+    public Optional<Keys> keyConfig() {
         return Optional.ofNullable(keyConfig);
     }
 
@@ -179,19 +178,16 @@ public final class OutboundTargetDefinition {
      * Call {@link #build()} to create a new instance.
      */
     public static final class Builder implements io.helidon.common.Builder<Builder, OutboundTargetDefinition> {
-        private static final Logger LOGGER = Logger.getLogger(Builder.class.getName());
+        private static final System.Logger LOGGER = System.getLogger(Builder.class.getName());
 
         private String keyId;
         private String algorithm;
-        private KeyConfig keyConfig;
+        private Keys keyConfig;
         private HttpSignHeader header = HttpSignHeader.SIGNATURE;
         private byte[] hmacSharedSecret;
         private SignedHeadersConfig signedHeadersConfig = HttpSignProvider.DEFAULT_REQUIRED_HEADERS;
         private TokenHandler tokenHandler;
-        // this is internal deprecation to make sure we switch this flag default to false for 3.0.0
-        // to be removed in 4.0.0 (most likely)
-        @Deprecated
-        private boolean backwardCompatibleEol = true;
+        private boolean backwardCompatibleEol = false;
 
         private Builder() {
         }
@@ -220,7 +216,7 @@ public final class OutboundTargetDefinition {
 
         /**
          * Algorithm used by this signature.
-         * Set automatically on call to methods {@link #privateKeyConfig(KeyConfig)} and {@link #hmacSecret(byte[])}.
+         * Set automatically on call to methods {@link #privateKeyConfig(io.helidon.common.pki.Keys)} and {@link #hmacSecret(byte[])}.
          *
          * @param algorithm algorithm to use for outbound signatures
          * @return updated builder instance
@@ -238,7 +234,7 @@ public final class OutboundTargetDefinition {
          * @param keyConfig private key configuration for outbound signatures
          * @return updated builder instance
          */
-        public Builder privateKeyConfig(KeyConfig keyConfig) {
+        public Builder privateKeyConfig(Keys keyConfig) {
             if (null == algorithm) {
                 algorithm = HttpSignProvider.ALGORITHM_RSA;
             }
@@ -303,11 +299,6 @@ public final class OutboundTargetDefinition {
 
         @Override
         public OutboundTargetDefinition build() {
-            if (backwardCompatibleEol) {
-                LOGGER.warning("HTTP signatures is using legacy HTTP signature processing. This will not work"
-                                       + " with third party tools using the same spec and with Helidon newer than 3.0.0."
-                                       + " Please configure 'backward-compatible-eol' to false to use the correct approach.");
-            }
             return new OutboundTargetDefinition(this);
         }
 
@@ -320,8 +311,8 @@ public final class OutboundTargetDefinition {
         public Builder config(Config config) {
             this.keyId(config.get("key-id").asString().get());      // mandatory
             config.get("header").asString().map(HttpSignHeader::valueOf).ifPresent(this::header);
-            config.get("sign-headers").as(SignedHeadersConfig::create).ifPresent(this::signedHeaders);
-            config.get("private-key").as(KeyConfig::create).ifPresent(this::privateKeyConfig);
+            config.get("sign-headers").map(SignedHeadersConfig::create).ifPresent(this::signedHeaders);
+            config.get("private-key").map(Keys::create).ifPresent(this::privateKeyConfig);
             config.get("hmac.secret").asString().ifPresent(this::hmacSecret);
 
             // last, as we configure defaults based on configuration
@@ -334,9 +325,13 @@ public final class OutboundTargetDefinition {
         }
 
         /**
-         * Until version 3.0.0 (exclusive) there is a trailing end of line added to the signed
+         * Enable support for Helidon versions before 3.0.0 (exclusive).
+         * <p>
+         * Until version 3.0.0 (exclusive) there was a trailing end of line added to the signed
          * data.
-         * When configured to {@code false}, the correct approach is used.
+         * To be able to communicate cross versions, we must configure this when talking to older versions of Helidon.
+         * Default value is {@code false}. In Helidon 2.x, this switch exists as well and the default is {@code true}, to
+         * allow communication between versions as needed.
          *
          * @param backwardCompatible whether to run in backward compatible mode
          * @return updated builder instance

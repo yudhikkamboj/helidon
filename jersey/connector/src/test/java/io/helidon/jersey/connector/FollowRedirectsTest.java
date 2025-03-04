@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 
 package io.helidon.jersey.connector;
 
@@ -31,8 +30,11 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import org.glassfish.jersey.client.ClientProperties;
 import org.glassfish.jersey.client.ClientResponse;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Helidon connector follow redirect tests.
@@ -57,33 +59,31 @@ public class FollowRedirectsTest extends AbstractTest {
 
     @BeforeAll
     public static void setup() {
-        redirectResource =  new RedirectResource();
+        redirectResource = new RedirectResource();
         UncachedResponseMethodExecutor executor = new UncachedResponseMethodExecutor(redirectResource::redirect);
-        AbstractTest.extensions.set(new Extension[] {
+        Extension[] extensions = new Extension[]{
                 executor,
                 new ContentLengthSetter()
-        });
+        };
 
-        AbstractTest.rules.set(
-                () -> {
-                    wireMock.stubFor(
-                            WireMock.get(WireMock.urlEqualTo("/test/redirect")).willReturn(
-                                    WireMock.ok().withTransformers(executor.getName())
-                            )
-                    );
-                    wireMock.stubFor(
-                            WireMock.get(WireMock.urlEqualTo("/test")).willReturn(
-                                    WireMock.ok(redirectResource.get())
-                            )
-                    );
-                });
-
-        AbstractTest.setup();
+        Rules rules = () -> {
+            wireMockServer.stubFor(
+                    WireMock.get(WireMock.urlEqualTo("/test/redirect")).willReturn(
+                            WireMock.ok().withTransformers(executor.getName())
+                    )
+            );
+            wireMockServer.stubFor(
+                    WireMock.get(WireMock.urlEqualTo("/test")).willReturn(
+                            WireMock.ok(redirectResource.get())
+                    )
+            );
+        };
+        setup(rules, extensions);
     }
 
     @Override
-    protected WebTarget target(String uri, String entityType) {
-        WebTarget target = super.target(uri, entityType);
+    protected WebTarget target(String uri) {
+        WebTarget target = super.target(uri);
         target.register(RedirectTestFilter.class);
         return target;
     }
@@ -93,28 +93,27 @@ public class FollowRedirectsTest extends AbstractTest {
 
         @Override
         public void filter(ClientRequestContext requestContext, ClientResponseContext responseContext) throws IOException {
-            if (responseContext instanceof ClientResponse) {
-                ClientResponse clientResponse = (ClientResponse) responseContext;
-                responseContext.getHeaders().putSingle(RESOLVED_URI_HEADER, clientResponse.getResolvedRequestUri().toString());
+            if (responseContext instanceof ClientResponse clientResponse) {
+                responseContext.getHeaders().putSingle(RESOLVED_URI_HEADER,
+                        clientResponse.getResolvedRequestUri().toString());
             }
         }
     }
 
-    @ParamTest
-    public void testDoFollow(String entityType) {
-        Response r = target("test/redirect", entityType).register(RedirectTestFilter.class).request().get();
-        Assertions.assertEquals(200, r.getStatus());
-        Assertions.assertEquals("GET", r.readEntity(String.class));
+    @Test
+    public void testDoFollow() {
+        Response r = target("test/redirect").register(RedirectTestFilter.class).request().get();
+        assertThat(r.getStatus(), is(200));
+        assertThat(r.readEntity(String.class), is("GET"));
 
-        Assertions.assertEquals(
-                UriBuilder.fromUri(getBaseUri()).path(RedirectResource.class).build().toString(),
-                r.getHeaderString(RedirectTestFilter.RESOLVED_URI_HEADER));
+        assertThat(r.getHeaderString(RedirectTestFilter.RESOLVED_URI_HEADER),
+                is(UriBuilder.fromUri(getBaseUri()).path(RedirectResource.class).build().toString()));
     }
 
-    @ParamTest
-    public void testDontFollow(String entityType) {
-        WebTarget t = target("test/redirect", entityType);
+    @Test
+    public void testDontFollow() {
+        WebTarget t = target("test/redirect");
         t.property(ClientProperties.FOLLOW_REDIRECTS, false);
-        Assertions.assertEquals(303, t.request().get().getStatus());
+        assertThat(t.request().get().getStatus(), is(303));
     }
 }

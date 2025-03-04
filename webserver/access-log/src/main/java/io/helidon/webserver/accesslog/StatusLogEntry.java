@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ public final class StatusLogEntry extends AbstractLogEntry {
      * Create a new status log entry.
      *
      * @return a new access log entry for HTTP status
-     * @see io.helidon.webserver.accesslog.AccessLogSupport.Builder#add(AccessLogEntry)
+     * @see AccessLogConfig.Builder#addEntry(AccessLogEntry)
      */
     public static StatusLogEntry create() {
         return builder().build();
@@ -46,8 +46,9 @@ public final class StatusLogEntry extends AbstractLogEntry {
     public String doApply(AccessLogContext context) {
         return String.valueOf(context.serverResponse().status().code());
     }
+
     /**
-     * A fluent API builder for {@link io.helidon.webserver.accesslog.StatusLogEntry}.
+     * A fluent API builder for {@link StatusLogEntry}.
      */
     public static final class Builder extends AbstractLogEntry.Builder<StatusLogEntry, Builder> {
         private Builder() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,38 +15,20 @@
  */
 package io.helidon.microprofile.openapi;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintStream;
-import java.net.URL;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.HashSet;
-import java.util.List;
-import java.util.Optional;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.config.Config;
-import io.helidon.microprofile.cdi.RuntimeStart;
-import io.helidon.microprofile.server.JaxRsApplication;
-import io.helidon.microprofile.server.RoutingBuilders;
-import io.helidon.openapi.OpenAPISupport;
+import io.helidon.microprofile.server.ServerCdiExtension;
+import io.helidon.microprofile.servicecommon.HelidonRestCdiExtension;
+import io.helidon.openapi.OpenApiFeature;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Initialized;
 import jakarta.enterprise.event.Observes;
-import jakarta.enterprise.inject.spi.Extension;
 import jakarta.enterprise.inject.spi.ProcessAnnotatedType;
-import org.jboss.jandex.CompositeIndex;
-import org.jboss.jandex.Index;
-import org.jboss.jandex.IndexReader;
-import org.jboss.jandex.IndexView;
-import org.jboss.jandex.Indexer;
+import jakarta.enterprise.inject.spi.ProcessManagedBean;
+import org.eclipse.microprofile.config.ConfigProvider;
 
 import static jakarta.interceptor.Interceptor.Priority.LIBRARY_BEFORE;
 import static jakarta.interceptor.Interceptor.Priority.PLATFORM_AFTER;
@@ -56,181 +38,59 @@ import static jakarta.interceptor.Interceptor.Priority.PLATFORM_AFTER;
  * SmallRye OpenAPI) from CDI if no {@code META-INF/jandex.idx} file exists on
  * the class path.
  */
-public class OpenApiCdiExtension implements Extension {
+public class OpenApiCdiExtension extends HelidonRestCdiExtension {
 
-    private static final String INDEX_PATH = "META-INF/jandex.idx";
-
-    private static final Logger LOGGER = Logger.getLogger(OpenApiCdiExtension.class.getName());
-
-    private final String[] indexPaths;
-    private final int indexURLCount;
+    private static final System.Logger LOGGER = System.getLogger(OpenApiCdiExtension.class.getName());
 
     private final Set<Class<?>> annotatedTypes = new HashSet<>();
-
-    private org.eclipse.microprofile.config.Config mpConfig;
-    private Config config;
-    private MPOpenAPISupport openApiSupport;
+    private volatile OpenApiFeature feature;
 
     /**
-     * Creates a new instance of the index builder.
-     *
-     * @throws java.io.IOException in case of error checking for the Jandex index files
+     * Creates a new instance.
      */
-    public OpenApiCdiExtension() throws IOException {
-        this(INDEX_PATH);
+    public OpenApiCdiExtension() {
+        super(LOGGER, "openapi", "mp.openapi");
     }
 
-    OpenApiCdiExtension(String... indexPaths) throws IOException {
-        this.indexPaths = indexPaths;
-        List<URL> indexURLs = findIndexFiles(indexPaths);
-        indexURLCount = indexURLs.size();
-        if (indexURLs.isEmpty()) {
-            LOGGER.log(Level.INFO, () -> String.format(
-                    "OpenAPI support could not locate the Jandex index file %s "
-                            + "so will build an in-memory index.%n"
-                            + "This slows your app start-up and, depending on CDI configuration, "
-                            + "might omit some type information needed for a complete OpenAPI document.%n"
-                            + "Consider using the Jandex maven plug-in during your build "
-                            + "to create the index and add it to your app.",
-                    INDEX_PATH));
-        }
-    }
+    /**
+     * Register the Health observer with server observer feature.
+     * This is a CDI observer method invoked by CDI machinery.
+     *
+     * @param event  event object
+     * @param server Server CDI extension
+     */
+    public void registerService(@Observes @Priority(LIBRARY_BEFORE + 10) @Initialized(ApplicationScoped.class)
+                                Object event,
+                                ServerCdiExtension server) {
 
-    private void configure(@Observes @RuntimeStart Config config) {
-        this.mpConfig = (org.eclipse.microprofile.config.Config) config;
-        this.config = config;
-    }
-
-    void registerOpenApi(@Observes @Priority(LIBRARY_BEFORE + 10) @Initialized(ApplicationScoped.class) Object event) {
-        Config openapiNode = config.get(OpenAPISupport.Builder.CONFIG_KEY);
-        openApiSupport = new MPOpenAPIBuilder()
-                .config(mpConfig)
-                .singleIndexViewSupplier(this::indexView)
-                .config(openapiNode)
+        feature = OpenApiFeature.builder()
+                .config(componentConfig())
+                .manager(new MpOpenApiManager(ConfigProvider.getConfig()))
                 .build();
+        server.addFeature(feature);
+    }
 
-        openApiSupport
-                .configureEndpoint(RoutingBuilders.create(openapiNode).routingBuilder());
+    @Override
+    protected void processManagedBean(ProcessManagedBean<?> processManagedBean) {
+        // SmallRye handles annotation processing. We have this method because the abstract superclass requires it.
+    }
+
+    /**
+     * Get the annotated types.
+     *
+     * @return annotated types
+     */
+    Set<Class<?>> annotatedTypes() {
+        return annotatedTypes;
     }
 
     // Must run after the server has created the Application instances.
-    void buildModel(@Observes @Priority(PLATFORM_AFTER + 100 + 10) @Initialized(ApplicationScoped.class) Object event) {
-        openApiSupport.prepareModel();
+    private void buildModel(@Observes @Priority(PLATFORM_AFTER + 100 + 10) @Initialized(ApplicationScoped.class) Object event) {
+        feature.initialize();
     }
 
-    /**
-     * Records each type that is annotated unless Jandex index(es) were found on
-     * the classpath (in which case we do not need to build our own in memory).
-     *
-     * @param <X> annotated type
-     * @param event {@code ProcessAnnotatedType} event
-     */
+    // Records each type that is annotated
     private <X> void processAnnotatedType(@Observes ProcessAnnotatedType<X> event) {
-        if (indexURLCount == 0) {
-            Class<?> c = event.getAnnotatedType()
-                    .getJavaClass();
-            annotatedTypes.add(c);
-        }
-    }
-
-    /**
-     * Reports an {@link org.jboss.jandex.IndexView} for the Jandex index that describes
-     * annotated classes for endpoints.
-     *
-     * @return {@code IndexView} describing discovered classes
-     */
-    public IndexView indexView() {
-        try {
-            return indexURLCount > 0 ? existingIndexFileReader() : indexFromHarvestedClasses();
-        } catch (IOException e) {
-            // wrap so we can use this method in a reference
-            throw new RuntimeException(e);
-        }
-    }
-
-    /**
-     * Builds an {@code IndexView} from existing Jandex index file(s) on the classpath.
-     *
-     * @return IndexView from all index files
-     * @throws IOException in case of error attempting to open an index file
-     */
-    private IndexView existingIndexFileReader() throws IOException {
-        List<IndexView> indices = new ArrayList<>();
-        /*
-         * Do not reuse the previously-computed indexURLs; those values will be incorrect with native images.
-         */
-        for (URL indexURL : findIndexFiles(indexPaths)) {
-            try (InputStream indexIS = indexURL.openStream()) {
-                LOGGER.log(Level.CONFIG, "Adding Jandex index at {0}", indexURL.toString());
-                indices.add(new IndexReader(indexIS).read());
-            } catch (Exception ex) {
-                throw new IOException("Attempted to read from previously-located index file "
-                        + indexURL + " but the index cannot be read", ex);
-            }
-        }
-        return indices.size() == 1 ? indices.get(0) : CompositeIndex.create(indices);
-    }
-
-    private IndexView indexFromHarvestedClasses() throws IOException {
-        Indexer indexer = new Indexer();
-        annotatedTypes.forEach(c -> addClassToIndexer(indexer, c));
-
-        /*
-         * Some apps might be added dynamically, not via annotation processing. Add those classes to the index if they are not
-         * already present.
-         */
-        MPOpenAPIBuilder.jaxRsApplicationsToRun().stream()
-                .map(JaxRsApplication::applicationClass)
-                .filter(Optional::isPresent)
-                .forEach(appClassOpt -> addClassToIndexer(indexer, appClassOpt.get()));
-
-        LOGGER.log(Level.CONFIG, "Using internal Jandex index created from CDI bean discovery");
-        Index result = indexer.complete();
-        dumpIndex(Level.FINER, result);
-        return result;
-    }
-
-    private void addClassToIndexer(Indexer indexer, Class<?> c) {
-        try (InputStream is = contextClassLoader().getResourceAsStream(resourceNameForClass(c))) {
-            indexer.index(is);
-        } catch (IOException ex) {
-            throw new RuntimeException(String.format("Cannot load bytecode from class %s at %s for annotation processing",
-                    c.getName(), resourceNameForClass(c)), ex);
-        }
-    }
-
-    private List<URL> findIndexFiles(String... indexPaths) throws IOException {
-        List<URL> result = new ArrayList<>();
-        for (String indexPath : indexPaths) {
-            Enumeration<URL> urls = contextClassLoader().getResources(indexPath);
-            while (urls.hasMoreElements()) {
-                result.add(urls.nextElement());
-            }
-        }
-        return result;
-    }
-
-    private static void dumpIndex(Level level, Index index) {
-        if (LOGGER.isLoggable(level)) {
-            LOGGER.log(level, "Dump of internal Jandex index:");
-            PrintStream oldStdout = System.out;
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            try (PrintStream newPS = new PrintStream(baos, true, Charset.defaultCharset())) {
-                System.setOut(newPS);
-                index.printAnnotations();
-                index.printSubclasses();
-                LOGGER.log(level, baos.toString(Charset.defaultCharset()));
-            } finally {
-                System.setOut(oldStdout);
-            }
-        }
-    }
-
-    private static ClassLoader contextClassLoader() {
-        return Thread.currentThread().getContextClassLoader();
-    }
-
-    private static String resourceNameForClass(Class<?> c) {
-        return c.getName().replace('.', '/') + ".class";
+        annotatedTypes.add(event.getAnnotatedType().getJavaClass());
     }
 }

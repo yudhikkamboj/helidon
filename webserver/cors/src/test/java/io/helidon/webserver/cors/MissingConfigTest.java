@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,16 @@ import java.util.logging.SimpleFormatter;
 import java.util.logging.StreamHandler;
 
 import io.helidon.config.Config;
+import io.helidon.cors.Aggregator;
+import io.helidon.cors.CorsSupportBase;
+import io.helidon.cors.CrossOriginConfig;
+import io.helidon.logging.common.LogConfig;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.webserver.cors.CustomMatchers.present;
+import static io.helidon.common.testing.junit5.OptionalMatcher.optionalPresent;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
@@ -41,17 +46,22 @@ import static org.hamcrest.Matchers.is;
  */
 class MissingConfigTest {
 
-    private static final Config MISSING = Config.empty().get("anything");
     private static final Logger BASE_LOGGER = Logger.getLogger(CorsSupportBase.class.getName());
+    private static final Config MISSING = Config.empty().get("anything");
 
     private ByteArrayOutputStream os;
     private StreamHandler handler;
+
+    @BeforeAll
+    static void setup() {
+        LogConfig.configureRuntime();
+    }
 
     @BeforeEach
     void setupLoggingCapture() {
         os = new ByteArrayOutputStream();
         handler = new StreamHandler(os, new SimpleFormatter());
-        handler.setLevel(Level.INFO);
+        handler.setLevel(Level.FINEST);
     }
 
     @Test
@@ -73,12 +83,11 @@ class MissingConfigTest {
     }
 
     private static void checkCorsSupport(CorsSupport cs) {
-
         assertThat(cs.helper().isActive(), is(true));
         Aggregator aggregator = cs.helper().aggregator();
         assertThat(aggregator.isActive(), is(true));
-        Optional<CrossOriginConfig> cocOpt = aggregator.lookupCrossOrigin("/any/path", "GET", () -> Optional.empty());
-        assertThat(cocOpt, present());
+        Optional<CrossOriginConfig> cocOpt = aggregator.lookupCrossOrigin("/any/path", "GET", Optional::empty);
+        assertThat(cocOpt, optionalPresent());
         checkCrossOriginConfig(cocOpt.get());
     }
 

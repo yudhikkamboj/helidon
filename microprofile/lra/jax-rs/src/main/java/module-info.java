@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,30 +13,45 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Helidon implementation of MicroProfile Long Running Actions.
  *
  * @see org.eclipse.microprofile.lra
  */
+@Feature(value = "Long Running Actions",
+        description = "MicroProfile Long Running Actions",
+        in = HelidonFlavor.MP,
+        path = "LRA"
+)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.microprofile.lra {
-    requires jakarta.cdi;
-    requires jakarta.inject;
-    requires jakarta.ws.rs;
-    requires microprofile.lra.api;
-    requires org.jboss.jandex;
-    requires java.logging;
-    requires jakarta.annotation;
+    exports io.helidon.microprofile.lra;
+
+    requires io.helidon.common.reactive;
     requires io.helidon.config;
+    requires io.helidon.lra.coordinator.client;
     requires io.helidon.microprofile.config;
     requires io.helidon.microprofile.server;
+    requires jakarta.annotation;
+    requires jakarta.inject;
+    requires jakarta.ws.rs;
     requires microprofile.config.api;
-    requires jakarta.interceptor.api;
-    requires jersey.common;
-    requires io.helidon.lra.coordinator.client;
-    requires io.helidon.common.serviceloader;
+    requires microprofile.lra.api;
+    requires org.jboss.jandex;
+
+    requires static io.helidon.common.features.api;
+
+    requires jakarta.cdi;
+    requires transitive jersey.common;
+    requires io.helidon.config.mp;
 
     uses io.helidon.lra.coordinator.client.CoordinatorClient;
 
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.lra.LraCdiExtension;
     provides org.glassfish.jersey.internal.spi.AutoDiscoverable with io.helidon.microprofile.lra.LraAutoDiscoverable;
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,34 +14,49 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Microprofile metrics implementation.
  *
  * @see org.eclipse.microprofile.metrics
  */
+@Feature(value = "Metrics",
+        description = "MicroProfile metrics spec implementation",
+        in = HelidonFlavor.MP,
+        path = "Metrics"
+)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.microprofile.metrics {
-    requires java.logging;
 
-    requires static jakarta.cdi;
-    requires static jakarta.inject;
-    requires static jakarta.interceptor.api;
-    requires static jakarta.annotation;
-    requires static jakarta.activation;
-
-    requires io.helidon.servicecommon.restcdi;
-    requires io.helidon.microprofile.server;
-    requires io.helidon.microprofile.config;
-    requires transitive io.helidon.metrics.api;
-    requires transitive io.helidon.metrics.serviceapi;
-
-    requires transitive microprofile.config.api;
-    requires microprofile.metrics.api;
     requires io.helidon.config.mp;
+    requires io.helidon.metrics.api;
+    requires io.helidon.microprofile.config;
+    requires io.helidon.microprofile.server;
+    requires jakarta.annotation;
+    requires jakarta.inject;
+    requires microprofile.metrics.api;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.microprofile.servicecommon;
+    requires transitive io.helidon.webserver.observe.metrics;
+    requires transitive jakarta.cdi;
+    requires transitive microprofile.config.api;
 
     exports io.helidon.microprofile.metrics;
+    exports io.helidon.microprofile.metrics.spi;
 
     // this is needed for CDI extensions that use non-public observer methods
     opens io.helidon.microprofile.metrics to weld.core.impl, io.helidon.microprofile.cdi;
+    opens io.helidon.microprofile.metrics.spi to io.helidon.microprofile.cdi, weld.core.impl;
 
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.metrics.MetricsCdiExtension;
+    provides io.helidon.metrics.spi.MetricsProgrammaticConfig
+            with io.helidon.microprofile.metrics.MpMetricsProgrammaticConfig;
+    provides io.helidon.metrics.spi.MeterRegistryLifeCycleListener
+            with io.helidon.microprofile.metrics.RegistryFactoryManager;
+
+    uses io.helidon.metrics.spi.ExemplarService;
 }

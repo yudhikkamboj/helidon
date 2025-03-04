@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-import io.helidon.jersey.connector.HelidonConnectorProvider;
 
 /**
- * A {@link org.glassfish.jersey.client.spi.Connector} that utilizes the Helidon HTTP Client to send and receive
- *  * HTTP request and responses.
+ * A {@link org.glassfish.jersey.client.spi.Connector} that utilizes the Helidon HTTP Client to send
+ * and receive HTTP request and responses.
  */
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.jersey.connector {
-    requires java.logging;
 
-    requires jakarta.activation;
-    requires jakarta.ws.rs;
-    requires jersey.client;
-    requires jersey.common;
-    requires io.helidon.common.reactive;
+    requires io.helidon.config;
     requires io.helidon.webclient;
-    requires io.netty.codec.http;
+    requires io.helidon.webclient.http2;
+    requires jakarta.ws.rs;
+    requires jersey.common;
+
+    requires transitive jersey.client;
 
     exports io.helidon.jersey.connector;
-    provides org.glassfish.jersey.client.spi.ConnectorProvider with HelidonConnectorProvider;
+
+    provides org.glassfish.jersey.client.spi.ConnectorProvider
+            with io.helidon.jersey.connector.HelidonConnectorProvider;
+
 }

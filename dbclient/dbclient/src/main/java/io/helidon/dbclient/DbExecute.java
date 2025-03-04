@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 package io.helidon.dbclient;
 
 import java.util.Optional;
-
-import io.helidon.common.reactive.Multi;
-import io.helidon.common.reactive.Single;
+import java.util.stream.Stream;
 
 /**
  * Database executor.
@@ -39,10 +37,10 @@ import io.helidon.common.reactive.Single;
  *     (or with no parameters at all)</li>
  * </ol>
  * The first three methods return a statement that can have parameters configured (and other details modified).
- * The last two methods directly execute the statement and provide appropriate response for future processing.
- * All the methods are non-blocking.
+ * The last two methods directly execute the statement.
  */
 public interface DbExecute {
+
     /*
      * QUERY
      */
@@ -79,7 +77,7 @@ public interface DbExecute {
      * @param parameters    query parameters to set
      * @return database query execution result which can contain multiple rows
      */
-    default Multi<DbRow> namedQuery(String statementName, Object... parameters) {
+    default Stream<DbRow> namedQuery(String statementName, Object... parameters) {
         return createNamedQuery(statementName).params(parameters).execute();
     }
 
@@ -90,7 +88,7 @@ public interface DbExecute {
      * @param parameters query parameters to set
      * @return database query execution result which can contain multiple rows
      */
-    default Multi<DbRow> query(String statement, Object... parameters) {
+    default Stream<DbRow> query(String statement, Object... parameters) {
         return createQuery(statement).params(parameters).execute();
     }
 
@@ -130,7 +128,7 @@ public interface DbExecute {
      * @param parameters    query parameters to set
      * @return database query execution result which can contain single row
      */
-    default Single<Optional<DbRow>> namedGet(String statementName, Object... parameters) {
+    default Optional<DbRow> namedGet(String statementName, Object... parameters) {
         return createNamedGet(statementName).params(parameters).execute();
     }
 
@@ -141,10 +139,9 @@ public interface DbExecute {
      * @param parameters query parameters to set
      * @return database query execution result which can contain single row
      */
-    default Single<Optional<DbRow>> get(String statement, Object... parameters) {
+    default Optional<DbRow> get(String statement, Object... parameters) {
         return createGet(statement).params(parameters).execute();
     }
-
     /*
      * INSERT
      */
@@ -183,7 +180,7 @@ public interface DbExecute {
      * @param parameters    query parameters to set
      * @return number of rows inserted into the database
      */
-    default Single<Long> namedInsert(String statementName, Object... parameters) {
+    default long namedInsert(String statementName, Object... parameters) {
         return createNamedInsert(statementName).params(parameters).execute();
     }
 
@@ -194,7 +191,7 @@ public interface DbExecute {
      * @param parameters query parameters to set
      * @return number of rows inserted into the database
      */
-    default Single<Long> insert(String statement, Object... parameters) {
+    default long insert(String statement, Object... parameters) {
         return createInsert(statement).params(parameters).execute();
     }
 
@@ -234,9 +231,9 @@ public interface DbExecute {
      *
      * @param statementName the name of the configuration node with statement
      * @param parameters    query parameters to set
-     * @return number of rows updateed into the database
+     * @return number of rows updated into the database
      */
-    default Single<Long> namedUpdate(String statementName, Object... parameters) {
+    default long namedUpdate(String statementName, Object... parameters) {
         return createNamedUpdate(statementName).params(parameters).execute();
     }
 
@@ -245,9 +242,9 @@ public interface DbExecute {
      *
      * @param statement  the update statement to be executed
      * @param parameters query parameters to set
-     * @return number of rows updateed into the database
+     * @return number of rows updated into the database
      */
-    default Single<Long> update(String statement, Object... parameters) {
+    default long update(String statement, Object... parameters) {
         return createUpdate(statement).params(parameters).execute();
     }
 
@@ -267,7 +264,7 @@ public interface DbExecute {
     }
 
     /**
-     * Create andelete statement using a named statement.
+     * Create a delete statement using a named statement.
      *
      * @param statementName the name of the statement
      * @return database statement that can delete data
@@ -289,7 +286,7 @@ public interface DbExecute {
      * @param parameters    query parameters to set
      * @return number of rows deleted from the database
      */
-    default Single<Long> namedDelete(String statementName, Object... parameters) {
+    default long namedDelete(String statementName, Object... parameters) {
         return createNamedDelete(statementName).params(parameters).execute();
     }
 
@@ -300,7 +297,7 @@ public interface DbExecute {
      * @param parameters query parameters to set
      * @return number of rows deleted from the database
      */
-    default Single<Long> delete(String statement, Object... parameters) {
+    default long delete(String statement, Object... parameters) {
         return createDelete(statement).params(parameters).execute();
     }
 
@@ -340,7 +337,7 @@ public interface DbExecute {
      * @param parameters    query parameters to set
      * @return number of rows modified
      */
-    default Single<Long> namedDml(String statementName, Object... parameters) {
+    default long namedDml(String statementName, Object... parameters) {
         return createNamedDmlStatement(statementName).params(parameters).execute();
     }
 
@@ -351,7 +348,7 @@ public interface DbExecute {
      * @param parameters query parameters to set
      * @return number of rows modified
      */
-    default Single<Long> dml(String statement, Object... parameters) {
+    default long dml(String statement, Object... parameters) {
         return createDmlStatement(statement).params(parameters).execute();
     }
 
@@ -361,15 +358,16 @@ public interface DbExecute {
 
     /**
      * Unwrap database executor internals.
-     * Only database connection is supported. Any operations based on this connection are <b>blocking</b>.
-     * Reactive support must be implemented in user code. This connection instance is being used to execute
+     * Only database connection is supported. This connection instance is being used to execute
      * all statements in current database executor context.
+     * <p>When {@code java.sql.Connection} is requested for JDBC provider, this connection must be closed
+     * by user code using {@code close()} method on returned {@code Connection} instance.
      *
      * @param <C> target class to be unwrapped
      * @param cls target class to be unwrapped
-     * @return database executor internals future matching provided class
+     * @return database executor internals matching provided class
      * @throws UnsupportedOperationException when provided class is not supported
      */
-    <C> Single<C> unwrap(Class<C> cls);
+    <C> C unwrap(Class<C> cls);
 
 }

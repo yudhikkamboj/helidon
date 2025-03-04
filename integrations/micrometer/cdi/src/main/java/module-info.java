@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,31 +14,35 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+import io.helidon.common.features.api.Preview;
+
 /**
  * Support for Micrometer in Helidon MP.
  */
+@Preview
+@Feature(value = "Micrometer",
+        description = "Micrometer integration",
+        in = HelidonFlavor.MP,
+        path = "Micrometer"
+)
 module io.helidon.integrations.micrometer.cdi {
 
-    requires java.logging;
-
-    requires static jakarta.annotation;
-
-    requires static jakarta.activation;
-    requires static jakarta.cdi;
-    requires static jakarta.inject;
-    requires static jakarta.interceptor.api;
-
-    requires io.helidon.common.http;
-    requires io.helidon.servicecommon.rest;
-    requires io.helidon.servicecommon.restcdi;
-    requires io.helidon.config;
+    requires io.helidon.common;
     requires io.helidon.config.mp;
-    requires io.helidon.microprofile.server;
-    requires io.helidon.webserver.cors;
-    requires io.helidon.integrations.micrometer;
-
+    requires io.helidon.config;
+    requires jakarta.annotation;
+    requires jakarta.cdi;
+    requires jakarta.inject;
     requires micrometer.core;
     requires simpleclient;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.integrations.micrometer;
+    requires transitive io.helidon.microprofile.server;
+    requires transitive io.helidon.microprofile.servicecommon;
 
     exports io.helidon.integrations.micrometer.cdi;
 
@@ -46,4 +50,5 @@ module io.helidon.integrations.micrometer.cdi {
     opens io.helidon.integrations.micrometer.cdi to weld.core.impl, io.helidon.microprofile.cdi;
 
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.integrations.micrometer.cdi.MicrometerCdiExtension;
+
 }

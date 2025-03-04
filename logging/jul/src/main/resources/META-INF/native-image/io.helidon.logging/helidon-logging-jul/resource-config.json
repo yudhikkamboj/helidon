@@ -1,0 +1,10 @@
+{
+    "resources": [
+        {
+            "pattern": "logging.properties"
+        },
+        {
+            "pattern": "logging-test.properties"
+        }
+    ]
+}

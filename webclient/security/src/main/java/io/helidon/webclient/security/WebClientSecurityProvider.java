@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,35 @@
  */
 package io.helidon.webclient.security;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
 import io.helidon.webclient.spi.WebClientService;
 import io.helidon.webclient.spi.WebClientServiceProvider;
 
 /**
  * Client security SPI provider.
+ *
+ * @deprecated This class should only be used via {@link java.util.ServiceLoader}.
+ *  Use {@link WebClientSecurity} instead
  */
+@Deprecated
 public class WebClientSecurityProvider implements WebClientServiceProvider {
+
+    /**
+     * Required public constructor.
+     *
+     * @deprecated This class should only be used via {@link java.util.ServiceLoader}.
+     */
+    @Deprecated
+    public WebClientSecurityProvider() {
+    }
+
     @Override
     public String configKey() {
         return "security";
     }
 
     @Override
-    public WebClientService create(Config config) {
+    public WebClientService create(Config config, String name) {
         return WebClientSecurity.create();
     }
 }

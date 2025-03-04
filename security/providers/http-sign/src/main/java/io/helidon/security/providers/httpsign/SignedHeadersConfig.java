@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 
 /**
  * Configuration of required and "if-present" headers to be signed.
@@ -163,6 +165,7 @@ public final class SignedHeadersConfig {
     /**
      * Configuration of headers to be signed.
      */
+    @Configured
     public static final class HeadersConfig {
         private final List<String> always;
         private final List<String> ifPresent;
@@ -209,6 +212,14 @@ public final class SignedHeadersConfig {
          * @param config configuration located at header config
          * @return instance configured from config
          */
+        @ConfiguredOption(key = "always", type = String.class, kind = ConfiguredOption.Kind.LIST,
+                          description = "Headers that must be signed (and signature validation or creation should fail if not "
+                                  + "signed or present)")
+        @ConfiguredOption(key = "if-present", type = String.class, kind = ConfiguredOption.Kind.LIST,
+                          description = "Headers that must be signed if present in request.")
+        @ConfiguredOption(key = "method", type = String.class,
+                          description = "HTTP method this header configuration is bound to. "
+                                  + "If not present, it is considered default header configuration.")
         public static HeadersConfig create(Config config) {
             return create(config.get("always").asList(String.class).orElse(List.of()),
                           config.get("if-present").asList(String.class).orElse(List.of()));

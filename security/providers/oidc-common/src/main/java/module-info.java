@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,29 +18,25 @@
  * OIDC common classes.
  */
 module io.helidon.security.providers.oidc.common {
-    requires java.logging;
 
-    // EncryptionProvider.EncryptionSupport is part of API
+    requires io.helidon.common.context;
+    requires io.helidon.common.crypto;
+    requires io.helidon.common.parameters;
+    requires io.helidon.cors;
+    requires io.helidon.http.media.jsonp;
+    requires io.helidon.security.providers.common;
+    requires io.helidon.security.providers.httpauth;
+    requires io.helidon.webclient.security; // EncryptionProvider.EncryptionSupport is part of API
+    requires io.helidon.webclient.tracing;
+
+    requires static io.helidon.config.metadata;
+
+    requires transitive io.helidon.security.jwt;
+    requires transitive io.helidon.security.util; // TokenHandler is part of API
     requires transitive io.helidon.security;
-    // TokenHandler is part of API
-    requires transitive io.helidon.security.util;
-    // WebClient is part of API
     requires transitive io.helidon.webclient;
 
-    requires io.helidon.security.providers.common;
-    requires io.helidon.security.jwt;
-    requires io.helidon.security.providers.httpauth;
-    requires io.helidon.webclient.jaxrs;
-    requires io.helidon.webclient.security;
-    requires io.helidon.webclient.tracing;
-    requires io.helidon.media.jsonp;
-    requires io.helidon.common.crypto;
-    requires static io.helidon.config.metadata;
-    requires io.helidon.webserver.cors;
-
-    // these are deprecated and will be removed in 3.x
-    requires jersey.client;
-    requires jakarta.ws.rs;
-
     exports io.helidon.security.providers.oidc.common;
+    exports io.helidon.security.providers.oidc.common.spi;
+
 }

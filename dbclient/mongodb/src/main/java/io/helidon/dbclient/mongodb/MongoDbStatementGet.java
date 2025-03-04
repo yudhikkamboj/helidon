@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,23 +19,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import io.helidon.common.reactive.Single;
+import io.helidon.dbclient.DbExecuteContext;
 import io.helidon.dbclient.DbRow;
 import io.helidon.dbclient.DbStatementGet;
-import io.helidon.dbclient.common.DbStatementContext;
-import io.helidon.dbclient.mongodb.MongoDbTransaction.TransactionManager;
+import io.helidon.dbclient.DbStatementType;
 
-import com.mongodb.reactivestreams.client.MongoDatabase;
+import com.mongodb.client.MongoDatabase;
 
 /**
- * Statement for GET operation in mongoDB.
+ * MongoDB {@link DbStatementGet} implementation.
  */
-public class MongoDbStatementGet implements DbStatementGet {
+public class MongoDbStatementGet extends MongoDbStatement<DbStatementGet> implements DbStatementGet {
 
     private final MongoDbStatementQuery theQuery;
 
-    MongoDbStatementGet(MongoDatabase db, DbStatementContext statementContext) {
-        this.theQuery = new MongoDbStatementQuery(db, statementContext);
+    /**
+     * Create a new instance.
+     *
+     * @param db      MongoDb instance
+     * @param context context
+     */
+    MongoDbStatementGet(MongoDatabase db, DbExecuteContext context) {
+        super(db, context);
+        this.theQuery = new MongoDbStatementQuery(db, context);
+    }
+
+    @Override
+    public DbStatementType statementType() {
+        return DbStatementType.GET;
     }
 
     @Override
@@ -75,20 +86,7 @@ public class MongoDbStatementGet implements DbStatementGet {
     }
 
     @Override
-    public Single<Optional<DbRow>> execute() {
-        return Single.create(theQuery.execute())
-                .toOptionalSingle();
+    public Optional<DbRow> execute() {
+        return theQuery.execute().findFirst();
     }
-
-    /**
-     * Set target transaction for this statement.
-     *
-     * @param tx MongoDB transaction session
-     * @return MongoDB statement builder
-     */
-    MongoDbStatementGet inTransaction(TransactionManager tx) {
-        theQuery.inTransaction(tx);
-        return this;
-    }
-
 }

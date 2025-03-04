@@ -12,10 +12,11 @@ Some of these rules are enforced by checkstyle, some are checked during code rev
 # General coding rules
 1. Use unchecked Throwables - descendants of RuntimeException in API
     1. Never use RuntimeException directly - always create a descendant appropriate for your module, or
-        use an existing exception declared in the module
+       use an existing exception declared in the module
     2. Our APIs should never throw a checked exception unless enforced by implemented/extended interface - e.g. when
-        we implement a java.io.Closeable, we must declare the checked exception. 
-1. Usage of `null` is discouraged and should not exist in any public APIs of Helidon
+       we implement a java.io.Closeable, we must declare the checked exception.
+    3. In some cases we may use existing runtime exceptions if they fit the problem (`NoSuchElementException`, `IllegalStateException`)
+2. Usage of `null` is discouraged and should not exist in any public APIs of Helidon
     1. If a method accepts a `null`, refactor it to a different approach
         - a setter: create a method to remove the field value rather than setting a `null` value 
             (such as `host(String)` to set a host, and `unsetHost()` to revert to default value)
@@ -44,7 +45,7 @@ Some of these rules are enforced by checkstyle, some are checked during code rev
         1. For pom packaging, the module is a "project module" (considering modules that serve as aggregators for sub-modules 
             into a common reactor)
     2. Maven coordinates:
-        1. Group id: io.helidon.${project_module}* - such as io.helidon.webserver; io.helidon.microprofile.config
+        1. Group id: io.helidon.${project_module}* - such as io.helidon.reactive.webserver; io.helidon.microprofile.config
         2. Artifact id: helidon-${module_name}(-project)? - such as "helidon-security", "helicon-security-project", 
             where project modules use the suffix "-project"
         3. Version: always inherited
@@ -55,13 +56,13 @@ Some of these rules are enforced by checkstyle, some are checked during code rev
 1. **Everything that can be done using config, must be possible using programmatic approach through builders**
     1. Exceptions:
         1. CDI components configured from a CDI Extension
-1. Everything that can be done using builders should be possible also using configuration, 
+2. Everything that can be done using builders should be possible also using configuration, 
         except for cases that would mandate usage of reflection 
         (such an exception may be configuration of Routing in WebServer - nevertheless we still may support 
             it (emphasis on "may" rather than "should"), or configuration of security for Jersey resources)
-2. When accepting config as a parameter, we should expect the config is located on the node that contains our configuration
+3. When accepting config as a parameter, we should expect the config is located on the node that contains our configuration
     (such as in ServerConfiguration in WebServer)
-3. Config keys:
+4. Config keys:
     1. Use lower case words separated by dashes 
         (e.g. "token-endpoint-uri", NOT "tokenEndpointUri")
     2. May be nested in a tree structure (e.g. outbound-token.name, outbound-token.algorithm)
@@ -70,9 +71,7 @@ Some of these rules are enforced by checkstyle, some are checked during code rev
         2. Default: component has a well defined and documented default value for such a property
         3. Optional: component behaves in a well defined and documented manner if such a property is not 
             configured (e.g. a component may expect tracing endpoint - if not defined, tracing may be disabled)         
-        
-
-Example: [io.helidon.security.providers.oidc.common.OidcConfig](security/providers/oidc-common/src/main/java/io/helidon/security/providers/oidc/common/OidcConfig.java)
+5. We have introduced `helidon-builder` module, see [Builders](#Builders)
 
 # Getters and Setters
 1. We do not use the verb, e.g. when a property "port" exists, the following methods are used:  
@@ -90,6 +89,11 @@ Example: [io.helidon.security.providers.oidc.common.OidcConfig](security/provide
     2. When using control methods (such as Server server = Server.create().start())
     
 # Builders
+We have introduced code generation for builders that enforces the rules mentioned below.
+
+See [helidon-builder](builder/README.md) for more details about modules, and [helidon-builder-api](builder/api/README.md) for explanation of APIs and naming rules. The `Blueprint` approach should be used for all builders (and the API of the prototype). Exceptions must be consulted with project architect (this may result in either changing the processor to support the required feature, or in removing such feature and redesigning the problem, or in an exception (documented) to the rule).
+
+
 1. We use builders to create instances that need any parameters for construction
     1. **This implies that there are no public API classes that would use public constructors**
     2. Allowed exceptions to this rule:
@@ -105,31 +109,23 @@ Example: [io.helidon.security.providers.oidc.common.OidcConfig](security/provide
     2. May have:
         1. method _public static Builder builder(?)_ - builder with mandatory or very commonly used parameters
             - there should be a very small number of "builder(*)" methods - up to two per class
-        1. Factory method _public static FooBar create()_ that is implemented as "return builder().build()"
-        2. Factory method _public static create(io.helidon.config.Config config)_ that is implemented as 
+        2. Factory method _public static FooBar create()_ that is implemented as "return builder().build()"
+        3. Factory method _public static create(io.helidon.config.Config config)_ that is implemented as 
             "return builder().config(config).build()"
-        2. Other factory methods that build specific (predefined) instances, such as "fail(String cause)", 
+        4. Other factory methods that build specific (predefined) instances, such as "fail(String cause)", 
             "success(Subject subject)" etc. - **these methods MUST use builder to build the instance internally**
-        3. An internal class named "Builder" that is building instances of the containing class
+        5. An internal class named "Builder" that is building instances of the containing class
             1. it is allowed to have the builder as a top level class, in such a case the name must reflect the class it is 
-                building (e.g. FooBarBuilder) 
-3. Builder class
-    1. Must have:
-        1. Implements "io.helidon.common.Builder<FooBar>"
-        2. All methods configuring the builder return a builder instance with updated configuration
-        3. Validation done either on setters or in method build() (latest) - e.g. we should fail to
-            build an instance if the configuration is not correct
-    2. May have:
-        1. May accept other classes that are built using a builder, either directly, or as Supplier<T> 
-            (as builder implements Supplier, this allows us to pass a builder to such a method, as well as a nice lambda)
-            
-Example: [io.helidon.security.providers.oidc.common.OidcConfig](security/providers/oidc-common/src/main/java/io/helidon/security/oidc/common/OidcConfig.java)
+                building (e.g. FooBarBuilder)
+        
+Example: [io.helidon.faulttolerance.RetryConfigBlueprint](nima/fault-tolerance/fault-tolerance/src/main/java/io/helidon/nima/faulttolerance/RetryConfigBlueprint.java)
 
 # JPMS
 1. Each java module that is released has a `module-info.java`
 2. Provided services of released modules are declared ONLY in `module-info.java`, `META-INF/services` is generated  
         automatically by a Maven plugin. `META-INF/services` in sources of released modules will fail the build
 3. Javadoc is using modules, so do not forget to add javadoc to `module-info.java`
+4. Provided and used services should be always using fully qualified class names
     
 # Testing
 

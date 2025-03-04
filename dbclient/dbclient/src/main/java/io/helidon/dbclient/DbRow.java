@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import io.helidon.common.mapper.MapperException;
  * Representation of a single row in a database (in SQL this would be a row, in a Document DB, this would be a single document).
  */
 public interface DbRow {
+
     /**
      * Get a column in this row. Column is identified by its name.
      *
@@ -38,6 +39,7 @@ public interface DbRow {
      *
      * @param index column index starting from {@code 1}
      * @return a column in this row
+     * @throws IndexOutOfBoundsException if column with provided index does not exist
      */
     DbColumn column(int index);
 
@@ -60,7 +62,7 @@ public interface DbRow {
     <T> T as(Class<T> type) throws MapperException;
 
     /**
-     * Map this row to an object using a {@link io.helidon.dbclient.DbMapper}.
+     * Map this row to an object using a {@link DbMapper}.
      *
      * @param type type that supports generic declarations
      * @param <T>  type to be returned
@@ -75,7 +77,7 @@ public interface DbRow {
      * Mapper for target class is provided as an argument.
      *
      * @param <T>    type of the returned value
-     * @param mapper method to create an target class instance from {@link DbRow}
+     * @param mapper method to create a target class instance from {@link DbRow}
      * @return instance of requested class containing this database row
      */
     <T> T as(Function<DbRow, T> mapper);

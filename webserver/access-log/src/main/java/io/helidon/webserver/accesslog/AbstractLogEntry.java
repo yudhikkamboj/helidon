@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public abstract class AbstractLogEntry implements AccessLogEntry {
     /**
      * Create a new instance using a builder.
      *
-     * @param builder builder that extends {@link io.helidon.webserver.accesslog.AbstractLogEntry.Builder}
+     * @param builder builder that extends {@link AbstractLogEntry.Builder}
      */
     protected AbstractLogEntry(Builder<?, ?> builder) {
         this.padding = builder.padding;
@@ -86,6 +86,7 @@ public abstract class AbstractLogEntry implements AccessLogEntry {
 
     /**
      * Apply configured padding.
+     *
      * @param toPad string to pad
      * @return padded string
      */
@@ -104,7 +105,7 @@ public abstract class AbstractLogEntry implements AccessLogEntry {
     protected abstract String doApply(AccessLogContext context);
 
     /**
-     * A fluent API builder for {@link io.helidon.webserver.accesslog.AbstractLogEntry}.
+     * A fluent API builder for {@link AbstractLogEntry}.
      * Extend this class to implement your own log entries.
      *
      * @param <R> The type of your log entry
@@ -117,6 +118,12 @@ public abstract class AbstractLogEntry implements AccessLogEntry {
         private Function<String, String> padding = Function.identity();
         private boolean sanitize = true;
         private int maxLength = DEFAULT_MAX_LENGTH;
+
+        /**
+         * Create a new instance, no side effects.
+         */
+        protected Builder() {
+        }
 
         /**
          * Apply no padding on the output.

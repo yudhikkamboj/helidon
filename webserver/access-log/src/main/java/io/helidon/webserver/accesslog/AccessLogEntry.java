@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,31 +15,16 @@
  */
 package io.helidon.webserver.accesslog;
 
-import io.helidon.webserver.Handler;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
-
 /**
  * An entry generating data for access log.
  * Implementation MUST be thread safe.
  */
 @FunctionalInterface
-public interface AccessLogEntry extends Handler {
+public interface AccessLogEntry {
     /**
      * If an entry is not available, use this string as the result.
      */
     String NOT_AVAILABLE = "-";
-
-    /**
-     * This method allows for each log entry to register anything on the request and/or response.
-     * As the log entry is shared by all threads, make sure the handling is implemented as thread safe.
-     *
-     * @param req an HTTP server request.
-     * @param res an HTTP server response.
-     */
-    @Override
-    default void accept(ServerRequest req, ServerResponse res) {
-    }
 
     /**
      * This method is called once the response is fully processed.

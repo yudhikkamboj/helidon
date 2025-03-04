@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ public class TestExtension implements Extension {
     private final List<String> events = new LinkedList<>();
     private Config runtimeConfig;
 
-    // must be public so it works with java 11 (do not want to open this module to weld)
+    // must be public so it works with never versions of Java (do not want to open this module to weld)
     public void registerBeans(@Observes BeforeBeanDiscovery bbd) {
         bbd.addAnnotatedType(TestBean.class, "unit-test-bean");
         bbd.addAnnotatedType(TestBean2.class, "unit-test-bean2");

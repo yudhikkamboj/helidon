@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,52 @@
 
 package io.helidon.scheduling;
 
+import java.lang.System.Logger.Level;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-class FixedRateTask implements Task {
+import io.helidon.common.configurable.ScheduledThreadPoolSupplier;
 
-    private static final Logger LOGGER = Logger.getLogger(FixedRateTask.class.getName());
+class FixedRateTask implements FixedRate {
+
+    private static final System.Logger LOGGER = System.getLogger(FixedRateTask.class.getName());
 
     private final AtomicLong iteration = new AtomicLong(0);
-    private ScheduledExecutorService executorService;
+    private final ScheduledExecutorService executorService;
     private final long initialDelay;
     private final long delay;
     private final TimeUnit timeUnit;
     private final ScheduledConsumer actualTask;
+    private FixedRateConfig config = null;
 
-    FixedRateTask(ScheduledExecutorService executorService,
-                  long initialDelay,
-                  long delay,
-                  TimeUnit timeUnit,
-                  ScheduledConsumer actualTask) {
-        this.executorService = executorService;
-        this.initialDelay = initialDelay;
-        this.delay = delay;
-        this.timeUnit = timeUnit;
-        this.actualTask = actualTask;
-        executorService.scheduleAtFixedRate(this::run, initialDelay, delay, timeUnit);
+    FixedRateTask(FixedRateConfig config) {
+        this.config = config;
+
+        this.initialDelay = config.initialDelay();
+        this.delay = config.delay();
+        this.timeUnit = config.timeUnit();
+        this.actualTask = config.task();
+
+        if (config.executor() == null) {
+            executorService = ScheduledThreadPoolSupplier.builder()
+                    .threadNamePrefix("scheduled-")
+                    .build()
+                    .get();
+        } else {
+            this.executorService = config.executor();
+        }
+
+        switch (config.delayType()) {
+        case SINCE_PREVIOUS_START -> executorService.scheduleAtFixedRate(this::run, initialDelay, delay, timeUnit);
+        case SINCE_PREVIOUS_END -> executorService.scheduleWithFixedDelay(this::run, initialDelay, delay, timeUnit);
+        default -> throw new IllegalStateException("Unexpected delay type " + config.delayType());
+        }
+    }
+
+    @Override
+    public FixedRateConfig prototype() {
+        return config;
     }
 
     @Override
@@ -91,7 +109,7 @@ class FixedRateTask implements Task {
                 }
             });
         } catch (Throwable e) {
-            LOGGER.log(Level.SEVERE, e, () -> "Error when invoking scheduled method.");
+            LOGGER.log(Level.ERROR, () -> "Error when invoking scheduled method.", e);
         }
     }
 }

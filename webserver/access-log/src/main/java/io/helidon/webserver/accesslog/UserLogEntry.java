@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 package io.helidon.webserver.accesslog;
 
 import java.security.Principal;
+import java.util.Optional;
+
+import io.helidon.common.security.SecurityContext;
 
 /**
  * Access log entry for security username.
@@ -29,9 +32,11 @@ public final class UserLogEntry extends AbstractLogEntry {
 
     /**
      * Create a new user log entry.
+     *
      * @return a new access log entry for username
      *
-     * @see io.helidon.webserver.accesslog.AccessLogSupport.Builder#add(AccessLogEntry)
+     * @see io.helidon.webserver.accesslog.AccessLogConfig.Builder#addEntry(AccessLogEntry)
+     * @see AccessLogConfig.Builder#addEntry(AccessLogEntry)
      */
     public static UserLogEntry create() {
         return builder().build();
@@ -46,13 +51,26 @@ public final class UserLogEntry extends AbstractLogEntry {
         return new Builder();
     }
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     @Override
     protected String doApply(AccessLogContext context) {
-        return context.serverRequest().context().get(Principal.class).map(Principal::getName).orElse(NOT_AVAILABLE);
+        Optional<SecurityContext> maybeContext = context.serverRequest()
+                .context()
+                .get(SecurityContext.class);
+
+        if (maybeContext.isEmpty()) {
+            return NOT_AVAILABLE;
+        }
+
+        SecurityContext<Principal> securityContext = maybeContext.get();
+
+        return securityContext.userPrincipal()
+                .map(Principal::getName)
+                .orElse(NOT_AVAILABLE);
     }
 
     /**
-     * Fluent API builder for {@link io.helidon.webserver.accesslog.UserLogEntry}.
+     * Fluent API builder for {@link UserLogEntry}.
      */
     public static final class Builder extends AbstractLogEntry.Builder<UserLogEntry, Builder> {
         private Builder() {

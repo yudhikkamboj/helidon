@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,10 +34,11 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.client.WebTarget;
 import jakarta.ws.rs.core.Response;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Tests the parallel execution of multiple requests.
@@ -75,25 +76,19 @@ public class ParallelTest extends AbstractTest {
     @BeforeAll
     public static void setup() {
         LOGGER.addHandler(new ConsoleHandler());
-        final UncachedStringMethodExecutor executor = new UncachedStringMethodExecutor(resource::get);
+        UncachedStringMethodExecutor executor = new UncachedStringMethodExecutor(resource::get);
 
-        AbstractTest.extensions.set(new Extension[] {
+        Extension[] extensions = new Extension[]{
                 executor,
                 new ContentLengthSetter()
-        });
-
-        AbstractTest.rules.set(
-                () -> {
-                    wireMock.stubFor(
-                            WireMock.get(WireMock.urlEqualTo(PATH)).willReturn(
-                                    WireMock.ok().withTransformers(executor.getName())
-                            )
-                    );
-                });
-
-        AbstractTest.setup();
+        };
+        Rules rules = () -> wireMockServer.stubFor(
+                WireMock.get(WireMock.urlEqualTo(PATH)).willReturn(
+                        WireMock.ok().withTransformers(executor.getName())
+                )
+        );
+        setup(rules, extensions);
     }
-
 
     @Test
     public void testParallel() throws BrokenBarrierException, InterruptedException, TimeoutException {
@@ -108,9 +103,8 @@ public class ParallelTest extends AbstractTest {
                     public void run() {
                         try {
                             startBarrier.await();
-                            Response response;
-                            response = target.path(PATH).request().get();
-                            Assertions.assertEquals("GET", response.readEntity(String.class));
+                            Response response = target.path(PATH).request().get();
+                            assertThat(response.readEntity(String.class), is("GET"));
                             receivedCounter.incrementAndGet();
                         } catch (InterruptedException ex) {
                             Thread.currentThread().interrupt();
@@ -129,17 +123,15 @@ public class ParallelTest extends AbstractTest {
 
             startBarrier.await(1, TimeUnit.SECONDS);
 
-            Assertions.assertTrue(
+            assertThat("Waiting for clients to finish has timed out.",
                     doneLatch.await(10, TimeUnit.SECONDS),
-                    "Waiting for clients to finish has timed out."
+                    is(true)
             );
-
-            Assertions.assertEquals(PARALLEL_CLIENTS, resourceCounter.get(), "Resource counter");
-
-            Assertions.assertEquals(PARALLEL_CLIENTS, receivedCounter.get(), "Received counter");
+            assertThat("Resource counter", resourceCounter.get(), is(PARALLEL_CLIENTS));
+            assertThat("Received counter", receivedCounter.get(), is(PARALLEL_CLIENTS));
         } finally {
             executor.shutdownNow();
-            Assertions.assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS), "Executor termination");
+            assertThat("Executor termination", executor.awaitTermination(5, TimeUnit.SECONDS), is(true));
         }
     }
 }

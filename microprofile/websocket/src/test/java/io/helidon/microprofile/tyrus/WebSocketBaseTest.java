@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@
 package io.helidon.microprofile.tyrus;
 
 import java.io.IOException;
-import java.net.URI;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import io.helidon.microprofile.server.ServerCdiExtension;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.Socket;
 
-import jakarta.enterprise.inject.se.SeContainer;
-import jakarta.enterprise.inject.spi.CDI;
+import jakarta.inject.Inject;
 import jakarta.websocket.CloseReason;
 import jakarta.websocket.Endpoint;
 import jakarta.websocket.EndpointConfig;
@@ -34,33 +34,32 @@ import jakarta.websocket.OnMessage;
 import jakarta.websocket.OnOpen;
 import jakarta.websocket.Session;
 import jakarta.websocket.server.ServerEndpoint;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Test;
+import jakarta.ws.rs.client.WebTarget;
 
-/**
- * Class WebSocketBaseTest.
- */
-public abstract class WebSocketBaseTest {
+@HelidonTest
+abstract class WebSocketBaseTest {
 
-    static SeContainer container;
+    @Inject
+    private WebTarget target;
 
-    @AfterAll
-    static void destroyClass() {
-        container.close();
-    }
-
-    public abstract String context();
+    @Inject
+    @Socket("other")
+    private WebTarget otherTarget;
 
     public int port() {
-        ServerCdiExtension cdiExtension = CDI.current().getBeanManager().getExtension(ServerCdiExtension.class);
-        return cdiExtension.port();
+        return target.getUri().getPort();
     }
 
-    @Test
-    public void testEchoAnnot() throws Exception {
-        URI echoUri = URI.create("ws://localhost:" + port() + context() + "/echoAnnot");
-        EchoClient echoClient = new EchoClient(echoUri);
-        echoClient.echo("hi", "how are you?");
+    public WebTarget target() {
+        return target;
+    }
+
+    public int otherPort() {
+        return otherTarget.getUri().getPort();
+    }
+
+    public WebTarget otherTarget() {
+        return otherTarget;
     }
 
     @ServerEndpoint("/echoAnnot")
@@ -70,26 +69,22 @@ public abstract class WebSocketBaseTest {
         @OnOpen
         public void onOpen(Session session) throws IOException {
             LOGGER.info("OnOpen called");
-            verifyRunningThread(session, LOGGER);
         }
 
         @OnMessage
         public void echo(Session session, String message) throws Exception {
             LOGGER.info("OnMessage called '" + message + "'");
             session.getBasicRemote().sendObject(message);
-            verifyRunningThread(session, LOGGER);
         }
 
         @OnError
         public void onError(Throwable t, Session session) throws IOException {
             LOGGER.info("OnError called");
-            verifyRunningThread(session, LOGGER);
         }
 
         @OnClose
         public void onClose(Session session) throws IOException {
             LOGGER.info("OnClose called");
-            verifyRunningThread(session, LOGGER);
         }
     }
 
@@ -114,7 +109,7 @@ public abstract class WebSocketBaseTest {
 
         @Override
         public void onError(Session session, Throwable thr) {
-            LOGGER.info("OnError called");
+            LOGGER.log(Level.SEVERE, "OnError called", thr);
             super.onError(session, thr);
         }
 
@@ -122,21 +117,6 @@ public abstract class WebSocketBaseTest {
         public void onClose(Session session, CloseReason closeReason) {
             LOGGER.info("OnClose called");
             super.onClose(session, closeReason);
-        }
-    }
-
-    /**
-     * Verify that endpoint methods are running in a Helidon thread pool.
-     *
-     * @param session Websocket session.
-     * @param logger A logger.
-     * @throws IOException Exception during close.
-     */
-    private static void verifyRunningThread(Session session, Logger logger) throws IOException {
-        Thread thread = Thread.currentThread();
-        if (!thread.getName().contains("helidon")) {
-            logger.warning("Websocket handler running in incorrect thread " + thread);
-            session.close();
         }
     }
 }

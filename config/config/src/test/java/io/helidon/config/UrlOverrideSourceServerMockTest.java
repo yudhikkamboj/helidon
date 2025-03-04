@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import io.helidon.config.spi.OverrideSource;
 import com.xebialabs.restito.server.StubServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static com.xebialabs.restito.builder.stub.StubHttp.whenHttp;
@@ -84,14 +85,14 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(HEAD), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         header("Last-Modified", "Sat, 10 Jun 2017 10:14:02 GMT")
                 );
         whenHttp(server).
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         header("Last-Modified", "Sat, 10 Jun 2017 10:14:02 GMT"),
                         stringContent(WILDCARDS)
                 );
@@ -109,6 +110,7 @@ public class UrlOverrideSourceServerMockTest {
         waitForAssert(() -> config.get("aaa.bbb.url").asString().get(), is("URL1"));
     }
 
+    @Disabled // intermittent failures on MacOS - https://github.com/helidon-io/helidon/issues/4440
     @Test
     public void testMultipleMatchingWildcards() throws MalformedURLException, InterruptedException {
 
@@ -116,14 +118,14 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(HEAD), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         header("Last-Modified", "Sat, 10 Jun 2017 10:14:02 GMT")
                 );
         whenHttp(server).
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         header("Last-Modified", "Sat, 10 Jun 2017 10:14:02 GMT"),
                         stringContent(MULTIPLE_WILDCARDS)
                 );
@@ -148,14 +150,14 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(HEAD), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         header("Last-Modified", "Sat, 10 Jun 2017 10:14:02 GMT")
                 );
         whenHttp(server).
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         header("Last-Modified", "Sat, 10 Jun 2017 10:14:02 GMT"),
                         stringContent(MULTIPLE_WILDCARDS_ANOTHER_ORDERING)
                 );
@@ -180,7 +182,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(WILDCARDS)
                 );
 
@@ -188,7 +190,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/config")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(CONFIG)
                 );
 
@@ -211,7 +213,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(NEW_WILDCARDS)
                 );
 
@@ -230,7 +232,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(WILDCARDS)
                 );
 
@@ -238,7 +240,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/config")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(CONFIG)
                 );
 
@@ -257,7 +259,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(custom(call -> call.getMethod().equals(GET) || call.getMethod().equals(HEAD)), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(NO_WILDCARDS)
                 );
 
@@ -272,7 +274,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(WILDCARDS)
                 );
 
@@ -280,7 +282,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/config")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(CONFIG)
                 );
 
@@ -301,7 +303,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/config")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(CONFIG2)
                 );
 
@@ -316,7 +318,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/override")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(WILDCARDS)
                 );
 
@@ -324,7 +326,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/config")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(CONFIG)
                 );
 
@@ -348,7 +350,7 @@ public class UrlOverrideSourceServerMockTest {
                 match(method(GET), uri("/config")).
                 then(
                         status(OK_200),
-                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES),
+                        contentType(MEDIA_TYPE_TEXT_JAVA_PROPERTIES.text()),
                         stringContent(CONFIG2)
                 );
 

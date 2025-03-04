@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,13 +30,16 @@ import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.client.Invocation;
 import jakarta.ws.rs.core.Response;
 import org.glassfish.jersey.client.ClientConfig;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 public class AsyncRequestTest extends AbstractTest {
 
-    private static AsyncResource asyncResource = new AsyncResource();
+    private static final AsyncResource asyncResource = new AsyncResource();
 
     @Path("async")
     public static class AsyncResource {
@@ -70,39 +73,36 @@ public class AsyncRequestTest extends AbstractTest {
 
     @BeforeAll
     public static void setup() {
-        final UncachedStringMethodExecutor executor = new UncachedStringMethodExecutor(asyncResource::longGet);
+        UncachedStringMethodExecutor executor = new UncachedStringMethodExecutor(asyncResource::longGet);
 
-        AbstractTest.extensions.set(new Extension[] {
+        Extension[] extensions = new Extension[]{
                 executor,
                 new ContentLengthSetter()
-        });
-
-        AbstractTest.rules.set(
-                () -> {
-                    wireMock.stubFor(
+        };
+        Rules rules = () -> {
+                    wireMockServer.stubFor(
                             WireMock.get(WireMock.urlEqualTo("/async/reset")).willReturn(
                                     WireMock.ok(asyncResource.reset()).withStatus(204)
                             )
                     );
-                    wireMock.stubFor(
+                    wireMockServer.stubFor(
                             WireMock.get(WireMock.urlEqualTo("/async/short")).willReturn(
                                     WireMock.ok(asyncResource.shortGet())
                             )
                     );
-                    wireMock.stubFor(
+                    wireMockServer.stubFor(
                             WireMock.get(WireMock.urlEqualTo("/async/long")).willReturn(
                                     WireMock.ok().withTransformers(executor.getName())
                             )
                     );
-                });
-
-        AbstractTest.setup();
+                };
+        setup(rules, extensions);
     }
 
-    @ParamTest
-    public void testTwoClientsAsync(String entityType) throws ExecutionException, InterruptedException {
-        try (Response resetResponse = target("async", entityType).path("reset").request().get()) {
-            Assertions.assertEquals(204, resetResponse.getStatus());
+    @Test
+    public void testTwoClientsAsync() throws ExecutionException, InterruptedException {
+        try (Response resetResponse = target("async").path("reset").request().get()) {
+            assertThat(resetResponse.getStatus(), is(204));
         }
 
         ClientConfig config = new ClientConfig();
@@ -118,15 +118,15 @@ public class AsyncRequestTest extends AbstractTest {
         Future<Response> futureShortResponse = shortRequest.async().get();
 
         try (Response shortResponse = futureShortResponse.get()) {
-            Assertions.assertEquals(200, shortResponse.getStatus());
-            Assertions.assertEquals("short", shortResponse.readEntity(String.class));
+            assertThat(shortResponse.getStatus(), is(200));
+            assertThat(shortResponse.readEntity(String.class), is("short"));
         }
 
         try (Response longResponse = futureLongResponse.get()) {
-            Assertions.assertEquals(200, longResponse.getStatus());
-            Assertions.assertEquals("long", longResponse.readEntity(String.class));
+            assertThat(longResponse.getStatus(), is(200));
+            assertThat(longResponse.readEntity(String.class), is("long"));
         }
 
-        Assertions.assertEquals(0, asyncResource.shortLong.getCount());
+        assertThat(asyncResource.shortLong.getCount(), is(0L));
     }
 }

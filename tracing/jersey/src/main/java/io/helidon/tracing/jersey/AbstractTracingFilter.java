@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,24 @@
  */
 package io.helidon.tracing.jersey;
 
+import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Logger;
 
 import io.helidon.common.context.Context;
 import io.helidon.common.context.Contexts;
+import io.helidon.tracing.Scope;
+import io.helidon.tracing.Span;
+import io.helidon.tracing.SpanContext;
+import io.helidon.tracing.Tag;
+import io.helidon.tracing.Tracer;
 import io.helidon.tracing.config.SpanTracingConfig;
+import io.helidon.tracing.config.TracingConfig;
 import io.helidon.tracing.config.TracingConfigUtil;
 import io.helidon.tracing.jersey.client.ClientTracingFilter;
 import io.helidon.tracing.jersey.client.internal.TracingContext;
-import io.helidon.webserver.ServerRequest;
 
-import io.opentracing.Scope;
-import io.opentracing.Span;
-import io.opentracing.SpanContext;
-import io.opentracing.Tracer;
-import io.opentracing.tag.Tags;
-import io.opentracing.util.GlobalTracer;
 import jakarta.ws.rs.ConstrainedTo;
 import jakarta.ws.rs.RuntimeType;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -51,7 +50,7 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
     private static final String SPAN_PROPERTY = AbstractTracingFilter.class.getName() + ".span";
     private static final String SPAN_SCOPE_PROPERTY = AbstractTracingFilter.class.getName() + ".spanScope";
     private static final String SPAN_FINISHED_PROPERTY = AbstractTracingFilter.class.getName() + ".spanFinished";
-    private static final Logger LOGGER = Logger.getLogger(AbstractTracingFilter.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(AbstractTracingFilter.class.getName());
     private static final AtomicBoolean DOUBLE_FINISH_LOGGED = new AtomicBoolean();
 
     @Override
@@ -69,24 +68,24 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
 
         if (spanConfig.enabled()) {
             spanName = spanConfig.newName().orElse(spanName);
-            Tracer tracer = context.get(Tracer.class).orElseGet(GlobalTracer::get);
-            SpanContext parentSpan = context.get(ServerRequest.class, SpanContext.class)
+            Tracer tracer = context.get(Tracer.class).orElseGet(Tracer::global);
+            SpanContext parentSpan = context.get(TracingConfig.class, SpanContext.class)
                     .orElseGet(() -> context.get(SpanContext.class).orElse(null));
 
-            Tracer.SpanBuilder spanBuilder = tracer.buildSpan(spanName)
-                    .withTag(Tags.SPAN_KIND.getKey(), Tags.SPAN_KIND_SERVER)
-                    .withTag(Tags.HTTP_METHOD.getKey(), requestContext.getMethod())
-                    .withTag(Tags.HTTP_URL.getKey(), url(requestContext))
-                    .withTag(Tags.COMPONENT.getKey(), "jaxrs");
+            Span.Builder spanBuilder = tracer.spanBuilder(spanName)
+                    .kind(Span.Kind.SERVER)
+                    .tag(Tag.HTTP_METHOD.create(requestContext.getMethod()))
+                    .tag(Tag.HTTP_URL.create(url(requestContext)))
+                    .tag(Tag.COMPONENT.create("jaxrs"));
 
             if (null != parentSpan) {
-                spanBuilder.asChildOf(parentSpan);
+                spanBuilder.parent(parentSpan);
             }
 
             configureSpan(spanBuilder);
 
             Span span = spanBuilder.start();
-            Scope spanScope = tracer.scopeManager().activate(span);
+            Scope spanScope = span.activate();
 
             context.register(span);
             context.register(spanScope);
@@ -102,6 +101,56 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
             if (null == parentSpan) {
                 // register current span as the parent span for other (unless already exists)
                 context.register(span.context());
+            }
+        }
+    }
+
+    @Override
+    public void filter(ContainerRequestContext requestContext, ContainerResponseContext responseContext) {
+        Span span = (Span) requestContext.getProperty(SPAN_PROPERTY);
+        if (null == span) {
+            return; // not tracing
+        }
+
+        if (requestContext.getProperty(SPAN_FINISHED_PROPERTY) != null) {
+            if (DOUBLE_FINISH_LOGGED.compareAndSet(false, true)) {
+                LOGGER.log(Level.WARNING, "Response filter called twice. Most likely a response with streaming output was"
+                                       + " returned, where response had 200 status code, but streaming failed with another "
+                                       + "error. Status: " + responseContext.getStatusInfo());
+            }
+
+            return; // tracing already finished
+        }
+
+        switch (responseContext.getStatusInfo().getFamily()) {
+        case INFORMATIONAL:
+        case SUCCESSFUL:
+        case REDIRECTION:
+        case OTHER:
+            // do nothing for successful (and unknown) responses
+            break;
+        case CLIENT_ERROR:
+        case SERVER_ERROR:
+            span.status(Span.Status.ERROR);
+            span.addEvent("error", Map.of());
+            break;
+        default:
+            break;
+        }
+
+        Tag.HTTP_STATUS.create(responseContext.getStatus()).apply(span);
+
+        requestContext.setProperty(SPAN_FINISHED_PROPERTY, true);
+        span.end();
+
+        // using the helidon context is not supported here, as we may be executing in a completion stage returned
+        // from a third party component
+        Scope scope = (Scope) requestContext.getProperty(SPAN_SCOPE_PROPERTY);
+        if (scope != null) {
+            try {
+                scope.close();
+            } catch (Exception ignored) {
+                // ignored
             }
         }
     }
@@ -128,52 +177,6 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
         return requestUri.toString();
     }
 
-    @Override
-    public void filter(ContainerRequestContext requestContext, ContainerResponseContext responseContext) {
-        Span span = (Span) requestContext.getProperty(SPAN_PROPERTY);
-        if (null == span) {
-            return; // not tracing
-        }
-
-        if (requestContext.getProperty(SPAN_FINISHED_PROPERTY) != null) {
-            if (DOUBLE_FINISH_LOGGED.compareAndSet(false, true)) {
-                LOGGER.warning("Response filter called twice. Most likely a response with streaming output was"
-                                       + " returned, where response had 200 status code, but streaming failed with another "
-                                       + "error. Status: " + responseContext.getStatusInfo());
-            }
-
-            return; // tracing already finished
-        }
-
-        switch (responseContext.getStatusInfo().getFamily()) {
-        case INFORMATIONAL:
-        case SUCCESSFUL:
-        case REDIRECTION:
-        case OTHER:
-            // do nothing for successful (and unknown) responses
-            break;
-        case CLIENT_ERROR:
-        case SERVER_ERROR:
-            Tags.ERROR.set(span, true);
-            span.log(Map.of("event", "error"));
-            break;
-        default:
-            break;
-        }
-
-        Tags.HTTP_STATUS.set(span, responseContext.getStatus());
-
-        requestContext.setProperty(SPAN_FINISHED_PROPERTY, true);
-        span.finish();
-
-        // using the helidon context is not supported here, as we may be executing in a completion stage returned
-        // from a third party component
-        Scope scope = (Scope) requestContext.getProperty(SPAN_SCOPE_PROPERTY);
-        if (scope != null) {
-            scope.close();
-        }
-    }
-
     /**
      * Whether this tracing filter is enabled.
      *
@@ -195,5 +198,6 @@ public abstract class AbstractTracingFilter implements ContainerRequestFilter, C
      *
      * @param spanBuilder builder of the new span
      */
-    protected abstract void configureSpan(Tracer.SpanBuilder spanBuilder);
+    protected void configureSpan(Span.Builder<?> spanBuilder) {
+    }
 }

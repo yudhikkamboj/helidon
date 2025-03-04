@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import io.helidon.common.Builder;
+import io.helidon.common.media.type.MediaType;
 import io.helidon.config.AbstractConfigSourceBuilder;
 import io.helidon.config.Config;
 import io.helidon.config.etcd.EtcdConfigSourceBuilder.EtcdEndpoint;
@@ -58,9 +59,9 @@ public final class EtcdConfigSourceBuilder extends AbstractConfigSourceBuilder<E
                    Builder<EtcdConfigSourceBuilder, EtcdConfigSource> {
 
     /**
-     * Default Etcd API version ({@link io.helidon.config.etcd.EtcdConfigSourceBuilder.EtcdApi#v2}).
+     * Default Etcd API version ({@link io.helidon.config.etcd.EtcdConfigSourceBuilder.EtcdApi#v3}).
      */
-    public static final EtcdApi DEFAULT_VERSION = EtcdApi.v2;
+    public static final EtcdApi DEFAULT_VERSION = EtcdApi.v3;
     /**
      * Default Etcd endpoint ({@code http://localhost:2379}).
      */
@@ -120,7 +121,7 @@ public final class EtcdConfigSourceBuilder extends AbstractConfigSourceBuilder<E
     }
 
     @Override
-    public EtcdConfigSourceBuilder mediaType(String mediaType) {
+    public EtcdConfigSourceBuilder mediaType(MediaType mediaType) {
         return super.mediaType(mediaType);
     }
 
@@ -194,12 +195,15 @@ public final class EtcdConfigSourceBuilder extends AbstractConfigSourceBuilder<E
      * {@code EtcdApi} determines which etcd API version will be used.
      * <p>
      * There are two API versions: {@code v2} and {@code v3}.
+     *
+     * Support for v2 of the API is deprecated
      */
     public enum EtcdApi {
 
         /**
          * Etcd API v2 version.
          */
+        @Deprecated(since = "4.0.0", forRemoval = true)
         v2(new EtcdV2ClientFactory()),
 
         /**

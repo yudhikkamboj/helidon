@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,13 +88,14 @@ public class Microblog implements Serializable {
         updatable = false
     )
     private String name;
-    
+
     @OneToMany(
         cascade = CascadeType.ALL,
         fetch = FetchType.LAZY,
         mappedBy = "microblog",
         targetEntity = Chirp.class
     )
+    @SuppressWarnings("serial")
     private List<Chirp> chirps;
 
     @Deprecated
@@ -133,7 +134,7 @@ public class Microblog implements Serializable {
             }
             chirps.add(chirp);
             chirp.setMicroblog(this);
-        }        
+        }
     }
 
     @Override
@@ -147,7 +148,7 @@ public class Microblog implements Serializable {
         final Object author = this.getAuthor();
         c = author == null ? 0 : name.hashCode();
         hashCode = 37 * hashCode + c;
-        
+
         return hashCode;
     }
 
@@ -180,5 +181,5 @@ public class Microblog implements Serializable {
             return false;
         }
     }
-  
+
 }

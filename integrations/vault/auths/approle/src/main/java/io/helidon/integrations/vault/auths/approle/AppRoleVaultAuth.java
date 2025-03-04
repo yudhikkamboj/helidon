@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,27 @@
 
 package io.helidon.integrations.vault.auths.approle;
 
+import java.lang.System.Logger.Level;
 import java.util.Optional;
-import java.util.logging.Logger;
 
-import io.helidon.config.Config;
+import io.helidon.common.Weight;
+import io.helidon.common.Weighted;
+import io.helidon.common.config.Config;
+import io.helidon.http.HeaderName;
+import io.helidon.http.HeaderNames;
 import io.helidon.integrations.common.rest.RestApi;
 import io.helidon.integrations.vault.Vault;
 import io.helidon.integrations.vault.VaultApiException;
 import io.helidon.integrations.vault.auths.common.NoVaultAuth;
 import io.helidon.integrations.vault.spi.VaultAuth;
 
-import jakarta.annotation.Priority;
-
 /**
  * Vault authentication for AppRole.
  */
-@Priority(1000)
+@Weight(Weighted.DEFAULT_WEIGHT + 100)
 public class AppRoleVaultAuth implements VaultAuth {
-    private static final Logger LOGGER = Logger.getLogger(AppRoleVaultAuth.class.getName());
-
+    private static final System.Logger LOGGER = System.getLogger(AppRoleVaultAuth.class.getName());
+    private static final HeaderName VAULT_NAMESPACE_HEADER_NAME = HeaderNames.create("X-Vault-Namespace");
     private final String appRoleId;
     private final String secretId;
     private final String methodPath;
@@ -68,7 +70,9 @@ public class AppRoleVaultAuth implements VaultAuth {
 
     @Override
     public Optional<RestApi> authenticate(Config config, Vault.Builder vaultBuilder) {
-        boolean enabled = config.get("auth.app-role.enabled").asBoolean().orElse(true);
+        boolean enabled = config.get("auth.app-role.enabled")
+                .asBoolean()
+                .orElse(true);
 
         if (!enabled) {
             return Optional.empty();
@@ -79,7 +83,7 @@ public class AppRoleVaultAuth implements VaultAuth {
                         .asOptional());
 
         if (maybeAppRoleId.isEmpty()) {
-            LOGGER.fine("AppRole vault authentication not used, as app-role.role-id is not defined");
+            LOGGER.log(Level.DEBUG, "AppRole vault authentication not used, as app-role.role-id is not defined");
             return Optional.empty();
         }
 
@@ -88,43 +92,46 @@ public class AppRoleVaultAuth implements VaultAuth {
                 .or(() -> config.get("auth.app-role.secret-id")
                         .asString()
                         .asOptional())
-                .orElseThrow(() -> new VaultApiException("AppRole ID is defined (" + appRoleId + "), but secret id is not. "
-                                                                 + "Cannot "
-                                                                 + "authenticate."));
+                .orElseThrow(() -> new VaultApiException(
+                        "AppRole ID is defined (%s), but secret id is not. Cannot authenticate.",
+                        appRoleId));
 
-        LOGGER.finest("Will try to login to Vault using app role id: " + appRoleId + " and a secret id.");
+        LOGGER.log(Level.TRACE, "Will try to login to Vault using app role id: " + appRoleId + " and a secret id.");
 
         // this may be changed in the future, when running with a sidecar (there should be a way to get the address from evn)
         String address = vaultBuilder.address()
                 .orElseThrow(() -> new VaultApiException("Address is required when using k8s authentication"));
 
+        // explicitly use default
         Vault.Builder loginVaultBuilder = Vault.builder()
-                // explicitly use default
                 .address(address)
                 .disableVaultAuthDiscovery()
                 .updateWebClient(vaultBuilder.webClientUpdater())
                 .faultTolerance(vaultBuilder.ftHandler())
                 .addVaultAuth(NoVaultAuth.create());
 
-        vaultBuilder.baseNamespace().ifPresent(loginVaultBuilder::baseNamespace);
+        vaultBuilder.baseNamespace()
+                .ifPresent(loginVaultBuilder::baseNamespace);
 
         Vault loginVault = loginVaultBuilder.build();
         String methodPath = Optional.ofNullable(this.methodPath)
                 .orElseGet(() -> config.get("auth.app-role.path")
                         .asString()
-                        .orElse(AppRoleAuthRx.AUTH_METHOD.defaultPath()));
+                        .orElse(AppRoleAuth.AUTH_METHOD.defaultPath()));
 
-        LOGGER.info("Authenticated Vault " + address + "/" + methodPath + " using AppRole, roleId \"" + appRoleId + "\"");
+        LOGGER.log(Level.INFO,
+                   "Authenticated Vault {0}/{1} using AppRole, roleId \"{2}\"",
+                   address, methodPath, appRoleId);
 
         return Optional.of(AppRoleRestApi.appRoleBuilder()
                                    .webClientBuilder(webclient -> {
                                        webclient.baseUri(address + "/v1");
                                        vaultBuilder.baseNamespace()
-                                               .ifPresent(ns -> webclient.addHeader("X-Vault-Namespace", ns));
+                                               .ifPresent(ns -> webclient.addHeader(VAULT_NAMESPACE_HEADER_NAME, ns));
                                        vaultBuilder.webClientUpdater().accept(webclient);
                                    })
                                    .faultTolerance(vaultBuilder.ftHandler())
-                                   .auth(loginVault.auth(AppRoleAuthRx.AUTH_METHOD, methodPath))
+                                   .auth(loginVault.auth(AppRoleAuth.AUTH_METHOD, methodPath))
                                    .appRoleId(appRoleId)
                                    .secretId(secretId)
                                    .build());
@@ -132,7 +139,7 @@ public class AppRoleVaultAuth implements VaultAuth {
     }
 
     /**
-     * Fluent API builder for {@link io.helidon.integrations.vault.auths.approle.AppRoleVaultAuth}.
+     * Fluent API builder for {@link AppRoleVaultAuth}.
      */
     public static class Builder implements io.helidon.common.Builder<Builder, AppRoleVaultAuth> {
         private String appRoleId;
@@ -173,7 +180,7 @@ public class AppRoleVaultAuth implements VaultAuth {
          * Custom method path.
          *
          * @param path path of the app role method, defaults to
-         *          {@link io.helidon.integrations.vault.auths.approle.AppRoleAuthRx#AUTH_METHOD}
+         *          {@link io.helidon.integrations.vault.auths.approle.AppRoleAuth#AUTH_METHOD}
          *          default path
          * @return updated builder
          */

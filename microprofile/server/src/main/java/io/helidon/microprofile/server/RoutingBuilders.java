@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,32 +16,32 @@
 package io.helidon.microprofile.server;
 
 import io.helidon.config.Config;
-import io.helidon.webserver.Routing;
+import io.helidon.webserver.http.HttpRouting;
 
 import jakarta.enterprise.inject.spi.CDI;
 import org.eclipse.microprofile.config.ConfigProvider;
 
 /**
- * Provides {@link Routing.Builder} instances (for the default and the actual)
+ * Provides {@link HttpRouting.Builder} instances (for the default and the actual)
  * for a Helidon MP service, based on configuration for the component (if any)
  * and defaults otherwise.
  */
 public interface RoutingBuilders {
 
     /**
-     *
+     * Default routing builder.
      * @return the default {@code Routing.Builder} for the component
      */
-    Routing.Builder defaultRoutingBuilder();
+    HttpRouting.Builder defaultRoutingBuilder();
 
     /**
-     *
+     * Routing for the component, may be the default.
      * @return the actual {@code Routing.Builder} for the component; might be the default
      */
-    Routing.Builder routingBuilder();
+    HttpRouting.Builder routingBuilder();
 
     /**
-     * Prepares the default and actual {@link Routing.Builder} instances based
+     * Prepares the default and actual {@link HttpRouting.Builder} instances based
      * on the "routing" configuration for the specific component.
      *
      * @param componentName config key under which "routing" config might exist for the component of interest
@@ -52,7 +52,7 @@ public interface RoutingBuilders {
     }
 
     /**
-     * Prepares the default and actual {@link Routing.Builder} instances based
+     * Prepares the default and actual {@link HttpRouting.Builder} instances based
      * on the "routing" configuration for the specific component configuration.
      *
      * @param componentConfig the configuration for the calling service
@@ -66,7 +66,7 @@ public interface RoutingBuilders {
     }
 
     /**
-     * Prepares the default and actual {@link Routing.Builder} instances based on a routing name.
+     * Prepares the default and actual {@link HttpRouting.Builder} instances based on a routing name.
      * If routing name is null or blank or {@code @default}, then the default routing will be used for the service
      * endpoint routing as well.
      *
@@ -75,8 +75,8 @@ public interface RoutingBuilders {
      */
     static RoutingBuilders createFromRoutingName(String routingName) {
         ServerCdiExtension extension = CDI.current().getBeanManager().getExtension(ServerCdiExtension.class);
-        final Routing.Builder defaultRoutingBuilder = extension.serverRoutingBuilder();
-        final Routing.Builder serviceRoutingBuilder =
+        final HttpRouting.Builder defaultRoutingBuilder = extension.serverRoutingBuilder();
+        final HttpRouting.Builder serviceRoutingBuilder =
                 routingName == null || routingName.isBlank() || "@default".equals(routingName)
                         ? defaultRoutingBuilder
                         : extension.serverNamedRoutingBuilder(routingName);

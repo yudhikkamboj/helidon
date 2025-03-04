@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,38 @@
 
 package io.helidon.microprofile.metrics;
 
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.AddConfig;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.metrics.MetricRegistry;
-import org.eclipse.microprofile.metrics.annotation.RegistryType;
+import org.eclipse.microprofile.metrics.annotation.RegistryScope;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 
 /**
- * Makes sure that no synthetic SimpleTimer metrics are created for JAX-RS endpoints when
+ * Makes sure that no synthetic Timer metrics are created for JAX-RS endpoints when
  * the config disables that feature.
  */
 @HelidonTest
+@AddConfig(key = "metrics." + MetricsCdiExtension.REST_ENDPOINTS_METRIC_ENABLED_PROPERTY_NAME, value = "false")
 public class HelloWorldRestEndpointSimpleTimerDisabledTest {
 
+    @BeforeAll
+    static void init() {
+        MetricsMpServiceTest.cleanUpSyntheticSimpleTimerRegistry();
+    }
+
     @Inject
-    @RegistryType(type = MetricRegistry.Type.BASE)
-    MetricRegistry syntheticSimpleTimerRegistry;
+    @RegistryScope(scope = MetricRegistry.BASE_SCOPE)
+    MetricRegistry syntheticTimerRegistry;
 
     boolean isSyntheticSimpleTimerPresent() {
-        return !syntheticSimpleTimerRegistry.getSimpleTimers((metricID, metric) ->
-                metricID.equals(MetricsCdiExtension.SYNTHETIC_SIMPLE_TIMER_METRIC_NAME))
+        return !syntheticTimerRegistry.getTimers((metricID, metric) ->
+                metricID.getName().equals(MetricsCdiExtension.SYNTHETIC_TIMER_METRIC_NAME))
                 .isEmpty();
     }
 

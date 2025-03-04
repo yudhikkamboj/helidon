@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import io.helidon.config.ConfigException;
 import io.helidon.config.MutabilitySupport;
 
 import org.eclipse.microprofile.config.spi.ConfigSource;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -192,14 +193,31 @@ public class YamlMpConfigSource implements ConfigSource {
      * Create from YAML file(s) on classpath with profile support.
      *
      * @param resource resource name to locate on classpath (looks for all instances)
-     * @param profile name of the profile to use
+     * @param profile configuration profile to use, must not be null
      * @return list of config sources discovered (may be zero length)
      */
     public static List<ConfigSource> classPath(String resource, String profile) {
+        return classPathConfigSources(resource, profile, Thread.currentThread().getContextClassLoader());
+    }
+
+    /**
+     * Create from YAML file(s) on classpath from specified classloader with profile support.
+     *
+     * @param resource resource name to locate on classpath (looks for all instances)
+     * @param profile configuration profile to use, must not be null
+     * @param classLoader classloader where resource will be retrieved from
+     * @return list of config sources discovered (may be zero length)
+     */
+    public static List<ConfigSource> classPath(String resource, String profile, ClassLoader classLoader) {
         Objects.requireNonNull(profile, "Profile must be defined");
+        Objects.requireNonNull(classLoader, "ClassLoader must be defined");
+
+        return classPathConfigSources(resource, profile, classLoader);
+    }
+
+    private static List<ConfigSource> classPathConfigSources(String resource, String profile, ClassLoader classLoader) {
 
         List<ConfigSource> sources = new LinkedList<>();
-        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 
         try {
             Enumeration<URL> baseResources = classLoader.getResources(resource);
@@ -217,7 +235,8 @@ public class YamlMpConfigSource implements ConfigSource {
                             for (URL url : profileResourceList) {
                                 String profilePathBase = pathBase(url.toString());
                                 if (pathBase.equals(profilePathBase)) {
-                                    sources.add(create(create(it), create(url)));
+                                    // Main is the profile config file and fallback is the original config file
+                                    sources.add(create(create(url), create(it)));
                                 } else {
                                     sources.add(create(it));
                                 }
@@ -296,10 +315,10 @@ public class YamlMpConfigSource implements ConfigSource {
     private static void processNext(Map<String, String> resultMap,
                                     String prefix,
                                     Object value) {
-        if (value instanceof List) {
-            process(resultMap, prefix, (List) value);
-        } else if (value instanceof Map) {
-            process(resultMap, prefix, (Map) value);
+        if (value instanceof List listValue) {
+            process(resultMap, prefix, listValue);
+        } else if (value instanceof Map mapValue) {
+            process(resultMap, prefix, mapValue);
         } else {
             String stringValue = (null == value) ? "" : value.toString();
             resultMap.put(prefix, stringValue);
@@ -362,7 +381,7 @@ public class YamlMpConfigSource implements ConfigSource {
     static Map toMap(Reader reader) {
         // the default of Snake YAML is a Map, safe constructor makes sure we never deserialize into anything
         // harmful
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         return (Map) yaml.loadAs(reader, Object.class);
     }
 }

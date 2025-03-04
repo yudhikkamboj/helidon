@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ package io.helidon.webserver.accesslog;
 
 import java.time.ZonedDateTime;
 
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
+import io.helidon.webserver.http.RoutingRequest;
+import io.helidon.webserver.http.RoutingResponse;
 
 /**
  * Context of the access log processing.
@@ -26,12 +26,14 @@ import io.helidon.webserver.ServerResponse;
 public interface AccessLogContext {
     /**
      * Time in {@link System#nanoTime()} when the request processing started.
+     *
      * @return time in nanoseconds
      */
     long requestNanoTime();
 
     /**
      * Time in {@link System#nanoTime()} when the response processing finished (last byte written).
+     *
      * @return time in nanoseconds
      */
     long responseNanoTime();
@@ -52,13 +54,15 @@ public interface AccessLogContext {
 
     /**
      * The server request.
+     *
      * @return server request
      */
-    ServerRequest serverRequest();
+    RoutingRequest serverRequest();
 
     /**
      * The server response, after data was sent.
+     *
      * @return server response
      */
-    ServerResponse serverResponse();
+    RoutingResponse serverResponse();
 }

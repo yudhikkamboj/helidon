@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,27 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Sys operations for Vault.
  *
  * @see io.helidon.integrations.vault.sys.Sys
- * @see io.helidon.integrations.vault.sys.SysRx
  */
+@Feature(value = "Sys",
+        description = "System operations",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"HCP Vault", "Sys"}
+)
 module io.helidon.integrations.vault.sys {
-    requires java.logging;
 
-    requires io.helidon.integrations.vault;
     requires io.helidon.integrations.common.rest;
     requires io.helidon.integrations.vault.auths.common;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.integrations.vault;
 
     exports io.helidon.integrations.vault.sys;
 
@@ -34,4 +43,5 @@ module io.helidon.integrations.vault.sys {
 
     provides io.helidon.integrations.vault.spi.InjectionProvider
             with io.helidon.integrations.vault.sys.HcpSysProvider;
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
  */
 package io.helidon.webserver;
 
+import io.helidon.webserver.http.Handler;
+
 /**
- * Definitions and factory methods for key performance indicator {@link Context} and {@link Metrics}.
+ * Definitions and factory methods for key performance indicator {@link KeyPerformanceIndicatorSupport.Context} and {@link KeyPerformanceIndicatorSupport.Metrics}.
  * <p>
  *     Helidon maintains two categories of KPI metrics:
  *     <ol>
@@ -110,11 +112,11 @@ public interface KeyPerformanceIndicatorSupport {
         }
 
         /**
-         * A {@link Handler} which registers a KPI deferrable request context in the request's context.
+         * A {@link io.helidon.webserver.http.Handler} which registers a KPI deferrable request context in the request's context.
          */
         Handler CONTEXT_SETTING_HANDLER = (req, res) -> {
             req.context().register(KeyPerformanceIndicatorContextFactory.deferrableRequestContext());
-            req.next();
+            res.next();
         };
 
         /**
@@ -154,6 +156,12 @@ public interface KeyPerformanceIndicatorSupport {
          * @param processingTimeMs duration of the request processing in milliseconds
          */
         default void onRequestCompleted(boolean isSuccessful, long processingTimeMs) {
+        }
+
+        /**
+         * Clear (particularly for between tests in the same JVM).
+         */
+        default void close() {
         }
     }
 }

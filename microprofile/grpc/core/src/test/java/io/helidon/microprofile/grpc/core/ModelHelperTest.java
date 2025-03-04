@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,7 @@ package io.helidon.microprofile.grpc.core;
 
 import java.util.AbstractMap;
 
-import io.helidon.grpc.core.JavaMarshaller;
-import io.helidon.grpc.core.MarshallerSupplier;
+import io.helidon.grpc.api.Grpc;
 
 import org.junit.jupiter.api.Test;
 
@@ -30,61 +29,57 @@ public class ModelHelperTest {
 
     @Test
     public void shouldGetAnnotatedSuperClass() {
-        Class<?> cls = ModelHelper.getAnnotatedResourceClass(ChildOne.class, Grpc.class);
+        Class<?> cls = ModelHelper.getAnnotatedResourceClass(ChildOne.class, Grpc.GrpcService.class);
         assertThat(cls, equalTo(Parent.class));
     }
 
     @Test
     public void shouldGetSelfIfAnnotated() {
-        Class<?> cls = ModelHelper.getAnnotatedResourceClass(Parent.class, Grpc.class);
+        Class<?> cls = ModelHelper.getAnnotatedResourceClass(Parent.class, Grpc.GrpcService.class);
         assertThat(cls, equalTo(Parent.class));
     }
 
     @Test
     public void shouldGetSelfIfNothingAnnotated() {
-        Class<?> cls = ModelHelper.getAnnotatedResourceClass(NoAnnotated.class, Grpc.class);
+        Class<?> cls = ModelHelper.getAnnotatedResourceClass(NoAnnotated.class, Grpc.GrpcService.class);
         assertThat(cls, equalTo(NoAnnotated.class));
     }
 
     @Test
     public void shouldGetAnnotatedSuperClassBeforeInterface() {
-        Class<?> cls = ModelHelper.getAnnotatedResourceClass(ChildTwo.class, Grpc.class);
+        Class<?> cls = ModelHelper.getAnnotatedResourceClass(ChildTwo.class, Grpc.GrpcService.class);
         assertThat(cls, equalTo(Parent.class));
     }
 
     @Test
     public void shouldGetAnnotatedInterface() {
-        Class<?> cls = ModelHelper.getAnnotatedResourceClass(ChildThree.class, Grpc.class);
+        Class<?> cls = ModelHelper.getAnnotatedResourceClass(ChildThree.class, Grpc.GrpcService.class);
         assertThat(cls, equalTo(IFaceOne.class));
     }
 
     // ----- helper methods -------------------------------------------------
 
-    private GrpcMarshaller getAnnotation(String method) throws Exception {
-        return ModelHelperTest.class.getMethod(method).getAnnotation(GrpcMarshaller.class);
+    private Grpc.GrpcMarshaller getAnnotation(String method) throws Exception {
+        return ModelHelperTest.class.getMethod(method).getAnnotation(Grpc.GrpcMarshaller.class);
     }
 
-    @GrpcMarshaller(JavaMarshaller.NAME)
-    public void javaMarshaller() {
-    }
-
-    @GrpcMarshaller(MarshallerSupplier.PROTO)
+    @Grpc.GrpcMarshaller(Grpc.GrpcMarshaller.PROTO)
     public void protoMarshaller() {
     }
 
-    @GrpcMarshaller
+    @Grpc.GrpcMarshaller
     public void implicitDefaultMarshaller() {
     }
 
-    @GrpcMarshaller(MarshallerSupplier.DEFAULT)
+    @Grpc.GrpcMarshaller
     public void explicitDefaultMarshaller() {
     }
 
-    @Grpc
+    @Grpc.GrpcService
     public static class GrandParent {
     }
 
-    @Grpc
+    @Grpc.GrpcService
     public static class Parent
             extends GrandParent {
     }
@@ -93,7 +88,7 @@ public class ModelHelperTest {
             extends Parent {
     }
 
-    @Grpc
+    @Grpc.GrpcService
     public interface IFaceOne {
     }
 

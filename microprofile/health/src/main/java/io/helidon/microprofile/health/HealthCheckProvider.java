@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import org.eclipse.microprofile.health.HealthCheck;
  * A provider of {@link HealthCheck} instances.
  * <p>
  * Instances of {@link HealthCheckProvider} are discovered by the {@link io.helidon.microprofile.health.HealthCdiExtension}
- * using the {@link io.helidon.common.serviceloader.HelidonServiceLoader} and all of the
+ * using the {@link io.helidon.common.HelidonServiceLoader} and all of the
  * {@link HealthCheck} instances are added to the health endpoint.
  */
 public interface HealthCheckProvider {

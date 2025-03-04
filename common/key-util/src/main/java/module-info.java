@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@
  * Utilities for PKI configuration and loading of certificates and keys.
  */
 module io.helidon.common.pki {
-    requires java.logging;
 
-    requires transitive io.helidon.common;
-    requires transitive io.helidon.config;
+    requires io.helidon.builder.api;
+
+    requires transitive io.helidon.common.config;
     requires transitive io.helidon.common.configurable;
-    requires static io.helidon.config.metadata;
+    requires transitive io.helidon.common;
 
     exports io.helidon.common.pki;
+	
 }

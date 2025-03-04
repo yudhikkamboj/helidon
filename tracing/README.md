@@ -1,10 +1,12 @@
 Distributed Tracing
 ---
 
-Both Helidon SE and Helidon MP use Opentracing API for tracing
-events.
+Module `helidon-tracing` defines tracing API and SPI that is used throughout Helidon.
+As we need to support both OpenTracing and OpenTelemetry tracing, this abstraction is required to keep tracing an integral part 
+of Helidon.
 
-_Eclipse Microprofile Opentracing specification is not yet implemented_
+Module `helidon-tracing-providers-opentracing` adds support for opentracing based tracers (such as Zipkin).
+Module `helidon-tracing-providers-opentelemetry` adds support for opentelemetry based tracers (such as Jaeger).
 
 # Usage
 ## Usage In Helidon MP
@@ -22,7 +24,7 @@ Example of pom.xml dependencies:
 <dependency>
     <!-- Zipkin tracer implementation -->
     <groupId>io.helidon.tracing</groupId>
-    <artifactId>helidon-tracing-zipkin</artifactId>
+    <artifactId>helidon-tracing-providers-zipkin</artifactId>
 </dependency>
 ```
 
@@ -51,13 +53,13 @@ pom.xml:
 <dependency>
     <!-- to add zipkin support -->
     <groupId>io.helidon.tracing</groupId>
-    <artifactId>helidon-tracing-zipkin</artifactId>
+    <artifactId>helidon-tracing-providers-zipkin</artifactId>
 </dependency>
 ```
 
 code using config:
 ```java
-return ServerConfiguration.builder()
+return WebServer.builder()
                 .config(config.get("webserver"))
                 .tracer(TracerBuilder.create(config.get("tracing"))
                                         .buildAndRegister())
@@ -176,7 +178,7 @@ tracer and of server-side filters that register context for client calls and tra
 request (unless explicitly disabled using configuration)
 This module is located in /microprofile/tracing
 
-## Module `helidon-tracing-zipkin`
+## Module `helidon-tracing-providers-zipkin`
 Integration with Zipkin (https://zipkin.io/). Easiest approach is to use a docker image
 `zipkin` that, by default, runs on the expected hostname and port.
 

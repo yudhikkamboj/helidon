@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,25 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Vault's KV1 Secrets Engine support.
  */
+@Feature(value = "K/V 1",
+        description = "Key/Value Version 1 Secrets Engine",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"HCP Vault", "Secrets", "K/V 1"}
+)
 module io.helidon.integrations.vault.secrets.kvone {
-    requires java.logging;
 
-    requires io.helidon.integrations.vault;
     requires io.helidon.integrations.common.rest;
-    requires io.helidon.security;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.integrations.vault;
+    requires transitive io.helidon.security;
 
     exports io.helidon.integrations.vault.secrets.kv1;
 
@@ -36,4 +46,5 @@ module io.helidon.integrations.vault.secrets.kvone {
     // Implementation of service to support secrets in Helidon Security
     provides io.helidon.security.spi.SecurityProviderService
             with io.helidon.integrations.vault.secrets.kv1.Kv1SecurityService;
+
 }

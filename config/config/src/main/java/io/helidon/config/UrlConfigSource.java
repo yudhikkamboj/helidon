@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.helidon.config;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.System.Logger.Level;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
@@ -26,9 +27,8 @@ import java.nio.charset.Charset;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
+import io.helidon.common.media.type.MediaType;
 import io.helidon.common.media.type.MediaTypes;
 import io.helidon.config.spi.ChangeWatcher;
 import io.helidon.config.spi.ConfigParser;
@@ -47,7 +47,7 @@ import io.helidon.config.spi.WatchableSource;
 public final class UrlConfigSource extends AbstractConfigSource
         implements WatchableSource<URL>, ParsableSource, PollableSource<Instant> {
 
-    private static final Logger LOGGER = Logger.getLogger(UrlConfigSource.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(UrlConfigSource.class.getName());
 
     private static final String GET_METHOD = "GET";
     private static final String URL_KEY = "url";
@@ -115,7 +115,7 @@ public final class UrlConfigSource extends AbstractConfigSource
     }
 
     @Override
-    public Optional<String> mediaType() {
+    public Optional<MediaType> mediaType() {
         return super.mediaType();
     }
 
@@ -139,8 +139,8 @@ public final class UrlConfigSource extends AbstractConfigSource
         try {
             URLConnection urlConnection = url.openConnection();
 
-            if (urlConnection instanceof HttpURLConnection) {
-                return httpContent((HttpURLConnection) urlConnection);
+            if (urlConnection instanceof HttpURLConnection httpURLConnection) {
+                return httpContent(httpURLConnection);
             } else {
                 return genericContent(urlConnection);
             }
@@ -209,7 +209,7 @@ public final class UrlConfigSource extends AbstractConfigSource
             connection.connect();
         } catch (IOException e) {
             // considering this to be unavailable
-            LOGGER.log(Level.FINEST, "Failed to connect to " + url + ", considering this source to be missing", e);
+            LOGGER.log(Level.TRACE, "Failed to connect to " + url + ", considering this source to be missing", e);
             return Optional.empty();
         }
 
@@ -227,7 +227,7 @@ public final class UrlConfigSource extends AbstractConfigSource
             connection.connect();
         } catch (IOException e) {
             // considering this to be unavailable
-            LOGGER.log(Level.FINEST, "Failed to connect to " + url + ", considering this source to be missing", e);
+            LOGGER.log(Level.TRACE, "Failed to connect to " + url + ", considering this source to be missing", e);
             return Optional.empty();
         }
 
@@ -235,12 +235,12 @@ public final class UrlConfigSource extends AbstractConfigSource
             return Optional.empty();
         }
 
-        Optional<String> mediaType = mediaType(connection.getContentType());
+        Optional<MediaType> mediaType = mediaType(connection.getContentType());
         final Instant timestamp;
         if (connection.getLastModified() == 0) {
             timestamp = Instant.now();
-            LOGGER.fine("Missing GET '" + url + "' response header 'Last-Modified'. Used current time '"
-                                + timestamp + "' as a content timestamp.");
+            LOGGER.log(Level.TRACE, "Missing GET '" + url + "' response header 'Last-Modified'. Used current time '"
+                    + timestamp + "' as a content timestamp.");
         } else {
             timestamp = Instant.ofEpochMilli(connection.getLastModified());
         }
@@ -258,19 +258,20 @@ public final class UrlConfigSource extends AbstractConfigSource
         return Optional.of(builder.build());
     }
 
-    private Optional<String> mediaType(String responseMediaType) {
+    private Optional<MediaType> mediaType(String responseMediaType) {
         return mediaType()
-                .or(() -> Optional.ofNullable(responseMediaType))
+                .or(() -> Optional.ofNullable(responseMediaType).map(MediaTypes::create))
                 .or(() -> {
-                    Optional<String> mediaType = probeContentType();
-                    if (LOGGER.isLoggable(Level.FINE)) {
-                        LOGGER.fine("HTTP response does not contain content-type, used guessed one: " + mediaType + ".");
+                    Optional<MediaType> mediaType = probeContentType();
+                    if (LOGGER.isLoggable(Level.TRACE)) {
+                        LOGGER.log(Level.TRACE,
+                                   "HTTP response does not contain content-type, used guessed one: " + mediaType + ".");
                     }
                     return mediaType;
                 });
     }
 
-    private Optional<String> probeContentType() {
+    private Optional<MediaType> probeContentType() {
         return MediaTypes.detectType(url);
     }
 
@@ -347,7 +348,7 @@ public final class UrlConfigSource extends AbstractConfigSource
         }
 
         @Override
-        public Builder mediaType(String mediaType) {
+        public Builder mediaType(MediaType mediaType) {
             return super.mediaType(mediaType);
         }
 

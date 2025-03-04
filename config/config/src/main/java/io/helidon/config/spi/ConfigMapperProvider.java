@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.function.Function;
 
 import io.helidon.common.GenericType;
 import io.helidon.config.Config;
+import io.helidon.service.registry.Service;
 
 /**
  * Provides mapping functions that convert a {@code Config}
@@ -36,23 +37,20 @@ import io.helidon.config.Config;
  * {@link Config.Builder#disableMapperServices()}.
  * <p>
  * Each {@code ConfigMapperProvider} can specify a
- * {@link jakarta.annotation.Priority}. The default priority is {@value PRIORITY}.
+ * {@link io.helidon.common.Weight}. The default weight is {@value io.helidon.common.Weighted#DEFAULT_WEIGHT}.
  *
  * @see Config.Builder#addStringMapper(Class, Function)
  * @see Config.Builder#addMapper(ConfigMapperProvider)
  * @see Config.Builder#disableMapperServices()
  */
 @FunctionalInterface
+@Service.Contract
 public interface ConfigMapperProvider {
-    /**
-     * Default priority of the mapper provider if registered by {@link Config.Builder} automatically.
-     */
-    int PRIORITY = 100;
 
     /**
      * Returns a map of mapper functions associated with appropriate target type ({@code Class<?>}.
      * <p>
-     * Mappers will by automatically registered by {@link Config.Builder} during
+     * Mappers will be automatically registered by {@link Config.Builder} during
      * bootstrapping of {@link Config} unless
      * {@link Config.Builder#disableMapperServices() disableld}.
      *
@@ -64,7 +62,7 @@ public interface ConfigMapperProvider {
     /**
      * Returns a map of mapper functions associated with appropriate target type ({@code GenericType<?>}.
      * <p>
-     * Mappers will by automatically registered by {@link Config.Builder} during
+     * Mappers will be automatically registered by {@link Config.Builder} during
      * bootstrapping of {@link Config} unless
      * {@link Config.Builder#disableMapperServices() disableld}.
      *
@@ -90,7 +88,7 @@ public interface ConfigMapperProvider {
     /**
      * Mapper for a specific generic type.
      * If your mapper only supports simple classes, get it using {@link GenericType#rawType()}.
-     * Otherwise you have access to the (possibly) generics type of the expected result using
+     * Otherwise, you have access to the (possibly) generics type of the expected result using
      * {@link GenericType#type()}.
      * <p>
      * The mapping function has two parameters:

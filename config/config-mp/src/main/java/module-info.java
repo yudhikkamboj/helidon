@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,17 @@
 /**
  * Implementation of the non-CDI parts of Eclipse MicroProfile Config specification.
  */
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.config.mp {
-    requires java.logging;
+
     requires io.helidon.common;
     requires io.helidon.config;
-    requires io.helidon.config.yaml.mp;
-    requires transitive microprofile.config.api;
     requires jakarta.annotation;
-    requires io.helidon.common.serviceloader;
+    requires io.helidon.common.configurable;
+
+    requires static io.helidon.config.metadata;
+
+    requires transitive microprofile.config.api;
 
     exports io.helidon.config.mp;
     exports io.helidon.config.mp.spi;
@@ -33,7 +36,11 @@ module io.helidon.config.mp {
     uses org.eclipse.microprofile.config.spi.ConfigSourceProvider;
     uses org.eclipse.microprofile.config.spi.Converter;
     uses io.helidon.config.mp.spi.MpConfigFilter;
+    uses io.helidon.config.mp.spi.MpConfigSourceProvider;
+    uses io.helidon.config.mp.spi.MpMetaConfigProvider;
     uses io.helidon.config.spi.ConfigParser;
 
-    provides org.eclipse.microprofile.config.spi.ConfigProviderResolver with io.helidon.config.mp.MpConfigProviderResolver;
+    provides org.eclipse.microprofile.config.spi.ConfigProviderResolver
+            with io.helidon.config.mp.MpConfigProviderResolver;
+
 }

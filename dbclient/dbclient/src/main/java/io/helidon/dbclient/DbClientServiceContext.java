@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package io.helidon.dbclient;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 
 import io.helidon.common.context.Context;
@@ -29,22 +28,6 @@ import io.helidon.common.context.Context;
  * The interceptors are executed sequentially, so there is no need for synchronization.
  */
 public interface DbClientServiceContext {
-    /**
-     * Create a new interceptor context for a database provider.
-     *
-     * @param dbType a short name of the db type (such as jdbc:mysql)
-     * @return a new interceptor context ready to be configured
-     */
-    static DbClientServiceContext create(String dbType) {
-        return new DbClientServiceContextImpl(dbType);
-    }
-
-    /**
-     * Type of this database (usually the same string used by the {@link io.helidon.dbclient.spi.DbClientProvider#name()}).
-     *
-     * @return type of database
-     */
-    String dbType();
 
     /**
      * Context with parameters passed from the caller, such as {@code SpanContext} for tracing.
@@ -52,6 +35,13 @@ public interface DbClientServiceContext {
      * @return context associated with this request
      */
     Context context();
+
+    /**
+     * Text of the statement to be executed.
+     *
+     * @return statement text
+     */
+    String statement();
 
     /**
      * Name of a statement to be executed.
@@ -62,11 +52,25 @@ public interface DbClientServiceContext {
     String statementName();
 
     /**
-     * Text of the statement to be executed.
+     * Type of the statement being executed.
      *
-     * @return statement text
+     * @return statement type
      */
-    String statement();
+    DbStatementType statementType();
+
+    /**
+     * Get the statement parameters.
+     *
+     * @return statement parameters
+     */
+    DbStatementParameters statementParameters();
+
+    /**
+     * Type of this database (usually the same string used by the {@link io.helidon.dbclient.spi.DbClientProvider#name()}).
+     *
+     * @return type of database
+     */
+    String dbType();
 
     /**
      * A stage that is completed once the statement finishes execution.
@@ -84,38 +88,40 @@ public interface DbClientServiceContext {
     CompletionStage<Long> resultFuture();
 
     /**
-     * Indexed parameters (if used).
+     * Set a new statement with indexed parameters to be used.
      *
-     * @return indexed parameters (empty if this statement parameters are not indexed)
+     * @param stmt       statement text
+     * @param parameters indexed parameters
+     * @return updated interceptor context
      */
-    Optional<List<Object>> indexedParameters();
+    DbClientServiceContext statement(String stmt, List<Object> parameters);
 
     /**
-     * Named parameters (if used).
+     * Set a new statement with named parameters to be used.
      *
-     * @return named parameters (empty if this statement parameters are not named)
+     * @param stmt       statement text
+     * @param parameters named parameters
+     * @return updated interceptor context
      */
-    Optional<Map<String, Object>> namedParameters();
+    DbClientServiceContext statement(String stmt, Map<String, Object> parameters);
 
     /**
-     * Whether this is a statement with indexed parameters.
+     * Set new indexed parameters to be used.
      *
-     * @return Whether this statement has indexed parameters ({@code true}) or named parameters {@code false}.
+     * @param parameters parameters
+     * @return updated interceptor context
+     * @throws IllegalArgumentException in case the statement is using named parameters
      */
-    boolean isIndexed();
+    DbClientServiceContext parameters(List<Object> parameters);
 
     /**
-     * Whether this is a statement with named parameters.
+     * Set new named parameters to be used.
      *
-     * @return Whether this statement has named parameters ({@code true}) or indexed parameters {@code false}.
+     * @param parameters parameters
+     * @return updated interceptor context
+     * @throws IllegalArgumentException in case the statement is using indexed parameters
      */
-    boolean isNamed();
-
-    /**
-     * Type of the statement being executed.
-     * @return statement type
-     */
-    DbStatementType statementType();
+    DbClientServiceContext parameters(Map<String, Object> parameters);
 
     /**
      * Set a new context to be used by other interceptors and when executing the statement.
@@ -126,70 +132,36 @@ public interface DbClientServiceContext {
     DbClientServiceContext context(Context context);
 
     /**
+     * Set a new statement to be used.
+     *
+     * @param name statement text to use
+     * @return updated interceptor context
+     */
+    DbClientServiceContext statement(String name);
+
+    /**
      * Set a new statement name to be used.
      *
-     * @param newName statement name to use
+     * @param name statement name to use
      * @return updated interceptor context
      */
-    DbClientServiceContext statementName(String newName);
+    DbClientServiceContext statementName(String name);
 
     /**
-     * Set a new future to mark completion of the statement.
+     * Create a new client service context.
      *
-     * @param statementFuture future
-     * @return updated interceptor context
+     * @param execContext execution context
+     * @param stmtType    statement type
+     * @param stmtFuture  statement future
+     * @param queryFuture query future
+     * @param stmtParams  statement parameters
+     * @return new client service context
      */
-    DbClientServiceContext statementFuture(CompletionStage<Void> statementFuture);
-
-    /**
-     * Set a new future to mark completion of the result (e.g. query or number of modified records).
-     *
-     * @param queryFuture future
-     * @return updated interceptor context
-     */
-    DbClientServiceContext resultFuture(CompletionStage<Long> queryFuture);
-
-    /**
-     * Set a new statement with indexed parameters to be used.
-     *
-     * @param statement     statement text
-     * @param indexedParams indexed parameters
-     * @return updated interceptor context
-     */
-    DbClientServiceContext statement(String statement, List<Object> indexedParams);
-
-    /**
-     * Set a new statement with named parameters to be used.
-     *
-     * @param statement   statement text
-     * @param namedParams named parameters
-     * @return updated interceptor context
-     */
-    DbClientServiceContext statement(String statement, Map<String, Object> namedParams);
-
-    /**
-     * Set new indexed parameters to be used.
-     *
-     * @param indexedParameters parameters
-     * @return updated interceptor context
-     * @throws IllegalArgumentException in case the statement is using named parameters
-     */
-    DbClientServiceContext parameters(List<Object> indexedParameters);
-
-    /**
-     * Set new named parameters to be used.
-     *
-     * @param namedParameters parameters
-     * @return updated interceptor context
-     * @throws IllegalArgumentException in case the statement is using indexed parameters
-     */
-    DbClientServiceContext parameters(Map<String, Object> namedParameters);
-
-    /**
-     * Set the type of the statement.
-     *
-     * @param type statement type
-     * @return updated interceptor context
-     */
-    DbClientServiceContext statementType(DbStatementType type);
+    static DbClientServiceContext create(DbExecuteContext execContext,
+                                         DbStatementType stmtType,
+                                         CompletionStage<Void> stmtFuture,
+                                         CompletionStage<Long> queryFuture,
+                                         DbStatementParameters stmtParams) {
+        return new DbClientServiceContextImpl(execContext, stmtType, stmtFuture, queryFuture, stmtParams);
+    }
 }

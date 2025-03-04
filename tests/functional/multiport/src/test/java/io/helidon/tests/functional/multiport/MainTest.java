@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package io.helidon.tests.functional.multiport;
 import java.util.stream.Stream;
 
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.Client;
@@ -54,7 +54,7 @@ class MainTest {
     @Inject
     MainTest(ServerCdiExtension server) {
         this.server = server;
-        client = ClientBuilder.newClient();
+        this.client = ClientBuilder.newClient();
     }
 
     @BeforeAll
@@ -70,9 +70,8 @@ class MainTest {
     static Stream<Params> initParams() {
         return Stream.of(
                 new Params("@default", true, false, false),
-                new Params("health", false, false, true),
-                new Params("metrics", false, true, false),
-                // when no named routing, serves default routing
+                new Params("observe", false, true, true),
+                // when no named routing, serves nothing
                 new Params("nothing", true, false, false)
         );
     }

@@ -98,7 +98,7 @@ import org.jboss.weld.util.reflection.Reflections;
  *
  * Helidon changes are under the copyright of:
  *
- * Copyright (c) 2020. 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,6 +144,7 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
     protected static final String INVOKE_METHOD_NAME = "invoke";
     protected static final String METHOD_HANDLER_FIELD_NAME = "methodHandler";
     static final String JAVA = "java";
+    static final String JAKARTA = "jakarta";
     static final String NO_PACKAGE = "the class package is null or empty";
     static final String SIGNED = "the class is signed";
     private static final Set<ProxiedMethodFilter> METHOD_FILTERS;
@@ -232,14 +233,18 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
     static String getProxyName(String contextId, Class<?> proxiedBeanType, Set<? extends Type> typeClosure, Bean<?> bean) {
         TypeInfo typeInfo = TypeInfo.of(typeClosure);
         final String className;
-        org.jboss.weld.bean.proxy.ProxyFactory.ProxyNameHolder holder;
+        ProxyNameHolder holder;
         if (typeInfo.getSuperClass() == Object.class) {
-            final StringBuilder name = new StringBuilder();
-
+            // for classes that do not have an enclosing class, we want the super interface to be first
             if (proxiedBeanType.getEnclosingClass() == null) {
-                return createProxyName(typeInfo);
+                if (typeInfo.getSuperInterface() == null || bean == null) {
+                    // abstract decorators fall into this category, let's use the type name
+                    return proxiedBeanType.getName() + PROXY_SUFFIX;
+                }
+                return createProxyName(bean, typeInfo);
             } else {
                 //interface only bean.
+                final StringBuilder name = new StringBuilder();
                 holder = createCompoundProxyName(contextId, bean, typeInfo, name);
             }
         } else {
@@ -257,7 +262,7 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
                 StringBuilder name = new StringBuilder(typeInfo.getSuperClass().getSimpleName() + "$");
                 holder = createCompoundProxyName(contextId, bean, typeInfo, name);
             } else {
-                holder = new org.jboss.weld.bean.proxy.ProxyFactory.ProxyNameHolder(null, typeInfo.getSuperClass().getSimpleName(), bean);
+                holder = new ProxyNameHolder(null, typeInfo.getSuperClass().getSimpleName(), bean);
             }
         }
         className = holder.getClassName() + PROXY_SUFFIX;
@@ -290,7 +295,7 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
     /*
      * Helidon modification (original method with different body)
      */
-    private static org.jboss.weld.bean.proxy.ProxyFactory.ProxyNameHolder createCompoundProxyName(String contextId, Bean<?> bean, TypeInfo typeInfo, StringBuilder name) {
+    private static ProxyNameHolder createCompoundProxyName(String contextId, Bean<?> bean, TypeInfo typeInfo, StringBuilder name) {
         String className;
         String proxyPackage = null;
         // we need a sorted collection without repetition, hence LinkedHashSet
@@ -326,7 +331,7 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
         }
         // we use unique names, we should never get a duplicity
         className = name.toString();
-        return new org.jboss.weld.bean.proxy.ProxyFactory.ProxyNameHolder(proxyPackage, className, bean);
+        return new ProxyNameHolder(proxyPackage, className, bean);
     }
 
     private static String getEnclosingPrefix(Class<?> clazz) {
@@ -425,6 +430,8 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
         }
         if (proxyClassName.startsWith(JAVA)) {
             proxyClassName = proxyClassName.replaceFirst(JAVA, WELD_PROXY_PREFIX);
+        } else if (proxyClassName.startsWith(JAKARTA)) {
+            proxyClassName = proxyClassName.replaceFirst(JAKARTA, WELD_PROXY_PREFIX);
         }
         Class<T> proxyClass = null;
         Class<?> originalClass = bean != null ? bean.getBeanClass() : proxiedBeanType;
@@ -490,7 +497,7 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
      * This is used when there is no enclosing type and we may have multiple interfaces
      * This method ensures the superinterface is the base of the name
      */
-    private static String createProxyName(TypeInfo typeInfo) {
+    private static String createProxyName(Bean<?> bean, TypeInfo typeInfo) {
         Class<?> superInterface = typeInfo.getSuperInterface();
         StringBuilder name = new StringBuilder();
         List<String> interfaces = new ArrayList<String>();
@@ -506,7 +513,12 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
             name.append('$');
         }
 
-        return superInterface.getName() + '$' + name;
+        // use package of declaring bean, as that has correct dependencies
+        // (we may expose a type from module that does not require Weld internal APIs that the proxy implements)
+        String packageName = bean.getBeanClass().getPackageName();
+        String className = superInterface.getSimpleName();
+
+        return packageName + "." + className + '$' + name;
     }
 
     /*
@@ -607,8 +619,8 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
 
         ProtectionDomain domain = AccessController.doPrivileged(new GetProtectionDomainAction(proxiedBeanType));
 
-        if (proxiedBeanType.getPackage() == null || proxiedBeanType.equals(Object.class)) {
-            domain = org.jboss.weld.bean.proxy.ProxyFactory.class.getProtectionDomain();
+        if (proxiedBeanType.getPackage() == null || proxiedBeanType.getPackage().getName().isEmpty() || proxiedBeanType.equals(Object.class)) {
+            domain = ProxyFactory.class.getProtectionDomain();
         } else if (System.getSecurityManager() != null) {
             ProtectionDomainCache cache = Container.instance(contextId).services().get(ProtectionDomainCache.class);
             domain = cache.getProtectionDomainForProxy(domain);
@@ -620,7 +632,10 @@ public class ProxyFactory<T> implements PrivilegedAction<T> {
 
     private ClassFile newClassFile(String name, int accessFlags, String superclass, String... interfaces) {
         try {
-            return new ClassFile(name, accessFlags, superclass, interfaces);
+            // We need to use a (non-deprecated) method that avoids instantiating DefaultClassFactory.INSTANCE
+            // If that happens, we will have module accessibility issues and the need to use --add-opens clausules
+            // NOTE: the CL and ClassFactory are never really used to define the class, see WeldDefaultProxyServices
+            return new ClassFile(name, accessFlags, superclass, ProxyFactory.class.getClassLoader(), DummyClassFactoryImpl.INSTANCE, interfaces);
         } catch (Exception e) {
             throw BeanLogger.LOG.unableToCreateClassFile(name, e.getCause());
         }

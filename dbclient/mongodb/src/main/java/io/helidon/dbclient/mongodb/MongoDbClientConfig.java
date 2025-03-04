@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 package io.helidon.dbclient.mongodb;
 
 /**
- * MongoDB Configuration parameters.
- * MongoDB connection string URI:
- * {@code mongodb://[username:password@]host1[:port1][,...hostN[:portN]]][/[database][?options]]}
+ * Configuration parameters for MongoDB.
  */
 public class MongoDbClientConfig {
 
@@ -27,6 +25,14 @@ public class MongoDbClientConfig {
     private final String password;
     private final String credDb;
 
+    /**
+     * Create a new instance.
+     *
+     * @param url      url
+     * @param username username
+     * @param password password
+     * @param credDb   the database where the user is defined
+     */
     MongoDbClientConfig(String url, String username, String password, String credDb) {
         this.url = url;
         this.username = username;
@@ -34,18 +40,38 @@ public class MongoDbClientConfig {
         this.credDb = credDb;
     }
 
+    /**
+     * Get the URL.
+     *
+     * @return url
+     */
     String url() {
         return url;
     }
 
+    /**
+     * Get the username.
+     *
+     * @return username
+     */
     String username() {
         return username;
     }
 
+    /**
+     * Get the password.
+     *
+     * @return password
+     */
     String password() {
         return password;
     }
 
+    /**
+     * Get the database where the user is defined.
+     *
+     * @return credentials database
+     */
     String credDb() {
         return credDb;
     }

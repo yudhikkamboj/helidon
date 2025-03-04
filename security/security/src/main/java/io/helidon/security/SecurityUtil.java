@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,24 +23,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-import io.helidon.config.Config;
-import io.helidon.config.ConfigMappingException;
+import io.helidon.common.config.Config;
+import io.helidon.common.config.ConfigException;
 import io.helidon.security.spi.AuditProvider;
 import io.helidon.security.spi.SecurityProvider;
-
-import io.opentracing.Tracer;
-import io.opentracing.noop.NoopTracerFactory;
-import io.opentracing.util.GlobalTracer;
+import io.helidon.tracing.Tracer;
 
 /**
  * Utility class for internal needs.
  */
 final class SecurityUtil {
-    private static final Logger LOGGER = Logger.getLogger(SecurityUtil.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(SecurityUtil.class.getName());
 
     private SecurityUtil() {
     }
@@ -55,9 +50,9 @@ final class SecurityUtil {
 
     static Tracer getTracer(boolean tracingEnabled, Tracer builderTracer) {
         if (tracingEnabled) {
-            return (builderTracer == null) ? GlobalTracer.get() : builderTracer;
+            return (builderTracer == null) ? Tracer.global() : builderTracer;
         } else {
-            return NoopTracerFactory.create();
+            return Tracer.noOp();
         }
     }
 
@@ -129,11 +124,10 @@ final class SecurityUtil {
                 return type.cast(config.as(clazz).get());
             } catch (ClassCastException e) {
                 throw new SecurityException("Class " + className + " is not instance of expected type: " + type.getName());
-            } catch (ConfigMappingException e) {
-                LOGGER.log(Level.FINEST,
-                           e,
+            } catch (ConfigException e) {
+                LOGGER.log(System.Logger.Level.TRACE,
                            () -> "Class " + className + " failed to get mapped by config. Will attempt public default "
-                                   + "constructor");
+                                   + "constructor", e);
                 configException = e;
             }
         }
@@ -142,8 +136,8 @@ final class SecurityUtil {
         try {
             return type.cast(clazz.getConstructor().newInstance());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Could not instantiate: " + className + ". Class must either have a default public"
-                    + " constructor or be mappable by Config");
+            LOGGER.log(System.Logger.Level.TRACE, "Could not instantiate: " + className
+                    + ". Class must either have a default public constructor or be mappable by Config");
 
             configException = ((null == configException) ? e : configException);
             throw new SecurityException("Failed to load " + type

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
+import io.helidon.common.Weight;
+import io.helidon.common.Weighted;
+import io.helidon.common.media.type.MediaType;
+import io.helidon.common.media.type.MediaTypes;
 import io.helidon.config.ConfigException;
 import io.helidon.config.spi.ConfigNode.ListNode;
 import io.helidon.config.spi.ConfigNode.ObjectNode;
@@ -36,12 +40,11 @@ import com.typesafe.config.ConfigList;
 import com.typesafe.config.ConfigObject;
 import com.typesafe.config.ConfigParseOptions;
 import com.typesafe.config.ConfigResolveOptions;
-import jakarta.annotation.Priority;
 
 /**
  * Typesafe (Lightbend) Config (HOCON) {@link ConfigParser} implementation that supports following media types:
- * {@value #MEDIA_TYPE_APPLICATION_HOCON} and
- * {@value #MEDIA_TYPE_APPLICATION_JSON}.
+ * {@link io.helidon.common.media.type.MediaTypes#APPLICATION_HOCON} and
+ * {@link io.helidon.common.media.type.MediaTypes#APPLICATION_JSON}.
  * <p>
  * The parser implementation supports {@link java.util.ServiceLoader}, i.e. {@link io.helidon.config.Config.Builder}
  * can automatically load and register {@code HoconConfigParser} instance,
@@ -49,29 +52,22 @@ import jakarta.annotation.Priority;
  * And of course it can be {@link io.helidon.config.Config.Builder#addParser(ConfigParser) registered programmatically}.
  * <p>
  * Priority of the {@code HoconConfigParser} to be used by {@link io.helidon.config.Config.Builder},
- * if loaded automatically as a {@link java.util.ServiceLoader service}, is {@value PRIORITY}.
+ * if loaded automatically as a {@link java.util.ServiceLoader service}, is {@value WEIGHT}.
  *
  * @see io.helidon.config.Config.Builder#addParser(ConfigParser)
  * @see io.helidon.config.Config.Builder#disableParserServices()
  */
-@Priority(HoconConfigParser.PRIORITY)
+@Weight(HoconConfigParser.WEIGHT)
 public class HoconConfigParser implements ConfigParser {
 
     /**
-     * A String constant representing {@value} media type.
-     */
-    public static final String MEDIA_TYPE_APPLICATION_HOCON = "application/hocon";
-    /**
-     * A String constant representing {@value} media type.
-     */
-    public static final String MEDIA_TYPE_APPLICATION_JSON = "application/json";
-    /**
      * Priority of the parser used if registered by {@link io.helidon.config.Config.Builder} automatically.
      */
-    public static final int PRIORITY = ConfigParser.PRIORITY + 100;
+    public static final double WEIGHT = Weighted.DEFAULT_WEIGHT - 10;
+
     private static final List<String> SUPPORTED_SUFFIXES = List.of("json", "conf");
-    private static final Set<String> SUPPORTED_MEDIA_TYPES =
-            Set.of(MEDIA_TYPE_APPLICATION_HOCON, MEDIA_TYPE_APPLICATION_JSON);
+    private static final Set<MediaType> SUPPORTED_MEDIA_TYPES =
+            Set.of(MediaTypes.APPLICATION_HOCON, MediaTypes.APPLICATION_JSON);
 
     private final boolean resolvingEnabled;
     private final ConfigResolveOptions resolveOptions;
@@ -120,7 +116,7 @@ public class HoconConfigParser implements ConfigParser {
     }
 
     @Override
-    public Set<String> supportedMediaTypes() {
+    public Set<MediaType> supportedMediaTypes() {
         return SUPPORTED_MEDIA_TYPES;
     }
 
@@ -159,16 +155,23 @@ public class HoconConfigParser implements ConfigParser {
         ObjectNode.Builder builder = ObjectNode.builder();
         config.forEach((unescapedKey, value) -> {
             String key = io.helidon.config.Config.Key.escapeName(unescapedKey);
-            if (value instanceof ConfigList) {
-                builder.addList(key, fromList((ConfigList) value));
-            } else if (value instanceof ConfigObject) {
-                builder.addObject(key, fromConfig((ConfigObject) value));
+            if (value instanceof ConfigList configList) {
+                builder.addList(key, fromList(configList));
+            } else if (value instanceof ConfigObject configObject) {
+                builder.addObject(key, fromConfig(configObject));
             } else {
-                Object unwrapped = value.unwrapped();
-                if (unwrapped == null) {
-                    builder.addValue(key, "");
-                } else {
-                    builder.addValue(key, String.valueOf(unwrapped));
+                try {
+                    Object unwrapped = value.unwrapped();
+                    if (unwrapped == null) {
+                        builder.addValue(key, "");
+                    } else {
+                        builder.addValue(key, String.valueOf(unwrapped));
+                    }
+                } catch (com.typesafe.config.ConfigException.NotResolved e) {
+                    // An unresolved ConfigReference resolved later in config module since
+                    // Helidon and Hocon use the same reference syntax and resolving here
+                    // would be too early for resolution across sources
+                    builder.addValue(key, value.render());
                 }
             }
         });
@@ -178,16 +181,23 @@ public class HoconConfigParser implements ConfigParser {
     private static ListNode fromList(ConfigList list) {
         ListNode.Builder builder = ListNode.builder();
         list.forEach(value -> {
-            if (value instanceof ConfigList) {
-                builder.addList(fromList((ConfigList) value));
-            } else if (value instanceof ConfigObject) {
-                builder.addObject(fromConfig((ConfigObject) value));
+            if (value instanceof ConfigList configList) {
+                builder.addList(fromList(configList));
+            } else if (value instanceof ConfigObject configObject) {
+                builder.addObject(fromConfig(configObject));
             } else {
-                Object unwrapped = value.unwrapped();
-                if (unwrapped == null) {
-                    builder.addValue("");
-                } else {
-                    builder.addValue(String.valueOf(unwrapped));
+                try {
+                    Object unwrapped = value.unwrapped();
+                    if (unwrapped == null) {
+                        builder.addValue("");
+                    } else {
+                        builder.addValue(String.valueOf(unwrapped));
+                    }
+                } catch (com.typesafe.config.ConfigException.NotResolved e) {
+                    // An unresolved ConfigReference resolved later in config module since
+                    // Helidon and Hocon use the same reference syntax and resolving here
+                    // would be too early for resolution across sources
+                    builder.addValue(value.render());
                 }
             }
         });

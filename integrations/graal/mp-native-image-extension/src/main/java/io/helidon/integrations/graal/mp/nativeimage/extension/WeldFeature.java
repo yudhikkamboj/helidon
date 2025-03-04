@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,14 +33,13 @@ import java.util.function.Supplier;
 
 import io.helidon.integrations.graal.nativeimage.extension.NativeConfig;
 
-import com.oracle.svm.core.annotate.AutomaticFeature;
 import jakarta.enterprise.inject.spi.Bean;
 import jakarta.json.Json;
 import jakarta.json.JsonArray;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonReaderFactory;
 import jakarta.json.stream.JsonParsingException;
-import org.graalvm.nativeimage.hosted.Feature;
+import org.graalvm.nativeimage.hosted.Feature.DuringSetupAccess;
 import org.graalvm.nativeimage.hosted.RuntimeReflection;
 import org.jboss.weld.bean.proxy.ClientProxyFactory;
 import org.jboss.weld.bean.proxy.ClientProxyProvider;
@@ -51,19 +50,11 @@ import org.jboss.weld.util.Proxies;
  * An automatic feature for native-image to
  *  register Weld specific stuff.
  */
-@AutomaticFeature
-public class WeldFeature implements Feature {
-    private static final boolean ENABLED = NativeConfig.option("weld.enable-feature", true);
+class WeldFeature {
     private static final boolean TRACE = NativeConfig.option("weld.trace", false);
     private static final boolean WARN = NativeConfig.option("weld.warn", false);
 
-    @Override
-    public boolean isInConfiguration(IsInConfigurationAccess access) {
-        return ENABLED;
-    }
-
-    @Override
-    public void duringSetup(DuringSetupAccess access) {
+    void duringSetup(DuringSetupAccess access) {
         Class<?> beanManagerClass = access.findClassByName("org.jboss.weld.manager.BeanManagerImpl");
         Set<BeanId> processed = new HashSet<>();
         Set<Set<Type>> processedExplicitProxy = new HashSet<>();
@@ -149,6 +140,7 @@ public class WeldFeature implements Feature {
             Class<?> proxyClass = cpf.getProxyClass();
 
             trace(() -> "  Registering proxy class " + proxyClass.getName() + " with types " + types);
+
             RuntimeReflection.register(proxyClass);
             RuntimeReflection.register(proxyClass.getConstructors());
             RuntimeReflection.register(proxyClass.getDeclaredConstructors());
@@ -196,7 +188,7 @@ public class WeldFeature implements Feature {
 
     static List<WeldProxyConfig> weldProxyConfigurations(DuringSetupAccess access) {
         try {
-            ClassLoader classLoader = access.findClassByName("io.helidon.config.Config").getClassLoader();
+            ClassLoader classLoader = access.getApplicationClassLoader();
             Enumeration<URL> resources = classLoader
                     .getResources("META-INF/helidon/native-image/weld-proxies.json");
 

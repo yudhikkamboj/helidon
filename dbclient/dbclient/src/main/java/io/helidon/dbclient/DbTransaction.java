@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,18 @@ package io.helidon.dbclient;
 /**
  * Database transaction.
  * Holds a single transaction to the database (if supported).
- * The transaction completes once {@link io.helidon.dbclient.DbClient#inTransaction(java.util.function.Function)} returns
- * the result provided by the body of the lambda within it.
+ * The transaction completes once the {@link #commit()} method is called.
  */
 public interface DbTransaction extends DbExecute {
+
     /**
-     * Configure this transaction to (eventually) rollback.
+     * Complete the transaction represented by this {@link DbTransaction} instance.
+     */
+    void commit();
+
+    /**
+     * Rollback the transaction represented by this {@link DbTransaction} instance.
      */
     void rollback();
+
 }

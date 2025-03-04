@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ public final class TimeTakenLogEntry extends AbstractLogEntry {
     }
 
     /**
-     * A fluent API builder for {@link io.helidon.webserver.accesslog.TimeTakenLogEntry}.
+     * A fluent API builder for {@link TimeTakenLogEntry}.
      */
     public static final class Builder extends AbstractLogEntry.Builder<TimeTakenLogEntry, Builder> {
         private TimeUnit unit = TimeUnit.MICROSECONDS;
@@ -71,7 +71,8 @@ public final class TimeTakenLogEntry extends AbstractLogEntry {
         }
 
         /**
-         * Configure the time unit to use. Defaults to {@link TimeUnit#MICROSECONDS}.
+         * Configure the time unit to use. Defaults to {@link java.util.concurrent.TimeUnit#MICROSECONDS}.
+         *
          * @param unit unit to use when writing time taken to Access log
          * @return updated builder instance
          */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,31 @@
  * limitations under the License.
  */
 
-/**
- * Helidon Common Mapper.
- */
-module io.helidon.dbclient.mongodb {
-    requires java.logging;
-    requires java.sql;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
-    requires transitive jakarta.json;
-    requires mongodb.driver.reactivestreams;
-    requires org.mongodb.driver.core;
+/**
+ * Helidon Database Client MongoDB.
+ */
+@Feature(value = "mongo",
+        description = "Database Client with mongo driver",
+        in = HelidonFlavor.SE,
+        path = {"DbClient", "mongo"}
+)
+module io.helidon.dbclient.mongodb {
+
+    requires java.sql;
     requires org.mongodb.bson;
-    requires org.mongodb.driver.async.client;
-    requires transitive io.helidon.common.configurable;
+    requires org.mongodb.driver.core;
+    requires org.mongodb.driver.sync.client;
+
+    requires static io.helidon.common.features.api;
+
     requires transitive io.helidon.dbclient;
-    requires transitive io.helidon.dbclient.common;
-    requires org.reactivestreams;
+    requires transitive jakarta.json;
 
     exports io.helidon.dbclient.mongodb;
+
     provides io.helidon.dbclient.spi.DbClientProvider with io.helidon.dbclient.mongodb.MongoDbClientProvider;
+
 }

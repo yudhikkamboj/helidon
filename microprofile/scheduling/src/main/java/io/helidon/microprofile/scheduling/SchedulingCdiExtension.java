@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.microprofile.scheduling;
 
+import java.lang.System.Logger.Level;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -24,14 +25,12 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.helidon.common.configurable.ScheduledThreadPoolSupplier;
 import io.helidon.config.Config;
+import io.helidon.config.DeprecatedConfig;
 import io.helidon.microprofile.cdi.RuntimeStart;
 import io.helidon.scheduling.Invocation;
 import io.helidon.scheduling.Scheduling;
@@ -58,7 +57,7 @@ import static jakarta.interceptor.Interceptor.Priority.PLATFORM_AFTER;
  * Scheduling CDI Extension.
  */
 public class SchedulingCdiExtension implements Extension {
-    private static final Logger LOGGER = Logger.getLogger(SchedulingCdiExtension.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(SchedulingCdiExtension.class.getName());
     private static final Pattern CRON_PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{(?<key>[^\\}]+)\\}");
     private final Queue<AnnotatedMethod<?>> methods = new LinkedList<>();
     private final Map<AnnotatedMethod<?>, Bean<?>> beans = new HashMap<>();
@@ -95,17 +94,19 @@ public class SchedulingCdiExtension implements Extension {
     void invoke(@Observes @Priority(PLATFORM_AFTER + 4000) @Initialized(ApplicationScoped.class) Object event,
                 BeanManager beanManager) {
 
-        ScheduledThreadPoolSupplier scheduledThreadPoolSupplier = ScheduledThreadPoolSupplier.builder()
-                .threadNamePrefix(schedulingConfig.get("thread-name-prefix").asString().orElse("scheduled-"))
-                .config(schedulingConfig)
-                .build();
+        var scheduledThreadPoolbuilder = ScheduledThreadPoolSupplier.builder().config(schedulingConfig);
+
+        if (scheduledThreadPoolbuilder.threadNamePrefix().isEmpty()) {
+            scheduledThreadPoolbuilder.threadNamePrefix("scheduled-");
+        }
+
+        ScheduledExecutorService executorService = scheduledThreadPoolbuilder.build().get();
+        executors.add(executorService);
 
         for (AnnotatedMethod<?> am : methods) {
             Class<?> aClass = am.getDeclaringType().getJavaClass();
             Bean<?> bean = beans.get(am);
             Object beanInstance = lookup(bean, beanManager);
-            ScheduledExecutorService executorService = scheduledThreadPoolSupplier.get();
-            executors.add(executorService);
             Method method = am.getJavaMember();
 
             if (!method.trySetAccessible()) {
@@ -126,44 +127,33 @@ public class SchedulingCdiExtension implements Extension {
             if (am.isAnnotationPresent(FixedRate.class)) {
                 FixedRate annotation = am.getAnnotation(FixedRate.class);
 
-                long initialDelay = methodConfig.get("initial-delay").asLong()
-                        .orElseGet(annotation::initialDelay);
-
-                long delay = methodConfig.get("delay").asLong()
-                        .orElseGet(annotation::value);
-
-                TimeUnit timeUnit = methodConfig.get("time-unit").asString()
-                        .map(TimeUnit::valueOf)
-                        .orElseGet(annotation::timeUnit);
-
-                Task task = Scheduling.fixedRateBuilder()
+                Task task = Scheduling.fixedRate()
+                        .initialDelay(annotation.initialDelay())
+                        .delayType(annotation.delayType())
+                        .delay(annotation.value())
+                        .timeUnit(annotation.timeUnit())
+                        .config(methodConfig)
                         .executor(executorService)
-                        .initialDelay(initialDelay)
-                        .delay(delay)
-                        .timeUnit(timeUnit)
                         .task(inv -> invokeWithOptionalParam(beanInstance, method, inv))
                         .build();
 
-                LOGGER.log(Level.FINE, () -> String.format("Method %s#%s scheduled to be executed %s",
+                LOGGER.log(Level.DEBUG, () -> String.format("Method %s#%s scheduled to be executed %s",
                         aClass.getSimpleName(), method.getName(), task.description()));
 
             } else if (am.isAnnotationPresent(Scheduled.class)) {
                 Scheduled annotation = am.getAnnotation(Scheduled.class);
 
-                String cron = methodConfig.get("cron").asString()
-                        .orElseGet(() -> resolvePlaceholders(annotation.value(), config));
-
-                boolean concurrent = methodConfig.get("concurrent").asBoolean()
-                        .orElseGet(annotation::concurrentExecution);
-
-                Task task = Scheduling.cronBuilder()
+                Task task = Scheduling.cron()
+                        .concurrentExecution(annotation.concurrentExecution())
+                        .expression(DeprecatedConfig.get(methodConfig, "expression", "cron")
+                                            .asString()
+                                            .orElseGet(() -> resolvePlaceholders(annotation.value(), config)))
+                        .config(methodConfig)
                         .executor(executorService)
-                        .concurrentExecution(concurrent)
-                        .expression(cron)
                         .task(inv -> invokeWithOptionalParam(beanInstance, method, inv))
                         .build();
 
-                LOGGER.log(Level.FINE, () -> String.format("Method %s#%s scheduled to be executed %s",
+                LOGGER.log(Level.DEBUG, () -> String.format("Method %s#%s scheduled to be executed %s",
                         aClass.getSimpleName(), method.getName(), task.description()));
             }
         }

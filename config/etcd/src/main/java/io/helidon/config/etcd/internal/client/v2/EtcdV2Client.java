@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,6 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.SubmissionPublisher;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import io.helidon.config.etcd.internal.client.EtcdClient;
 import io.helidon.config.etcd.internal.client.EtcdClientException;
@@ -41,9 +39,11 @@ import mousio.etcd4j.responses.EtcdKeysResponse;
 /**
  * Etcd API v2 client.
  */
+@Deprecated(since = "4.0.0", forRemoval = true)
+
 public class EtcdV2Client implements EtcdClient {
 
-    private static final Logger LOGGER = Logger.getLogger(EtcdV2Client.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(EtcdV2Client.class.getName());
 
     private final Map<String, SubmissionPublisher<Long>> publishers = new ConcurrentHashMap<>();
     private final mousio.etcd4j.EtcdClient etcd;
@@ -52,8 +52,10 @@ public class EtcdV2Client implements EtcdClient {
      * Init client with specified target Etcd uri.
      *
      * @param uris target Etcd uris
+     *
+     * @deprecated
      */
-    EtcdV2Client(URI... uris) {
+    public EtcdV2Client(URI... uris) {
         etcd = new mousio.etcd4j.EtcdClient(uris);
         etcd.setRetryHandler(new RetryWithTimeout(100, 2000));
     }
@@ -146,7 +148,7 @@ public class EtcdV2Client implements EtcdClient {
                 publisher.submit(modifiedIndex);
                 waitForChange(modifiedIndex + 1);
             } catch (Exception e) {
-                LOGGER.log(Level.CONFIG, "Cannot read changed value.", e);
+                LOGGER.log(System.Logger.Level.INFO, "Cannot read changed value.", e);
             }
 
         }

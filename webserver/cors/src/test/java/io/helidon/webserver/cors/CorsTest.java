@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,60 +13,32 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.webserver.cors;
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
+import io.helidon.http.Status;
+import io.helidon.webclient.api.HttpClientResponse;
+import io.helidon.webclient.http1.Http1Client;
+import io.helidon.webserver.testing.junit5.ServerTest;
 
-import io.helidon.common.http.Http;
-import io.helidon.webclient.WebClient;
-import io.helidon.webclient.WebClientResponse;
-import io.helidon.webserver.WebServer;
-
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_HEADERS;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_METHODS;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_ORIGIN;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_MAX_AGE;
-import static io.helidon.webserver.cors.CustomMatchers.notPresent;
-import static io.helidon.webserver.cors.CustomMatchers.present;
+import static io.helidon.common.testing.http.junit5.HttpHeaderMatcher.hasHeader;
+import static io.helidon.common.testing.http.junit5.HttpHeaderMatcher.noHeader;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_HEADERS;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_METHODS;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_MAX_AGE;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-public class CorsTest extends AbstractCorsTest {
-
+@ServerTest
+class CorsTest extends AbstractCorsTest {
     private static final String CONTEXT_ROOT = "/greet";
-    private static WebServer server;
-    private WebClient client;
+    private final Http1Client client;
 
-    @BeforeAll
-    public static void startup() throws InterruptedException, ExecutionException, TimeoutException {
-        server = TestUtil.startupServerWithApps();
-    }
-
-    @BeforeEach
-    public void startupClient() {
-        client = TestUtil.startupClient(server);
-    }
-
-    @AfterAll
-    public static void shutdown() {
-        TestUtil.shutdownServer(server);
-    }
-
-
-    @Override
-    String fooOrigin() {
-        return "http://foo.bar";
-    }
-
-    @Override
-    WebClient client() {
-        return client;
+    CorsTest(Http1Client client) {
+        this.client = client;
     }
 
     @Override
@@ -75,20 +47,30 @@ public class CorsTest extends AbstractCorsTest {
     }
 
     @Override
+    Http1Client client() {
+        return client;
+    }
+
+    @Override
+    String fooOrigin() {
+        return "http://foo.bar";
+    }
+
+    @Override
     String fooHeader() {
         return "X-foo";
     }
 
     @Test
-    void test1PreFlightAllowedOrigin() throws ExecutionException, InterruptedException {
+    void test1PreFlightAllowedOrigin() {
         String origin = fooOrigin();
-        WebClientResponse res = runTest1PreFlightAllowedOrigin();
+        HttpClientResponse response = runTest1PreFlightAllowedOrigin();
 
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is(origin)));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), notPresent());
-        assertThat(res.headers().first(ACCESS_CONTROL_MAX_AGE), present(is("3600")));
-        assertThat(res.headers().all(ACCESS_CONTROL_ALLOW_ORIGIN).size(), is(1));
+        assertThat(response.status(), is(Status.OK_200));
+        assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, origin));
+        assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_METHODS, "PUT"));
+        assertThat(response.headers(), noHeader(ACCESS_CONTROL_ALLOW_HEADERS));
+        assertThat(response.headers(), hasHeader(ACCESS_CONTROL_MAX_AGE, "3600"));
+        assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_ORIGIN).allValues().size(), is(1));
     }
 }

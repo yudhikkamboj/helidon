@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,30 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Provides classes and interfaces that integrate the
  * provider-independent parts of <a
- * href="https://javaee.github.io/tutorial/partpersist.html#BNBPY"
+ * href="https://jakarta.ee/specifications/persistence/3.1/"
  * target="_parent">JPA</a> into CDI.
  *
- * @see io.helidon.integrations.cdi.jpa.JpaExtension
+ * @see io.helidon.integrations.cdi.jpa.PersistenceExtension
  *
  * @see io.helidon.integrations.cdi.jpa.PersistenceUnitInfoBean
  */
-@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
+@Feature(value = "JPA",
+         description = "Jakarta persistence API support for Helidon MP",
+         in = HelidonFlavor.MP,
+         path = "JPA"
+)
+@SuppressWarnings({ "deprecation", "requires-automatic" })
 module io.helidon.integrations.cdi.jpa {
 
     requires jakarta.xml.bind;
 
     requires jakarta.inject; // automatic module
-    requires jakarta.interceptor.api; // automatic module
 
     requires io.helidon.integrations.cdi.delegates;
     requires io.helidon.integrations.cdi.referencecountedcontext;
@@ -40,13 +47,19 @@ module io.helidon.integrations.cdi.jpa {
     requires transitive jakarta.persistence; // automatic module
     requires transitive java.sql;
 
-    // JTA is optional at runtime, as well as the modules that support
-    // it.
+    requires microprofile.config.api;
+
+    requires static io.helidon.common.features.api;
+
+    // Static metamodel generation requires access to java.compiler at
+    // compile time only.
+    requires static java.compiler;
     requires static jakarta.transaction; // automatic module
     requires static io.helidon.integrations.jta.jdbc;
 
     exports io.helidon.integrations.cdi.jpa;
     exports io.helidon.integrations.cdi.jpa.jaxb;
 
-    provides jakarta.enterprise.inject.spi.Extension with io.helidon.integrations.cdi.jpa.JpaExtension;
+    provides jakarta.enterprise.inject.spi.Extension with
+        io.helidon.integrations.cdi.jpa.JpaExtension, io.helidon.integrations.cdi.jpa.PersistenceExtension;
 }

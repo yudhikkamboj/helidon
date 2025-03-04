@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,46 +19,45 @@ package io.helidon.microprofile.grpc.core;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.common.serviceloader.HelidonServiceLoader;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.grpc.api.Grpc;
 import io.helidon.grpc.core.MarshallerSupplier;
 
-import jakarta.annotation.Priority;
 import jakarta.inject.Singleton;
+
+import static java.lang.System.Logger.Level;
 
 /**
  * A base class for gRPC service and client descriptor builders.
  */
 public abstract class AbstractServiceBuilder {
 
-    private static final Logger LOGGER = Logger.getLogger(AbstractServiceBuilder.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(AbstractServiceBuilder.class.getName());
 
     private final Class<?> serviceClass;
     private final Class<?> annotatedServiceClass;
-    private final Supplier<?> instance;
+    private final Supplier<?> instanceSupplier;
     private final List<MethodHandlerSupplier> handlerSuppliers;
 
     /**
      * Create a new introspection modeller for a given gRPC service class.
      *
      * @param serviceClass gRPC service (handler) class.
-     * @param instance     the target instance to call gRPC handler methods on
-     * @throws NullPointerException if the service or instance parameters are null
+     * @param instanceSupplier     the target instanceSupplier to call gRPC handler methods on
+     * @throws NullPointerException if the service or instanceSupplier parameters are null
      */
-    protected AbstractServiceBuilder(Class<?> serviceClass, Supplier<?> instance) {
+    protected AbstractServiceBuilder(Class<?> serviceClass, Supplier<?> instanceSupplier) {
         this.serviceClass = Objects.requireNonNull(serviceClass);
-        this.annotatedServiceClass = ModelHelper.getAnnotatedResourceClass(serviceClass, Grpc.class);
-        this.instance = Objects.requireNonNull(instance);
-        this.handlerSuppliers = loadHandlerSuppliers();
+        this.annotatedServiceClass = ModelHelper.getAnnotatedResourceClass(serviceClass, Grpc.GrpcService.class);
+        this.instanceSupplier = Objects.requireNonNull(instanceSupplier);
+        this.handlerSuppliers = HelidonServiceLoader.create(ServiceLoader.load(MethodHandlerSupplier.class)).asList();
     }
 
     /**
@@ -67,12 +66,38 @@ public abstract class AbstractServiceBuilder {
      * @return  {@code true} if this modeller contains an annotated service
      */
     public boolean isAnnotatedService() {
-        return annotatedServiceClass.isAnnotationPresent(Grpc.class);
+        return annotatedServiceClass.isAnnotationPresent(Grpc.GrpcService.class);
+    }
+
+    /**
+     * Determine the name to use from the method.
+     * <p>
+     * If the method is annotated with {@link io.helidon.grpc.api.Grpc.GrpcMethod} or an annotation that is annotated with
+     * {@link io.helidon.grpc.api.Grpc.GrpcMethod}, then attempt to determine the method name from the annotation. If unable,
+     * use the actual method name.
+     *
+     * @param method      the annotated method
+     * @param annotation  the method type annotation
+     * @return the value to use for the method name
+     */
+    public static String determineMethodName(AnnotatedMethod method, Grpc.GrpcMethod annotation) {
+        Annotation actualAnnotation = method.annotationsWithMetaAnnotation(Grpc.GrpcMethod.class)
+                .findFirst()
+                .orElse(annotation);
+
+        String name = nameFromMember(actualAnnotation, "value");    // @GrpcMethod is meta annotation
+        if (name == null || name.trim().isEmpty()) {
+            name = nameFromMember(actualAnnotation, "name");        // @GrpcMethod is actual annotation
+        }
+        if (name == null || name.trim().isEmpty()) {
+            name = method.method().getName();
+        }
+        return name;
     }
 
     /**
      * Obtain the service class.
-     * @return  the service class
+     * @return the service class
      */
     protected Class<?> serviceClass() {
         return serviceClass;
@@ -80,7 +105,7 @@ public abstract class AbstractServiceBuilder {
 
     /**
      * Obtain the actual annotated class.
-     * @return  the actual annotated class
+     * @return the actual annotated class
      */
     protected Class<?> annotatedServiceClass() {
         return annotatedServiceClass;
@@ -89,14 +114,14 @@ public abstract class AbstractServiceBuilder {
     /**
      * Obtain the {@link MarshallerSupplier} to use.
      * <p>
-     * The {@link MarshallerSupplier} will be determined by the {@link GrpcMarshaller}
+     * The {@link MarshallerSupplier} will be determined by the {@link io.helidon.grpc.api.Grpc.GrpcMarshaller}
      * annotation if it is present otherwise the default supplier will be returned.
      *
-     * @return  the {@link MarshallerSupplier} to use
+     * @return the {@link MarshallerSupplier} to use
      */
     protected MarshallerSupplier getMarshallerSupplier() {
-        GrpcMarshaller annotation = annotatedServiceClass.getAnnotation(GrpcMarshaller.class);
-        return annotation == null ? MarshallerSupplier.defaultInstance() : ModelHelper.getMarshallerSupplier(annotation);
+        Grpc.GrpcMarshaller annotation = annotatedServiceClass.getAnnotation(Grpc.GrpcMarshaller.class);
+        return annotation == null ? MarshallerSupplier.create() : ModelHelper.getMarshallerSupplier(annotation);
     }
 
     /**
@@ -107,9 +132,9 @@ public abstract class AbstractServiceBuilder {
      */
     protected static Supplier<?> createInstanceSupplier(Class<?> cls) {
         if (cls.isAnnotationPresent(Singleton.class)) {
-            return Instance.singleton(cls);
+            return InstanceSupplier.singleton(cls);
         } else {
-            return Instance.create(cls);
+            return InstanceSupplier.create(cls);
         }
     }
 
@@ -120,9 +145,11 @@ public abstract class AbstractServiceBuilder {
         AnnotatedMethodList allDeclaredMethods = AnnotatedMethodList.create(getAllDeclaredMethods(serviceClass));
 
         // log warnings for all non-public annotated methods
-        allDeclaredMethods.withMetaAnnotation(GrpcMethod.class).isNotPublic()
+        allDeclaredMethods.withMetaAnnotation(Grpc.GrpcMethod.class).isNotPublic()
                 .forEach(method -> LOGGER.log(Level.WARNING, () -> String.format("The gRPC method, %s, MUST be "
-                                              + "public scoped otherwise the method is ignored", method)));
+                                                                                         + "public scoped otherwise the method "
+                                                                                         + "is ignored",
+                                                                                 method)));
     }
 
     /**
@@ -140,7 +167,7 @@ public abstract class AbstractServiceBuilder {
      * @return the service instance supplier
      */
     protected Supplier<?> instanceSupplier() {
-        return instance;
+        return instanceSupplier;
     }
 
     /**
@@ -151,7 +178,7 @@ public abstract class AbstractServiceBuilder {
      */
     protected List<Method> getAllDeclaredMethods(Class<?> clazz) {
         List<Method> result = new LinkedList<>();
-        Class current = clazz;
+        Class<?> current = clazz;
         while (current != Object.class && current != null) {
             result.addAll(Arrays.asList(current.getDeclaredMethods()));
             current = current.getSuperclass();
@@ -162,7 +189,7 @@ public abstract class AbstractServiceBuilder {
     /**
      * Determine the name of the gRPC service.
      * <p>
-     * If the class is annotated with {@link Grpc}
+     * If the class is annotated with {@link io.helidon.grpc.api.Grpc.GrpcService}
      * then the name value from the annotation is used as the service name. If the annotation
      * has no name value or the annotation is not present the simple name of the class is used.
      *
@@ -170,11 +197,11 @@ public abstract class AbstractServiceBuilder {
      * @return the name of the gRPC service
      */
     protected String determineServiceName(Class<?> annotatedClass) {
-        Grpc serviceAnnotation = annotatedClass.getAnnotation(Grpc.class);
+        Grpc.GrpcService serviceAnnotation = annotatedClass.getAnnotation(Grpc.GrpcService.class);
         String name = null;
 
         if (serviceAnnotation != null) {
-            name = serviceAnnotation.name().trim();
+            name = serviceAnnotation.value().trim();
         }
 
         if (name == null || name.trim().isEmpty()) {
@@ -185,64 +212,22 @@ public abstract class AbstractServiceBuilder {
     }
 
     /**
-     * Determine the name to use from the method.
-     * <p>
-     * If the method is annotated with {@link GrpcMethod} then use the value of {@link GrpcMethod#name()}
-     * unless {@link GrpcMethod#name()} returns empty string, in which case use the actual method name.
-     * <p>
-     * If the method is annotated with an annotation that has the meta-annotation {@link GrpcMethod} then use
-     * the value of that annotation's {@code name()} method. If that annotation does not have a {@code name()}
-     * method or the {@code name()} method return empty string then use the actual method name.
+     * Get method from annotation member if present and of type {@link String}.
      *
-     * @param method      the annotated method
-     * @param annotation  the method type annotation
-     * @return the value to use for the method name
+     * @param annotation the annotation
+     * @param member the annotation method to call
+     * @return method name or {@code null}
      */
-    public static String determineMethodName(AnnotatedMethod method, GrpcMethod annotation) {
-        Annotation actualAnnotation = method.annotationsWithMetaAnnotation(GrpcMethod.class)
-                .findFirst()
-                .orElse(annotation);
-
-        String name = null;
+    private static String nameFromMember(Annotation annotation, String member) {
         try {
-            Method m = actualAnnotation.annotationType().getMethod("name");
-            name = (String) m.invoke(actualAnnotation);
+            Method m = annotation.annotationType().getMethod(member);
+            Object value = m.invoke(annotation);
+            return value instanceof String s ? s : null;
         } catch (NoSuchMethodException e) {
-            LOGGER.log(Level.WARNING, () -> String.format("Annotation %s has no name() method", actualAnnotation));
+            // falls through
         } catch (IllegalAccessException | InvocationTargetException e) {
-            LOGGER.log(Level.WARNING, e, () -> String.format("Error calling name() method on annotation %s", actualAnnotation));
+            LOGGER.log(Level.WARNING, () -> String.format("Error calling name() method on annotation %s", annotation), e);
         }
-
-        if (name == null || name.trim().isEmpty()) {
-            name = method.method().getName();
-        }
-
-        return name;
-    }
-
-    /**
-     * Load the {@link io.helidon.microprofile.grpc.core.MethodHandlerSupplier} instances using the {@link java.util.ServiceLoader}
-     * and return them in priority order.
-     * <p>
-     * Priority is determined by the value obtained from the {@link jakarta.annotation.Priority} annotation on
-     * any implementation classes. Classes not annotated with {@link jakarta.annotation.Priority} have a
-     * priority of zero.
-     *
-     * @return a priority ordered list of {@link io.helidon.microprofile.grpc.core.MethodHandlerSupplier} instances
-     */
-    private List<MethodHandlerSupplier> loadHandlerSuppliers() {
-        List<MethodHandlerSupplier> list = new ArrayList<>();
-
-        HelidonServiceLoader.create(ServiceLoader.load(MethodHandlerSupplier.class)).forEach(list::add);
-
-        list.sort((left, right) -> {
-            Priority leftPriority = left.getClass().getAnnotation(Priority.class);
-            Priority rightPriority = right.getClass().getAnnotation(Priority.class);
-            int leftValue = leftPriority == null ? 0 : leftPriority.value();
-            int rightValue = rightPriority == null ? 0 : rightPriority.value();
-            return leftValue - rightValue;
-        });
-
-        return list;
+        return null;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,43 +16,29 @@
 
 package io.helidon.security.providers.oidc.common;
 
+import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.time.Duration;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.Locale;
-import java.util.Optional;
-import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.logging.Logger;
+import java.util.Map;
+import java.util.function.Supplier;
 
 import io.helidon.common.Errors;
+import io.helidon.common.LazyValue;
+import io.helidon.common.config.Config;
 import io.helidon.common.configurable.Resource;
-import io.helidon.common.http.FormParams;
-import io.helidon.common.http.Http;
-import io.helidon.common.http.SetCookie;
-import io.helidon.common.reactive.Single;
-import io.helidon.config.Config;
 import io.helidon.config.metadata.Configured;
 import io.helidon.config.metadata.ConfiguredOption;
+import io.helidon.cors.CrossOriginConfig;
+import io.helidon.http.SetCookie;
 import io.helidon.security.Security;
 import io.helidon.security.SecurityException;
 import io.helidon.security.jwt.jwk.JwkKeys;
-import io.helidon.security.providers.common.OutboundTarget;
-import io.helidon.security.providers.httpauth.HttpBasicAuthProvider;
-import io.helidon.security.providers.httpauth.HttpBasicOutboundConfig;
+import io.helidon.security.providers.oidc.common.spi.TenantConfigFinder;
 import io.helidon.security.util.TokenHandler;
-import io.helidon.webclient.WebClient;
-import io.helidon.webclient.WebClientRequestBuilder;
-import io.helidon.webclient.security.WebClientSecurity;
-import io.helidon.webserver.cors.CrossOriginConfig;
-
-import jakarta.json.Json;
-import jakarta.json.JsonObject;
-import jakarta.json.JsonReaderFactory;
-import jakarta.ws.rs.client.Client;
-import jakarta.ws.rs.client.ClientBuilder;
-import jakarta.ws.rs.client.WebTarget;
-import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
+import io.helidon.webclient.api.WebClient;
+import io.helidon.webclient.api.WebClientConfig;
 
 /**
  * Configuration of OIDC usable from all resources that utilize OIDC specification, such as security provider, web server
@@ -89,7 +75,7 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  * </tr>
  * <tr>
  *     <td>frontend-uri</td>
- *     <td>Fully URI of the frontend for redirects back from OIDC server (e.g. http://myserver/myApp)</td>
+ *     <td>Full URI of the frontend for redirects back from OIDC server (e.g. http://myserver/myApp)</td>
  * </tr>
  * </table>
  *
@@ -114,6 +100,13 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  *     <td>proxy-port</td>
  *     <td>80</td>
  *     <td>Port of the proxy server to use</td>
+ * </tr>
+ * <tr>
+ *     <td>relative-uris</td>
+ *     <td>false</td>
+ *     <td>Flag to force the use of relative URIs in all requests. By default,
+ *          requests that use the Proxy will have absolute URIs. Set this flag to
+ *          true if the host is unable to accept absolute URIs.</td>
  * </tr>
  * <tr>
  *     <td>redirect-uri</td>
@@ -184,7 +177,7 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  * </tr>
  * <tr>
  *     <td>header-use</td>
- *     <td>false</td>
+ *     <td>true</td>
  *     <td>Whether to expect JWT in a header field.</td>
  * </tr>
  * <tr>
@@ -204,7 +197,7 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  *     <td>oidc-metadata.resource</td>
  *     <td>identity-uri/.well-known/openid-configuration</td>
  *     <td>Resource configuration for OIDC Metadata containing endpoints to various identity services, as well as information
- *     about the identity server. See {@link Resource#create(io.helidon.config.Config)}</td>
+ *     about the identity server. See {@link Resource#create(io.helidon.common.config.Config)}</td>
  * </tr>
  * <tr>
  *     <td>token-endpoint-uri</td>
@@ -217,7 +210,7 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  *     <td>URI of an authorization endpoint used to redirect users to for logging-in.</td>
  * </tr>
  * <tr>
- *     <td>validate-with-jwk</td>
+ *     <td>validate-jwt-with-jwk</td>
  *     <td>true</td>
  *     <td>When true  - validate against jwk defined by "sign-jwk", when false
  *          validate JWT through OIDC Server endpoint "validation-endpoint-uri"</td>
@@ -227,21 +220,21 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  *     <td>"jwks-uri" in OIDC metadata, or identity-uri/admin/v1/SigningCert/jwk if not available, only needed
  *              when jwt validation is done by us</td>
  *     <td>A resource pointing to JWK with public keys of signing certificates used to validate JWT.
- *     See {@link Resource#create(io.helidon.config.Config)}</td>
+ *     See {@link Resource#create(io.helidon.common.config.Config)}</td>
  * </tr>
  * <tr>
  *     <td>introspect-endpoint-uri</td>
  *     <td>"introspection_endpoint" in OIDC metadata, or identity-uri/oauth2/v1/introspect</td>
- *     <td>When validate-with-jwk is set to "false", this is the endpoint used</td>
+ *     <td>When validate-jwt-with-jwk is set to "false", this is the endpoint used</td>
  * </tr>
  * <tr>
  *     <td>base-scopes</td>
- *     <td>{@value DEFAULT_BASE_SCOPES}</td>
+ *     <td>{@value Builder#DEFAULT_BASE_SCOPES}</td>
  *     <td>Configure scopes to be requested by default. If the scope has a qualifier, it must be included here</td>
  * </tr>
  * <tr>
  *     <td>redirect</td>
- *     <td>true</td>
+ *     <td>false</td>
  *     <td>Whether to redirect to identity server when authentication failed.</td>
  * </tr>
  * <tr>
@@ -306,148 +299,147 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
  * <tr>
  *     <td>{@code cors}</td>
  *     <td>&nbsp;</td>
- *     <td>Cross-origin resource sharing settings. See {@link io.helidon.webserver.cors.CrossOriginConfig}.</td>
+ *     <td>Cross-origin resource sharing settings. See {@link io.helidon.cors.CrossOriginConfig}.</td>
+ * </tr>
+ * <tr>
+ *     <td>{@code force-https-redirects}</td>
+ *     <td>&nbsp;</td>
+ *     <td>Force https for redirects to identity provider.
+ *     This is helpful if you have a frontend SSL or cloud load balancer in front and Helidon is serving plain http.</td>
+ * </tr>
+ * <tr>
+ *     <td>{@code optional-audience}</td>
+ *     <td>{@code false}</td>
+ *     <td>Allow audience claim to be optional.</td>
+ * </tr>
+ * <tr>
+ *     <td>{@code check-audience}</td>
+ *     <td>{@code true}</td>
+ *     <td>Turn audience claim check on when {@code true} or off when {@code false}.</td>
  * </tr>
  * </table>
  */
-public final class OidcConfig {
+public final class OidcConfig extends TenantConfigImpl {
     /**
      * Default name of the header we expect JWT in.
      */
     public static final String PARAM_HEADER_NAME = "X_OIDC_TOKEN_HEADER";
-
-    static final int DEFAULT_PROXY_PORT = 80;
+    /**
+     * Default name of the header we expect JWT in.
+     */
+    public static final String PARAM_ID_HEADER_NAME = "X_OIDC_ID_TOKEN_HEADER";
+    /**
+     * Default tenant query param name.
+     */
+    public static final String DEFAULT_TENANT_PARAM_NAME = "h_tenant";
+    /**
+     * Default access token cookie name.
+     */
+    public static final String DEFAULT_COOKIE_NAME = "JSESSIONID";
+    /**
+     * Default id token cookie name.
+     */
+    public static final String DEFAULT_ID_COOKIE_NAME = DEFAULT_COOKIE_NAME + "_2";
+    /**
+     * Default refresh token cookie name.
+     */
+    public static final String DEFAULT_REFRESH_COOKIE_NAME = DEFAULT_COOKIE_NAME + "_3";
+    /**
+     * Default tenant cookie name.
+     */
+    public static final String DEFAULT_TENANT_COOKIE_NAME = "HELIDON_TENANT";
+    /**
+     * Default state cookie name.
+     */
+    public static final String DEFAULT_STATE_COOKIE_NAME = "OIDC_STATE";
     static final String DEFAULT_REDIRECT_URI = "/oidc/redirect";
     static final String DEFAULT_LOGOUT_URI = "/oidc/logout";
-    static final String DEFAULT_COOKIE_NAME = "JSESSIONID";
-    static final boolean DEFAULT_COOKIE_USE = true;
-    static final String DEFAULT_PARAM_NAME = "accessToken";
-    static final boolean DEFAULT_PARAM_USE = false;
-    static final boolean DEFAULT_HEADER_USE = false;
-    static final String DEFAULT_PROXY_PROTOCOL = "http";
-    static final String DEFAULT_BASE_SCOPES = "openid";
-    static final boolean DEFAULT_JWT_VALIDATE_JWK = true;
     static final boolean DEFAULT_REDIRECT = true;
-    static final String DEFAULT_REALM = "helidon";
     static final String DEFAULT_ATTEMPT_PARAM = "h_ra";
     static final int DEFAULT_MAX_REDIRECTS = 5;
-    static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    static final boolean DEFAULT_FORCE_HTTPS_REDIRECTS = false;
+    static final Duration DEFAULT_TOKEN_REFRESH_SKEW = Duration.ofSeconds(5);
+    static final boolean DEFAULT_RELATIVE_URIS = false;
+    static final int DEFAULT_PROXY_PORT = 80;
+    static final String DEFAULT_PROXY_PROTOCOL = "http";
+    static final String TENANT_IDENT = "name";
+    static final String DEFAULT_PARAM_NAME = "accessToken";
+    static final String DEFAULT_ID_TOKEN_PARAM_NAME = "id_token";
+    static final boolean DEFAULT_PARAM_USE = false;
+    static final boolean DEFAULT_HEADER_USE = false;
+    static final boolean DEFAULT_COOKIE_USE = true;
 
-    private static final Logger LOGGER = Logger.getLogger(OidcConfig.class.getName());
-    private static final JsonReaderFactory JSON = Json.createReaderFactory(Collections.emptyMap());
+    private static final System.Logger LOGGER = System.getLogger(OidcConfig.class.getName());
 
+    private final Map<String, TenantConfig> tenantConfigurations;
     private final String redirectUri;
     private final String logoutUri;
     private final boolean logoutEnabled;
-    private final boolean useCookie;
-    private final boolean useParam;
-    private final String paramName;
-    private final URI identityUri;
-    private final WebTarget tokenEndpoint;
-    private final URI tokenEndpointUri;
-    private final String scopeAudience;
     private final String frontendUri;
-    private final boolean useHeader;
-    private final TokenHandler headerHandler;
-    private final String authorizationEndpointUri;
-    private final String clientId;
-    private final JwkKeys signJwk;
-    private final String baseScopes;
-    private final boolean validateJwtWithJwk;
-    private final WebTarget introspectEndpoint;
-    private final String issuer;
-    private final String audience;
-    private final Client appClient;
-    private final Client generalClient;
     private final boolean redirect;
-    private final String realm;
     private final String redirectAttemptParam;
     private final int maxRedirects;
-    private final ClientAuthentication tokenEndpointAuthentication;
-    private final String clientSecret;
+    private final URI postLogoutUri;
+    private final CrossOriginConfig crossOriginConfig;
+    private final boolean forceHttpsRedirects;
+    private final Duration tokenRefreshSkew;
+    private final boolean relativeUris;
     private final WebClient webClient;
-    private final WebClient appWebClient;
-    private final URI introspectUri;
-    private final Duration clientTimeout;
+    private final Supplier<WebClientConfig.Builder> webClientBuilderSupplier;
+    private final LazyValue<Tenant> defaultTenant;
+    private final boolean useParam;
+    private final String paramName;
+    private final String idTokenParamName;
+    private final String tenantParamName;
+    private final boolean useHeader;
+    private final TokenHandler headerHandler;
+    private final boolean useCookie;
     private final OidcCookieHandler tokenCookieHandler;
     private final OidcCookieHandler idTokenCookieHandler;
-    private final URI postLogoutUri;
-    private final URI logoutEndpointUri;
-    private final CrossOriginConfig crossOriginConfig;
+    private final OidcCookieHandler refreshTokenCookieHandler;
+    private final OidcCookieHandler tenantCookieHandler;
+    private final OidcCookieHandler stateCookieHandler;
+    private final boolean tokenSignatureValidation;
+    private final boolean idTokenSignatureValidation;
+    private final boolean accessTokenIpCheck;
 
     private OidcConfig(Builder builder) {
-        this.clientId = builder.clientId;
-        this.useCookie = builder.useCookie;
-        this.useParam = builder.useParam;
-        this.paramName = builder.paramName;
+        super(builder);
         this.frontendUri = builder.frontendUri;
         this.redirectUri = builder.redirectUri;
         this.logoutUri = builder.logoutUri;
         this.logoutEnabled = builder.logoutEnabled;
         this.postLogoutUri = builder.postLogoutUri;
-        this.useHeader = builder.useHeader;
-        this.headerHandler = builder.headerHandler;
-        this.authorizationEndpointUri = builder.authorizationEndpointUri.toString();
-        this.logoutEndpointUri = builder.logoutEndpointUri;
-        this.baseScopes = builder.baseScopes;
-        this.validateJwtWithJwk = builder.validateJwtWithJwk;
-        this.issuer = builder.issuer;
-        this.audience = builder.audience;
-        this.identityUri = builder.identityUri;
         this.redirect = builder.redirect;
-        this.realm = builder.realm;
         this.redirectAttemptParam = builder.redirectAttemptParam;
         this.maxRedirects = builder.maxRedirects;
-        this.appClient = builder.appClient;
-        this.appWebClient = builder.appWebClient;
-        this.webClient = builder.webClient;
-        this.tokenEndpoint = builder.tokenEndpoint;
-        this.tokenEndpointUri = builder.tokenEndpointUri;
-        this.generalClient = builder.generalClient;
-        this.tokenEndpointAuthentication = builder.tokenEndpointAuthentication;
-        this.clientTimeout = builder.clientTimeout;
-
-        if (tokenEndpointAuthentication == ClientAuthentication.CLIENT_SECRET_POST) {
-            // we should only store this if required
-            this.clientSecret = builder.clientSecret;
-        } else {
-            this.clientSecret = null;
-        }
-
-        if (builder.signJwk == null) {
-            this.signJwk = JwkKeys.builder().build();
-        } else {
-            this.signJwk = builder.signJwk;
-        }
-
-        if (validateJwtWithJwk) {
-            this.introspectEndpoint = null;
-            this.introspectUri = null;
-        } else {
-            this.introspectUri = builder.introspectUri;
-            this.introspectEndpoint = appClient.target(builder.introspectUri);
-        }
-
-        this.tokenCookieHandler = builder.tokenCookieBuilder.build();
-        if (logoutEnabled) {
-            builder.idTokenCookieBuilder.encryptionEnabled(true);
-        }
-        this.idTokenCookieHandler = builder.idTokenCookieBuilder.build();
-
-        if ((builder.scopeAudience == null) || builder.scopeAudience.trim().isEmpty()) {
-            this.scopeAudience = "";
-        } else {
-            String tmp = builder.scopeAudience.trim();
-            if (tmp.endsWith("/")) {
-                this.scopeAudience = tmp;
-            } else {
-                this.scopeAudience = tmp + "/";
-            }
-        }
+        this.forceHttpsRedirects = builder.forceHttpsRedirects;
         this.crossOriginConfig = builder.crossOriginConfig;
+        this.tokenRefreshSkew = builder.tokenRefreshSkew;
+        this.tenantConfigurations = Map.copyOf(builder.tenantConfigurations);
+        this.webClient = builder.webClient;
+        this.relativeUris = builder.relativeUris;
 
-        LOGGER.finest(() -> "OIDC Scope audience: " + scopeAudience);
-        LOGGER.finest(() -> "Redirect URI with host: " + frontendUri + redirectUri);
+        this.useParam = builder.useParam;
+        this.paramName = builder.paramName;
+        this.idTokenParamName = builder.idTokenParamName;
+        this.tenantParamName = builder.tenantParamName;
+        this.useHeader = builder.useHeader;
+        this.headerHandler = builder.headerHandler;
+        this.useCookie = builder.useCookie;
+        this.tokenCookieHandler = builder.tokenCookieBuilder.build();
+        this.idTokenCookieHandler = builder.idTokenCookieBuilder.build();
+        this.tenantCookieHandler = builder.tenantCookieBuilder.build();
+        this.refreshTokenCookieHandler = builder.refreshTokenCookieBuilder.build();
+        this.stateCookieHandler = builder.stateCookieBuilder.build();
+        this.tokenSignatureValidation = builder.tokenSignatureValidation;
+        this.idTokenSignatureValidation = builder.idTokenSignatureValidation;
+        this.accessTokenIpCheck = builder.accessTokenIpCheck;
+
+        this.webClientBuilderSupplier = builder.webClientBuilderSupplier;
+        this.defaultTenant = LazyValue.create(() -> Tenant.create(this, this));
+
+        LOGGER.log(Level.TRACE, () -> "Redirect URI with host: " + frontendUri + redirectUri);
     }
 
     /**
@@ -460,7 +452,7 @@ public final class OidcConfig {
     }
 
     /**
-     * Create a new instance from {@link Config}.
+     * Create a new instance from {@link io.helidon.common.config.Config}.
      * The config instance has to be on the node containing keys used by this class (e.g. client-id).
      *
      * @param config configuration used to obtain OIDC integration values
@@ -473,57 +465,118 @@ public final class OidcConfig {
     }
 
     /**
-     * Processing of {@link io.helidon.webclient.WebClient} submit using a POST method.
-     * This is a helper method to handle possible cases (success, failure with readable entity, failure).
+     * Whether to use query parameter to get the information from request.
      *
-     * @param requestBuilder WebClient request builder
-     * @param toSubmit object to submit (such as {@link io.helidon.common.http.FormParams}
-     * @param jsonProcessor processor of successful JSON response
-     * @param errorEntityProcessor processor of an error that has an entity, to fail the single
-     * @param errorProcessor processor of an error that does not have an entity
-     * @param <T> type of the result the call
-     * @return a future that completes successfully if processed from json, or if an error processor returns a non-empty value,
-     *      completes with error otherwise
+     * @return if query parameter should be used
+     * @see Builder#useParam(Boolean)
      */
-    public static <T> Single<T> postJsonResponse(WebClientRequestBuilder requestBuilder,
-                                                 Object toSubmit,
-                                                 Function<JsonObject, T> jsonProcessor,
-                                                 BiFunction<Http.ResponseStatus, String, Optional<T>> errorEntityProcessor,
-                                                 BiFunction<Throwable, String, Optional<T>> errorProcessor) {
-        return requestBuilder.submit(toSubmit)
-                .flatMapSingle(response -> {
-                    if (response.status().family() == Http.ResponseStatus.Family.SUCCESSFUL) {
-                        return response.content()
-                                .as(JsonObject.class)
-                                .map(jsonProcessor)
-                                .onErrorResumeWithSingle(t -> errorProcessor.apply(t, "Failed to read JSON from response")
-                                        .map(Single::just)
-                                        .orElseGet(() -> Single.error(t)));
-                    } else {
-                        return response.content()
-                                .as(String.class)
-                                .flatMapSingle(it -> errorEntityProcessor.apply(response.status(), it)
-                                        .map(Single::just)
-                                        .orElseGet(() -> Single.error(new SecurityException("Failed to process request: " + it))))
-                                .onErrorResumeWithSingle(t -> errorProcessor.apply(t, "Failed to process error entity")
-                                        .map(Single::just)
-                                        .orElseGet(() -> Single.error(t)));
-                    }
-                })
-                .onErrorResumeWithSingle(t -> errorProcessor.apply(t, "Failed to invoke request")
-                        .map(Single::just)
-                        .orElseGet(() -> Single.error(t)));
-
+    public boolean useParam() {
+        return useParam;
     }
 
     /**
-     * JWK used for signature validation.
+     * Query parameter name.
      *
-     * @return set of keys used use to verify tokens
-     * @see Builder#signJwk(JwkKeys)
+     * @return name of the query parameter to use
+     * @see Builder#paramName(String)
      */
-    public JwkKeys signJwk() {
-        return signJwk;
+    public String paramName() {
+        return paramName;
+    }
+
+    /**
+     * Query id token parameter name.
+     *
+     * @return name of the query parameter to use
+     * @see Builder#idTokenParamName(String)
+     */
+    public String idTokenParamName() {
+        return idTokenParamName;
+    }
+
+    /**
+     * Tenant query parameter name.
+     *
+     * @return name of the tenant query parameter to use
+     * @see Builder#paramTenantName(String)
+     */
+    public String tenantParamName() {
+        return tenantParamName;
+    }
+
+    /**
+     * Whether to use HTTP header to get the information from request.
+     *
+     * @return if header should be used
+     * @see Builder#useHeader(Boolean)
+     */
+    public boolean useHeader() {
+        return useHeader;
+    }
+
+    /**
+     * {@link TokenHandler} to extract header information from request.
+     *
+     * @return handler to extract header
+     * @see Builder#headerTokenHandler(TokenHandler)
+     */
+    public TokenHandler headerHandler() {
+        return headerHandler;
+    }
+
+    /**
+     * Whether to use cooke to get the information from request.
+     *
+     * @return if cookie should be used
+     * @see Builder#useCookie(Boolean)
+     */
+    public boolean useCookie() {
+        return useCookie;
+    }
+
+    /**
+     * Cookie handler to create cookies or unset cookies for token.
+     *
+     * @return a new cookie handler
+     */
+    public OidcCookieHandler tokenCookieHandler() {
+        return tokenCookieHandler;
+    }
+
+    /**
+     * Cookie handler to create cookies or unset cookies for id token.
+     *
+     * @return a new cookie handler
+     */
+    public OidcCookieHandler idTokenCookieHandler() {
+        return idTokenCookieHandler;
+    }
+
+    /**
+     * Cookie handler to create cookies or unset cookies for tenant name.
+     *
+     * @return a new cookie handler
+     */
+    public OidcCookieHandler tenantCookieHandler() {
+        return tenantCookieHandler;
+    }
+
+    /**
+     * Cookie handler to create cookies or unset cookies for refresh token.
+     *
+     * @return a new cookie handler
+     */
+    public OidcCookieHandler refreshTokenCookieHandler() {
+        return refreshTokenCookieHandler;
+    }
+
+    /**
+     * Cookie handler to create cookies or unset cookies for state value.
+     *
+     * @return a new cookie handler
+     */
+    public OidcCookieHandler stateCookieHandler() {
+        return stateCookieHandler;
     }
 
     /**
@@ -534,6 +587,15 @@ public final class OidcConfig {
      */
     public String redirectUri() {
         return redirectUri;
+    }
+
+    /**
+     * Whether to force https when redirecting to identity provider.
+     *
+     * @return {@code true} to force use of https
+     */
+    public boolean forceHttpsRedirects() {
+        return forceHttpsRedirects;
     }
 
     /**
@@ -566,175 +628,6 @@ public final class OidcConfig {
     }
 
     /**
-     * Token endpoint of the OIDC server.
-     *
-     * @return target the endpoint is on
-     * @see Builder#tokenEndpointUri(URI)
-     * @deprecated Please use {@link #appWebClient()} and {@link #tokenEndpointUri()} instead; result of moving to
-     *      reactive webclient from JAX-RS client
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public WebTarget tokenEndpoint() {
-        return tokenEndpoint;
-    }
-
-    /**
-     * Token endpoint URI.
-     *
-     * @return endpoint URI
-     * @see Builder#tokenEndpointUri(java.net.URI)
-     */
-    public URI tokenEndpointUri() {
-        return tokenEndpointUri;
-    }
-
-    /**
-     * Whether to use query parameter to get the information from request.
-     *
-     * @return if query parameter should be used
-     * @see Builder#useParam(Boolean)
-     */
-    public boolean useParam() {
-        return useParam;
-    }
-
-    /**
-     * Query parameter name.
-     *
-     * @return name of the query parameter to use
-     * @see Builder#paramName(String)
-     */
-    public String paramName() {
-        return paramName;
-    }
-
-    /**
-     * Whether to use cooke to get the information from request.
-     *
-     * @return if cookie should be used
-     * @see Builder#useCookie(Boolean)
-     */
-    public boolean useCookie() {
-        return useCookie;
-    }
-
-    /**
-     * Cookie name.
-     *
-     * @return name of the cookie to use
-     * @see Builder#cookieName(String)
-     * @deprecated use {@link #tokenCookieHandler()} instead
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public String cookieName() {
-        return tokenCookieHandler.cookieName();
-    }
-
-    /**
-     * Additional options of the cookie to use.
-     *
-     * @return cookie options to use in cookie string
-     * @see Builder#cookieHttpOnly(Boolean)
-     * @see Builder#cookieDomain(String)
-     * @deprecated please use {@link #tokenCookieHandler()} instead
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public String cookieOptions() {
-        return tokenCookieHandler.createCookieOptions();
-    }
-
-    /**
-     * Cookie handler to create cookies or unset cookies for token.
-     *
-     * @return a new cookie handler
-     */
-    public OidcCookieHandler tokenCookieHandler() {
-        return tokenCookieHandler;
-    }
-
-    /**
-     * Cookie handler to create cookies or unset cookies for id token.
-     *
-     * @return a new cookie handler
-     */
-    public OidcCookieHandler idTokenCookieHandler() {
-        return idTokenCookieHandler;
-    }
-
-    /**
-     * Whether to use HTTP header to get the information from request.
-     *
-     * @return if header should be used
-     * @see Builder#useHeader(Boolean)
-     */
-    public boolean useHeader() {
-        return useHeader;
-    }
-
-    /**
-     * {@link TokenHandler} to extract header information from request.
-     *
-     * @return handler to extract header
-     * @see Builder#headerTokenHandler(TokenHandler)
-     */
-    public TokenHandler headerHandler() {
-        return headerHandler;
-    }
-
-    /**
-     * Prefix of a cookie header formed by name and "=".
-     *
-     * @return prefix of cookie value
-     * @see Builder#cookieName(String)
-     * @deprecated use {@link io.helidon.security.providers.oidc.common.OidcCookieHandler} instead, this method
-     *      will no longer be avilable
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public String cookieValuePrefix() {
-        return tokenCookieHandler.cookieValuePrefix();
-    }
-
-    /**
-     * Audience URI of custom scopes.
-     *
-     * @return scope audience
-     * @see Builder#scopeAudience(String)
-     */
-    public String scopeAudience() {
-        return scopeAudience;
-    }
-
-    /**
-     * Authorization endpoint.
-     *
-     * @return authorization endpoint uri as a string
-     * @see Builder#authorizationEndpointUri(URI)
-     */
-    public String authorizationEndpointUri() {
-        return authorizationEndpointUri;
-    }
-
-    /**
-     * Logout endpoint on OIDC server.
-     *
-     * @return URI of the logout endpoint
-     * @see Builder#logoutEndpointUri(java.net.URI)
-     */
-    public URI logoutEndpointUri() {
-        return logoutEndpointUri;
-    }
-
-    /**
-     * Client id of this client.
-     *
-     * @return client id
-     * @see Builder#clientId(String)
-     */
-    public String clientId() {
-        return clientId;
-    }
-
-    /**
      * Redirect URI with host information.
      *
      * @return redirect URI
@@ -749,7 +642,7 @@ public final class OidcConfig {
 
     /**
      * Redirect URI with host information taken from request,
-     *  unless an explicit frontend uri is defined in configuration.
+     * unless an explicit frontend uri is defined in configuration.
      *
      * @param frontendUri the frontend uri
      * @return redirect URI
@@ -762,137 +655,12 @@ public final class OidcConfig {
     }
 
     /**
-     * Base scopes to require from OIDC server.
-     *
-     * @return base scopes
-     * @see Builder#baseScopes(String)
-     */
-    public String baseScopes() {
-        return baseScopes;
-    }
-
-    /**
-     * Whether to validate JWT with JWK information (e.g. verify signatures locally).
-     *
-     * @return if we should validate JWT with JWK
-     * @see Builder#validateJwtWithJwk(Boolean)
-     */
-    public boolean validateJwtWithJwk() {
-        return validateJwtWithJwk;
-    }
-
-    /**
-     * Token introspection endpoint.
-     *
-     * @return introspection endpoint
-     * @see Builder#introspectEndpointUri(URI)
-     *@deprecated Please use {@link #appWebClient()} and {@link #introspectUri()} instead; result of moving to
-     *      reactive webclient from JAX-RS client
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public WebTarget introspectEndpoint() {
-        return introspectEndpoint;
-    }
-
-    /**
-     * Introspection endpoint URI.
-     *
-     * @return introspection endpoint URI
-     * @see Builder#introspectEndpointUri(java.net.URI)
-     */
-    public URI introspectUri() {
-        if (introspectUri == null) {
-            throw new SecurityException("Introspect URI is not configured when using validate with JWK.");
-        }
-        return introspectUri;
-    }
-
-    /**
-     * Token issuer.
-     *
-     * @return token issuer
-     * @see Builder#issuer(String)
-     */
-    public String issuer() {
-        return issuer;
-    }
-
-    /**
-     * Expected token audience.
-     *
-     * @return audience
-     * @see Builder#audience(String)
-     */
-    public String audience() {
-        return audience;
-    }
-
-    /**
-     * Identity server URI.
-     *
-     * @return identity server URI
-     * @see Builder#identityUri(URI)
-     */
-    public URI identityUri() {
-        return identityUri;
-    }
-
-    /**
-     * Client with configured proxy with no security.
-     *
-     * @return client for general use.
-     * @deprecated Use {@link #generalWebClient()} instead
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public Client generalClient() {
-        return generalClient;
-    }
-
-    /**
-     * Client with configured proxy with no security.
-     *
-     * @return client for general use.
-     */
-    public WebClient generalWebClient() {
-        return webClient;
-    }
-
-    /**
-     * Client with configured proxy and security of this OIDC client.
-     *
-     * @return client for communication with OIDC server
-     * @deprecated Use {@link #appWebClient()}
-     */
-    @Deprecated(forRemoval = true, since = "2.4.0")
-    public Client appClient() {
-        return appClient;
-    }
-
-    /**
-     * Client with configured proxy and security.
-     *
-     * @return client for communicating with OIDC identity server
-     */
-    public WebClient appWebClient() {
-        return appWebClient;
-    }
-
-    /**
      * Whether to redirect to identity server if user is not authenticated.
      *
      * @return whether to redirect, defaults to true
      */
     public boolean shouldRedirect() {
         return redirect;
-    }
-
-    /**
-     * Realm to use for WWW-Authenticate response (if needed).
-     *
-     * @return realm name
-     */
-    public String realm() {
-        return realm;
     }
 
     /**
@@ -915,44 +683,152 @@ public final class OidcConfig {
     }
 
     /**
-     * Type of authentication mechanism used for token endpoint.
-     *
-     * @return client authentication type
-     */
-    public ClientAuthentication tokenEndpointAuthentication() {
-        return tokenEndpointAuthentication;
-    }
-
-    /**
-     * Update request that uses form params with authentication.
-     *
-     * @param type type of the request
-     * @param request request builder
-     * @param form form params builder
-     */
-    public void updateRequest(RequestType type, WebClientRequestBuilder request, FormParams.Builder form) {
-        if (type == RequestType.CODE_TO_TOKEN && tokenEndpointAuthentication == ClientAuthentication.CLIENT_SECRET_POST) {
-            form.add("client_id", clientId);
-            form.add("client_secret", clientSecret);
-        }
-    }
-
-    /**
-     * Expected timeout of HTTP client operations.
-     *
-     * @return client timeout
-     */
-    public Duration clientTimeout() {
-        return clientTimeout;
-    }
-
-    /**
      * Cross-origin resource sharing settings.
      *
      * @return CORS settings
      */
     public CrossOriginConfig crossOriginConfig() {
         return crossOriginConfig;
+    }
+
+    /**
+     * Amount of time access token should be refreshed before its expiration time.
+     *
+     * @return refresh time skew
+     */
+    public Duration tokenRefreshSkew() {
+        return tokenRefreshSkew;
+    }
+
+    /**
+     * Determines whether to force the use of relative URIs in all requests,
+     * regardless of the presence or absence of proxies or no-proxy lists.
+     *
+     * @return {@code true} if we should use relative URIs
+     */
+    public boolean relativeUris() {
+        return relativeUris;
+    }
+
+    /**
+     * Client with configured proxy with no security.
+     *
+     * @return client for general use.
+     */
+    public WebClient generalWebClient() {
+        return webClient;
+    }
+
+    /**
+     * Client with configured proxy and security.
+     *
+     * @return client for communicating with OIDC identity server
+     */
+    public WebClient appWebClient() {
+        return defaultTenant.get().appWebClient();
+    }
+
+    /**
+     * Return {@link TenantConfig} bound to the provided tenant id.
+     * If no {@link TenantConfig} found, default OIDC configuration should be returned.
+     *
+     * @param tenantId tenant id of the configuration
+     * @return configuration bound to the tenant id, or default oidc configuration if not found
+     */
+    public TenantConfig tenantConfig(String tenantId) {
+        TenantConfig tenantConfig = tenantConfigurations.get(tenantId);
+        if (tenantConfig == null) {
+            return tenantConfigurations.getOrDefault(TenantConfigFinder.DEFAULT_TENANT_ID, this);
+        }
+        return tenantConfig;
+    }
+
+    /**
+     * Token endpoint URI.
+     *
+     * @return endpoint URI
+     */
+    public URI tokenEndpointUri() {
+        return defaultTenant.get().tokenEndpointUri();
+    }
+
+    /**
+     * Authorization endpoint.
+     *
+     * @return authorization endpoint uri as a string
+     */
+    public String authorizationEndpointUri() {
+        return defaultTenant.get().authorizationEndpointUri();
+    }
+
+    /**
+     * Logout endpoint on OIDC server.
+     *
+     * @return URI of the logout endpoint
+     * @see OidcConfig.Builder#logoutEndpointUri(java.net.URI)
+     */
+    public URI logoutEndpointUri() {
+        return defaultTenant.get().logoutEndpointUri();
+    }
+
+    /**
+     * Token issuer.
+     *
+     * @return token issuer
+     * @see OidcConfig.Builder#issuer(String)
+     */
+    public String issuer() {
+        return defaultTenant.get().issuer();
+    }
+
+    /**
+     * JWK used for signature validation.
+     *
+     * @return set of keys used use to verify tokens
+     */
+    public JwkKeys signJwk() {
+        return defaultTenant.get().signJwk();
+    }
+
+    /**
+     * Introspection endpoint URI.
+     *
+     * @return introspection endpoint URI
+     * @see OidcConfig.Builder#introspectEndpointUri(java.net.URI)
+     */
+    public URI introspectUri() {
+        return defaultTenant.get().introspectUri();
+    }
+
+    /**
+     * Whether access token signature should be validated.
+     *
+     * @return validate access token signature
+     */
+    public boolean tokenSignatureValidation() {
+        return tokenSignatureValidation;
+    }
+
+    /**
+     * Whether id token signature should be validated.
+     *
+     * @return validate id token signature
+     */
+    public boolean idTokenSignatureValidation() {
+        return idTokenSignatureValidation;
+    }
+
+    /**
+     * Whether to check IP address access token was issued for.
+     *
+     * @return whether to check IP address access token was issued for
+     */
+    public boolean accessTokenIpCheck() {
+        return accessTokenIpCheck;
+    }
+
+    Supplier<WebClientConfig.Builder> webClientBuilderSupplier() {
+        return webClientBuilderSupplier;
     }
 
     /**
@@ -987,8 +863,6 @@ public final class OidcConfig {
          * <p>
          * Optional:
          * {@code iat}
-         *
-         *
          */
         CLIENT_SECRET_JWT,
         /**
@@ -1032,116 +906,67 @@ public final class OidcConfig {
      * A fluent API {@link io.helidon.common.Builder} to build instances of {@link OidcConfig}.
      */
     @Configured(description = "Open ID Connect configuration")
-    public static class Builder implements io.helidon.common.Builder<Builder, OidcConfig> {
-        static final String DEFAULT_SERVER_TYPE = "@default";
+    public static class Builder extends BaseBuilder<Builder, OidcConfig> {
 
-        private final OidcCookieHandler.Builder tokenCookieBuilder = OidcCookieHandler.builder()
-                .cookieName(DEFAULT_COOKIE_NAME);
-        private final OidcCookieHandler.Builder idTokenCookieBuilder = OidcCookieHandler.builder()
-                .cookieName(DEFAULT_COOKIE_NAME + "_2");
+        private final Map<String, TenantConfig> tenantConfigurations = new HashMap<>();
 
-        private String issuer;
-        private String audience;
-        private String baseScopes = DEFAULT_BASE_SCOPES;
         // mandatory properties
-        private URI identityUri;
-        private String clientId;
-        private String clientSecret;
         private String redirectUri = DEFAULT_REDIRECT_URI;
         private String logoutUri = DEFAULT_LOGOUT_URI;
         private boolean logoutEnabled = false;
-        private boolean useCookie = DEFAULT_COOKIE_USE;
-        private boolean useParam = DEFAULT_PARAM_USE;
-        private String paramName = DEFAULT_PARAM_NAME;
         // optional properties
-        private String proxyProtocol = DEFAULT_PROXY_PROTOCOL;
-        private String proxyHost;
-        private int proxyPort = DEFAULT_PROXY_PORT;
-        private String scopeAudience;
-        private OidcMetadata.Builder oidcMetadata = OidcMetadata.builder();
         private String frontendUri;
-        private boolean useHeader = OidcConfig.DEFAULT_HEADER_USE;
+        private boolean redirect = DEFAULT_REDIRECT;
+        private String redirectAttemptParam = DEFAULT_ATTEMPT_PARAM;
+        private int maxRedirects = DEFAULT_MAX_REDIRECTS;
+        private URI postLogoutUri;
+        private CrossOriginConfig crossOriginConfig;
+        private boolean forceHttpsRedirects = DEFAULT_FORCE_HTTPS_REDIRECTS;
+        private Duration tokenRefreshSkew = DEFAULT_TOKEN_REFRESH_SKEW;
+        private String proxyHost;
+        private String proxyProtocol = DEFAULT_PROXY_PROTOCOL;
+        private int proxyPort = DEFAULT_PROXY_PORT;
+        private WebClient webClient;
+        private Supplier<WebClientConfig.Builder> webClientBuilderSupplier;
+        private String paramName = DEFAULT_PARAM_NAME;
+        private String idTokenParamName = DEFAULT_ID_TOKEN_PARAM_NAME;
+        private String tenantParamName = DEFAULT_TENANT_PARAM_NAME;
+        private boolean useHeader = DEFAULT_HEADER_USE;
+        private boolean useParam = DEFAULT_PARAM_USE;
+
+        private final OidcCookieHandler.Builder tenantCookieBuilder = OidcCookieHandler.builder()
+                .encryptionEnabled(true)
+                .cookieName(DEFAULT_TENANT_COOKIE_NAME);
+        private final OidcCookieHandler.Builder tokenCookieBuilder = OidcCookieHandler.builder()
+                .cookieName(DEFAULT_COOKIE_NAME);
+        private final OidcCookieHandler.Builder idTokenCookieBuilder = OidcCookieHandler.builder()
+                .encryptionEnabled(true)
+                .cookieName(DEFAULT_ID_COOKIE_NAME);
+        private final OidcCookieHandler.Builder refreshTokenCookieBuilder = OidcCookieHandler.builder()
+                .encryptionEnabled(true)
+                .cookieName(DEFAULT_REFRESH_COOKIE_NAME);
+        private final OidcCookieHandler.Builder stateCookieBuilder = OidcCookieHandler.builder()
+                .encryptionEnabled(true)
+                .cookieName(DEFAULT_STATE_COOKIE_NAME);
         private TokenHandler headerHandler = TokenHandler.builder()
                 .tokenHeader("Authorization")
                 .tokenPrefix("bearer ")
                 .build();
-        private URI tokenEndpointUri;
-        private ClientAuthentication tokenEndpointAuthentication = ClientAuthentication.CLIENT_SECRET_BASIC;
-        private URI authorizationEndpointUri;
-        private URI logoutEndpointUri;
-        private JwkKeys signJwk;
-        private boolean oidcMetadataWellKnown = true;
-        private boolean validateJwtWithJwk = DEFAULT_JWT_VALIDATE_JWK;
-        private URI introspectUri;
-        private boolean redirect = DEFAULT_REDIRECT;
-        private String realm = DEFAULT_REALM;
-        private String redirectAttemptParam = DEFAULT_ATTEMPT_PARAM;
-        private int maxRedirects = DEFAULT_MAX_REDIRECTS;
+        private boolean useCookie = DEFAULT_COOKIE_USE;
         private boolean cookieSameSiteDefault = true;
-        private String serverType;
-        @Deprecated
-        private Client generalClient;
-        @Deprecated
-        private WebTarget tokenEndpoint;
-        @Deprecated
-        private Client appClient;
-        private WebClient appWebClient;
-        private WebClient webClient;
-        private Duration clientTimeout = Duration.ofSeconds(DEFAULT_TIMEOUT_SECONDS);
-        private URI postLogoutUri;
-        private CrossOriginConfig crossOriginConfig;
+        private boolean relativeUris = DEFAULT_RELATIVE_URIS;
+        private boolean tokenSignatureValidation = true;
+        private boolean idTokenSignatureValidation = true;
+        private boolean accessTokenIpCheck = true;
+
+        protected Builder() {
+        }
 
         @Override
         public OidcConfig build() {
-            this.serverType = OidcUtil.fixServerType(serverType);
+            buildConfiguration();
 
             Errors.Collector collector = Errors.collector();
-
-            OidcUtil.validateExists(collector, clientId, "Client Id", "client-id");
-            OidcUtil.validateExists(collector, clientSecret, "Client Secret", "client-secret");
-            OidcUtil.validateExists(collector, identityUri, "Identity URI", "identity-uri");
-
-            // first set of validations
-            collector.collect().checkValid();
-            collector = Errors.collector();
-
-            WebClient.Builder webClientBuilder = OidcUtil.webClientBaseBuilder(proxyHost,
-                                                                               proxyPort,
-                                                                               clientTimeout);
-            ClientBuilder clientBuilder = OidcUtil.clientBaseBuilder(proxyProtocol, proxyHost, proxyPort);
-
-            this.generalClient = clientBuilder.build();
-            this.webClient = webClientBuilder.build();
-
-            OidcMetadata oidcMetadata = this.oidcMetadata.webClient(webClient)
-                    .remoteEnabled(oidcMetadataWellKnown)
-                    .identityUri(identityUri)
-                    .collector(collector)
-                    .build();
-
-            this.tokenEndpointUri = oidcMetadata.getOidcEndpoint(collector,
-                                                                 tokenEndpointUri,
-                                                                 "token_endpoint",
-                                                                 "/oauth2/v1/token");
-
-            this.authorizationEndpointUri = oidcMetadata.getOidcEndpoint(collector,
-                                                                         authorizationEndpointUri,
-                                                                         "authorization_endpoint",
-                                                                         "/oauth2/v1/authorize");
-
-            this.logoutEndpointUri = oidcMetadata.getOidcEndpoint(collector,
-                                                                  logoutEndpointUri,
-                                                                  "end_session_endpoint",
-                                                                  "oauth2/v1/userlogout");
-
-            if (issuer == null) {
-                oidcMetadata.getString("issuer").ifPresent(it -> issuer = it);
-            }
-
-            if ((audience == null) && (identityUri != null)) {
-                this.audience = identityUri.toString();
-            }
-
             if (useCookie && logoutEnabled) {
                 if (postLogoutUri == null) {
                     collector.fatal("post-logout-uri must be defined when logout is enabled.");
@@ -1154,14 +979,15 @@ public final class OidcConfig {
             if (cookieSameSiteDefault && useCookie) {
                 // compare frontend and oidc endpoints to see if
                 // we should use lax or strict by default
-                if (identityUri != null) {
-                    String identityHost = identityUri.getHost();
+                if (identityUri() != null) {
+                    String identityHost = identityUri().getHost();
                     if (frontendUri != null) {
                         String frontendHost = URI.create(frontendUri).getHost();
                         if (identityHost.equals(frontendHost)) {
-                            LOGGER.info("As frontend host and identity host are equal, setting Same-Site policy to Strict"
-                                                + " this can be overridden using configuration option of OIDC: "
-                                                + "\"cookie-same-site\"");
+                            LOGGER.log(Level.INFO, "As frontend host and identity host are equal, setting Same-Site policy"
+                                    + " to Strict this can be overridden using configuration option of OIDC: "
+                                    + "\"cookie-same-site\"");
+                            this.tenantCookieBuilder.sameSite(SetCookie.SameSite.STRICT);
                             this.tokenCookieBuilder.sameSite(SetCookie.SameSite.STRICT);
                             this.idTokenCookieBuilder.sameSite(SetCookie.SameSite.STRICT);
                         }
@@ -1169,55 +995,22 @@ public final class OidcConfig {
                 }
             }
 
-            if (tokenEndpointAuthentication == ClientAuthentication.CLIENT_SECRET_BASIC) {
-                HttpAuthenticationFeature basicAuth = HttpAuthenticationFeature.basicBuilder()
-                        .credentials(clientId, clientSecret)
-                        .build();
-                clientBuilder.register(basicAuth);
+            this.webClientBuilderSupplier = () -> OidcUtil.webClientBaseBuilder(proxyProtocol,
+                                                                                proxyHost,
+                                                                                proxyPort,
+                                                                                relativeUris,
+                                                                                clientTimeout());
+            this.webClient = webClientBuilderSupplier.get().build();
 
-                HttpBasicAuthProvider httpBasicAuth = HttpBasicAuthProvider.builder()
-                        .addOutboundTarget(OutboundTarget.builder("oidc")
-                                                   .addHost("*")
-                                                   .customObject(HttpBasicOutboundConfig.class,
-                                                                 HttpBasicOutboundConfig.create(clientId, clientSecret))
-                                                   .build())
-                        .build();
-                Security tokenOutboundSecurity = Security.builder()
-                        .addOutboundSecurityProvider(httpBasicAuth)
-                        .build();
-
-                webClientBuilder.addService(WebClientSecurity.create(tokenOutboundSecurity));
+            if (!tokenSignatureValidation) {
+                LOGGER.log(Level.WARNING, "You have disabled access token signature validation. "
+                        + "This option should never be disabled for production environment "
+                        + "since it could cause security issues");
             }
-
-            appClient = clientBuilder.build();
-            appWebClient = webClientBuilder.build();
-            tokenEndpoint = appClient.target(tokenEndpointUri);
-
-            if (validateJwtWithJwk) {
-                if (signJwk == null) {
-                    // not configured - use default location
-                    URI jwkUri = oidcMetadata.getOidcEndpoint(collector,
-                                                              null,
-                                                              "jwks_uri",
-                                                              null);
-                    if (jwkUri != null) {
-                        if ("idcs".equals(serverType)) {
-                            this.signJwk = IdcsSupport.signJwk(appWebClient, webClient, tokenEndpointUri, jwkUri, clientTimeout);
-                        } else {
-                            this.signJwk = JwkKeys.builder()
-                                    .json(webClient.get()
-                                                  .uri(jwkUri)
-                                                  .request(JsonObject.class)
-                                                  .await())
-                                    .build();
-                        }
-                    }
-                }
-            } else {
-                this.introspectUri = oidcMetadata.getOidcEndpoint(collector,
-                                                                  introspectUri,
-                                                                  "introspection_endpoint",
-                                                                  "/oauth2/v1/introspect");
+            if (!idTokenSignatureValidation) {
+                LOGGER.log(Level.WARNING, "You have disabled id token signature validation. "
+                        + "This option should never be disabled for production environment "
+                        + "since it could cause security issues");
             }
 
             return new OidcConfig(this);
@@ -1230,10 +1023,8 @@ public final class OidcConfig {
          * @return updated builder instance
          */
         public Builder config(Config config) {
+            super.config(config);
             // mandatory configuration
-            config.get("client-id").asString().ifPresent(this::clientId);
-            config.get("client-secret").asString().ifPresent(this::clientSecret);
-            config.get("identity-uri").as(URI.class).ifPresent(this::identityUri);
             config.get("frontend-uri").asString().ifPresent(this::frontendUri);
 
             // environment
@@ -1242,121 +1033,76 @@ public final class OidcConfig {
                     .ifPresent(this::proxyProtocol);
             config.get("proxy-host").asString().ifPresent(this::proxyHost);
             config.get("proxy-port").asInt().ifPresent(this::proxyPort);
-
-            // our application
-            config.get("redirect-uri").asString().ifPresent(this::redirectUri);
-            config.get("scope-audience").asString().ifPresent(this::scopeAudience);
+            config.get("relative-uris").asBoolean().ifPresent(this::relativeUris);
 
             // token handling
+            config.get("query-param-use").asBoolean().ifPresent(this::useParam);
+            config.get("query-param-name").asString().ifPresent(this::paramName);
+            config.get("query-param-tenant-name").asString().ifPresent(this::paramTenantName);
+            config.get("header-use").asBoolean().ifPresent(this::useHeader);
+            config.get("header-token").as(TokenHandler.class).ifPresent(this::headerTokenHandler);
             config.get("cookie-use").asBoolean().ifPresent(this::useCookie);
             config.get("cookie-name").asString().ifPresent(this::cookieName);
             config.get("cookie-name-id-token").asString().ifPresent(this::cookieNameIdToken);
+            config.get("cookie-name-tenant").asString().ifPresent(this::cookieTenantName);
+            config.get("cookie-name-refresh-token").asString().ifPresent(this::cookieNameRefreshToken);
+            config.get("cookie-name-state").asString().ifPresent(this::cookieNameState);
             config.get("cookie-domain").asString().ifPresent(this::cookieDomain);
             config.get("cookie-path").asString().ifPresent(this::cookiePath);
             config.get("cookie-max-age-seconds").asLong().ifPresent(this::cookieMaxAgeSeconds);
             config.get("cookie-http-only").asBoolean().ifPresent(this::cookieHttpOnly);
             config.get("cookie-secure").asBoolean().ifPresent(this::cookieSecure);
             config.get("cookie-same-site").asString().ifPresent(this::cookieSameSite);
-            config.get("query-param-use").asBoolean().ifPresent(this::useParam);
-            config.get("query-param-name").asString().ifPresent(this::paramName);
-            config.get("header-use").asBoolean().ifPresent(this::useHeader);
-            config.get("header-token").as(TokenHandler.class).ifPresent(this::headerTokenHandler);
             // encryption of cookies
             config.get("cookie-encryption-enabled").asBoolean().ifPresent(this::cookieEncryptionEnabled);
-            config.get("cookie-encryption-password").as(char[].class).ifPresent(this::cookieEncryptionPassword);
+            config.get("cookie-encryption-id-enabled").asBoolean().ifPresent(this::cookieEncryptionEnabledIdToken);
+            config.get("cookie-encryption-tenant-enabled").asBoolean().ifPresent(this::cookieEncryptionEnabledTenantName);
+            config.get("cookie-encryption-refresh-enabled").asBoolean().ifPresent(this::cookieEncryptionEnabledRefreshToken);
+            config.get("cookie-encryption-state-enabled").asBoolean().ifPresent(this::cookieEncryptionEnabledState);
+            config.get("cookie-encryption-password").as(String.class)
+                    .map(String::toCharArray)
+                    .ifPresent(this::cookieEncryptionPassword);
             config.get("cookie-encryption-name").asString().ifPresent(this::cookieEncryptionName);
 
-            // OIDC server configuration
-            config.get("base-scopes").asString().ifPresent(this::baseScopes);
-            config.get("oidc-metadata.resource").as(Resource::create).ifPresent(this::oidcMetadata);
-            // backward compatibility
-            Resource.create(config, "oidc-metadata").ifPresent(this::oidcMetadata);
-            config.get("oidc-metadata-well-known").asBoolean().ifPresent(this::oidcMetadataWellKnown);
-            config.get("sign-jwk.resource").as(Resource::create).ifPresent(this::signJwk);
-            Resource.create(config, "sign-jwk").ifPresent(this::signJwk);
-            config.get("token-endpoint-uri").as(URI.class).ifPresent(this::tokenEndpointUri);
-            config.get("token-endpoint-auth").asString()
-                    .map(String::toUpperCase)
-                    .map(ClientAuthentication::valueOf)
-                    .ifPresent(this::tokenEndpointAuthentication);
-            config.get("authorization-endpoint-uri").as(URI.class).ifPresent(this::authorizationEndpointUri);
-            config.get("logout-endpoint-uri").as(URI.class).ifPresent(this::logoutEndpointUri);
+            // our application
+            config.get("redirect-uri").asString().ifPresent(this::redirectUri);
+            config.get("logout-uri").asString().ifPresent(this::logoutUri);
+
             config.get("post-logout-uri").as(URI.class).ifPresent(this::postLogoutUri);
             config.get("logout-enabled").asBoolean().ifPresent(this::logoutEnabled);
-
-            config.get("introspect-endpoint-uri").as(URI.class).ifPresent(this::introspectEndpointUri);
-            config.get("validate-with-jwk").asBoolean().ifPresent(this::validateJwtWithJwk);
-            config.get("issuer").asString().ifPresent(this::issuer);
-            config.get("audience").asString().ifPresent(this::audience);
 
             config.get("redirect").asBoolean().ifPresent(this::redirect);
             config.get("redirect-attempt-param").asString().ifPresent(this::redirectAttemptParam);
             config.get("max-redirects").asInt().ifPresent(this::maxRedirects);
+            config.get("force-https-redirects").asBoolean().ifPresent(this::forceHttpsRedirects);
 
-            // type of the identity server
-            // now uses hardcoded switch - should change to service loader eventually
-            config.get("server-type").asString().ifPresent(this::serverType);
+            config.get("cors").map(CrossOriginConfig::create).ifPresent(this::crossOriginConfig);
 
-            config.get("client-timeout-millis").asLong().ifPresent(this::clientTimeoutMillis);
+            config.get("token-refresh-before-expiration").as(Duration.class).ifPresent(this::tokenRefreshSkew);
 
-            config.get("cors").as(CrossOriginConfig::create).ifPresent(this::crossOriginConfig);
+            config.get("token-signature-validation").asBoolean().ifPresent(this::tokenSignatureValidation);
+            config.get("id-token-signature-validation").asBoolean().ifPresent(this::idTokenSignatureValidation);
+            config.get("access-token-ip-check").asBoolean().ifPresent(this::accessTokenIpCheck);
+
+            config.get("tenants").asList(Config.class)
+                    .ifPresent(confList -> confList.forEach(tenantConfig -> tenantFromConfig(config, tenantConfig)));
 
             return this;
         }
 
+        private void tenantFromConfig(Config defaultConfig, Config tenantConfig) {
+            addTenantConfig(TenantConfig.tenantBuilder().config(defaultConfig).config(tenantConfig).build());
+        }
+
         /**
-         * Name of the encryption configuration available through {@link Security#encrypt(String, byte[])} and
-         * {@link Security#decrypt(String, String)}.
-         * If configured and encryption is enabled for any cookie,
-         * Security MUST be configured in global or current {@code io.helidon.common.context.Context} (this
-         * is done automatically in Helidon MP).
+         * Amount of time access token should be refreshed before its expiration time.
+         * Default is 5 seconds.
          *
-         * @param cookieEncryptionName name of the encryption configuration in security used to encrypt/decrypt cookies
+         * @param tokenRefreshSkew time to refresh token before expiration
          * @return updated builder
          */
-        public Builder cookieEncryptionName(String cookieEncryptionName) {
-            this.tokenCookieBuilder.encryptionName(cookieEncryptionName);
-            this.idTokenCookieBuilder.encryptionName(cookieEncryptionName);
-            return this;
-        }
-
-        /**
-         * Master password for encryption/decryption of cookies. This must be configured to the same value on each microservice
-         * using the cookie.
-         *
-         * @param cookieEncryptionPassword encryption password
-         * @return updated builder
-         */
-        public Builder cookieEncryptionPassword(char[] cookieEncryptionPassword) {
-            this.tokenCookieBuilder.encryptionPassword(cookieEncryptionPassword);
-            this.idTokenCookieBuilder.encryptionPassword(cookieEncryptionPassword);
-
-            return this;
-        }
-
-        /**
-         * Whether to encrypt token cookie created by this microservice.
-         * Defaults to {@code false}.
-         *
-         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as obtained from
-         *                               OIDC server {@code false}
-         * @return updated builder instance
-         */
-        public Builder cookieEncryptionEnabled(boolean cookieEncryptionEnabled) {
-            this.tokenCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
-            return this;
-        }
-
-        /**
-         * Whether to encrypt id token cookie created by this microservice.
-         * Defaults to {@code true}.
-         *
-         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as obtained from
-         *                               OIDC server {@code false}
-         * @return updated builder instance
-         */
-        public Builder cookieEncryptionEnabledIdToken(boolean cookieEncryptionEnabled) {
-            this.idTokenCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
+        public Builder tokenRefreshSkew(Duration tokenRefreshSkew) {
+            this.tokenRefreshSkew = tokenRefreshSkew;
             return this;
         }
 
@@ -1366,6 +1112,7 @@ public final class OidcConfig {
          * @param crossOriginConfig cross-origin settings to apply to the redirect endpoint
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "cors")
         public Builder crossOriginConfig(CrossOriginConfig crossOriginConfig) {
             this.crossOriginConfig = crossOriginConfig;
             return this;
@@ -1387,7 +1134,7 @@ public final class OidcConfig {
         }
 
         /**
-         * By default the client should redirect to the identity server for the user to log in.
+         * By default, the client should redirect to the identity server for the user to log in.
          * This behavior can be overridden by setting redirect to false. When token is not present in the request, the client
          * will not redirect and just return appropriate error response code.
          *
@@ -1395,288 +1142,9 @@ public final class OidcConfig {
          *                 authenticate the user, defaults to true
          * @return updated builder instance
          */
-        @ConfiguredOption("true")
+        @ConfiguredOption("false")
         public Builder redirect(boolean redirect) {
             this.redirect = redirect;
-            return this;
-        }
-
-        /**
-         * Realm to return when not redirecting and an error occurs that sends back WWW-Authenticate header.
-         *
-         * @param realm realm name
-         * @return updated builder instance
-         */
-        public Builder realm(String realm) {
-            this.realm = realm;
-            return this;
-        }
-
-        /**
-         * Audience of issued tokens.
-         *
-         * @param audience audience to validate
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder audience(String audience) {
-            this.audience = audience;
-            return this;
-        }
-
-        /**
-         * Issuer of issued tokens.
-         *
-         * @param issuer expected issuer to validate
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder issuer(String issuer) {
-            this.issuer = issuer;
-            return this;
-        }
-
-        /**
-         * Use JWK (a set of keys to validate signatures of JWT) to validate tokens.
-         * Use this method when you want to use default values for JWK or introspection endpoint URI.
-         *
-         * @param useJwk when set to true, jwk is used, when set to false, introspect endpoint is used
-         * @return updated builder instance
-         */
-        @ConfiguredOption("true")
-        public Builder validateJwtWithJwk(Boolean useJwk) {
-            this.validateJwtWithJwk = useJwk;
-            return this;
-        }
-
-        /**
-         * Endpoint to use to validate JWT.
-         * Either use this or set {@link #signJwk(JwkKeys)} or {@link #signJwk(Resource)}.
-         *
-         * @param uri URI of introspection endpoint
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder introspectEndpointUri(URI uri) {
-            validateJwtWithJwk(false);
-            this.introspectUri = uri;
-            return this;
-        }
-
-        /**
-         * Configure base scopes.
-         * By default this is {@value DEFAULT_BASE_SCOPES}.
-         * If scope has a qualifier, it must be used here.
-         *
-         * @param scopes Space separated scopes to be required by default from OIDC server
-         * @return updated builder instance
-         */
-        @ConfiguredOption(value = DEFAULT_BASE_SCOPES)
-        public Builder baseScopes(String scopes) {
-            this.baseScopes = scopes;
-            return this;
-        }
-
-        /**
-         * If set to true, metadata will be loaded from default (well known)
-         * location, unless it is explicitly defined using oidc-metadata-resource. If set to false, it would not be loaded
-         * even if oidc-metadata-resource is not defined. In such a case all URIs must be explicitly defined (e.g.
-         * token-endpoint-uri).
-         *
-         * @param useWellKnown whether to use well known location for OIDC metadata
-         * @return updated builder instance
-         */
-        @ConfiguredOption("true")
-        public Builder oidcMetadataWellKnown(Boolean useWellKnown) {
-            this.oidcMetadataWellKnown = useWellKnown;
-            return this;
-        }
-
-        /**
-         * A resource pointing to JWK with public keys of signing certificates used
-         * to validate JWT.
-         *
-         * @param resource Resource pointing to the JWK
-         * @return updated builder instance
-         */
-        @ConfiguredOption(key = "sign-jwk.resource")
-        public Builder signJwk(Resource resource) {
-            validateJwtWithJwk(true);
-            this.signJwk = JwkKeys.builder().resource(resource).build();
-            return this;
-        }
-
-        /**
-         * Set {@link JwkKeys} to use for JWT validation.
-         *
-         * @param jwk JwkKeys instance to get public keys used to sign JWT
-         * @return updated builder instance
-         */
-        public Builder signJwk(JwkKeys jwk) {
-            validateJwtWithJwk(true);
-            this.signJwk = jwk;
-            return this;
-        }
-
-        /**
-         * Resource configuration for OIDC Metadata
-         * containing endpoints to various identity services, as well as information about the identity server.
-         *
-         * @param resource resource pointing to the JSON structure
-         * @return updated builder instance
-         */
-        @ConfiguredOption(key = "oidc-metadata.resource")
-        public Builder oidcMetadata(Resource resource) {
-            this.oidcMetadata.json(JSON.createReader(resource.stream()).readObject());
-            return this;
-        }
-
-        /**
-         * JsonObject with the OIDC Metadata.
-         *
-         * @param metadata metadata JSON
-         * @return updated builder instance
-         * @see #oidcMetadata(Resource)
-         */
-        public Builder oidcMetadata(JsonObject metadata) {
-            this.oidcMetadata.json(metadata);
-            return this;
-        }
-
-        /**
-         * A {@link TokenHandler} to
-         * process header containing a JWT.
-         * Default is "Authorization" header with a prefix "bearer ".
-         *
-         * @param tokenHandler token handler to use
-         * @return updated builder instance
-         */
-        @ConfiguredOption(key = "header-token")
-        public Builder headerTokenHandler(TokenHandler tokenHandler) {
-            this.headerHandler = tokenHandler;
-            return this;
-        }
-
-        /**
-         * Whether to expect JWT in a header field.
-         *
-         * @param useHeader set to true to use a header extracted with {@link #headerTokenHandler(TokenHandler)}
-         * @return updated builder instance
-         */
-        @ConfiguredOption(key = "header-use", value = "false")
-        public Builder useHeader(Boolean useHeader) {
-            this.useHeader = useHeader;
-            return this;
-        }
-
-        /**
-         * Audience of the scope required by this application. This is prefixed to
-         * the scope name when requesting scopes from the identity server.
-         * Defaults to empty string.
-         *
-         * @param audience audience, if provided, end with "/" to append the scope correctly
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder scopeAudience(String audience) {
-            this.scopeAudience = audience;
-            return this;
-        }
-
-        /**
-         * When using cookie, used to set the SameSite cookie value. Can be
-         * "Strict" or "Lax"
-         *
-         * @param sameSite SameSite cookie attribute value
-         * @return updated builder instance
-         */
-        public Builder cookieSameSite(String sameSite) {
-            return cookieSameSite(SetCookie.SameSite.valueOf(sameSite.toUpperCase(Locale.ROOT)));
-        }
-
-        /**
-         * When using cookie, used to set the SameSite cookie value. Can be
-         * "Strict" or "Lax".
-         *
-         * @param sameSite SameSite cookie attribute
-         * @return updated builder instance
-         */
-        @ConfiguredOption(value = "LAX")
-        public Builder cookieSameSite(SetCookie.SameSite sameSite) {
-            this.tokenCookieBuilder.sameSite(sameSite);
-            this.idTokenCookieBuilder.sameSite(sameSite);
-            this.cookieSameSiteDefault = false;
-            return this;
-        }
-
-        /**
-         * When using cookie, if set to true, the Secure attribute will be configured.
-         * Defaults to false.
-         *
-         * @param secure whether the cookie should be secure (true) or not (false)
-         * @return updated builder instance
-         */
-        @ConfiguredOption("false")
-        public Builder cookieSecure(Boolean secure) {
-            this.tokenCookieBuilder.secure(secure);
-            this.idTokenCookieBuilder.secure(secure);
-            return this;
-        }
-
-        /**
-         * When using cookie, if set to true, the HttpOnly attribute will be configured.
-         * Defaults to {@value OidcCookieHandler.Builder#DEFAULT_HTTP_ONLY}.
-         *
-         * @param httpOnly whether the cookie should be HttpOnly (true) or not (false)
-         * @return updated builder instance
-         */
-        @ConfiguredOption("true")
-        public Builder cookieHttpOnly(Boolean httpOnly) {
-            this.tokenCookieBuilder.httpOnly(httpOnly);
-            this.idTokenCookieBuilder.httpOnly(httpOnly);
-            return this;
-        }
-
-        /**
-         * When using cookie, used to set MaxAge attribute of the cookie, defining how long
-         * the cookie is valid.
-         * Not used by default.
-         *
-         * @param age age in seconds
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder cookieMaxAgeSeconds(long age) {
-            this.tokenCookieBuilder.maxAge(age);
-            this.idTokenCookieBuilder.maxAge(age);
-            return this;
-        }
-
-        /**
-         * Path the cookie is valid for.
-         * Defaults to "/".
-         *
-         * @param path the path to use as value of cookie "Path" attribute
-         * @return updated builder instance
-         */
-        @ConfiguredOption(value = OidcCookieHandler.Builder.DEFAULT_PATH)
-        public Builder cookiePath(String path) {
-            this.tokenCookieBuilder.path(path);
-            this.idTokenCookieBuilder.path(path);
-            return this;
-        }
-
-        /**
-         * Domain the cookie is valid for.
-         * Not used by default.
-         *
-         * @param domain domain to use as value of cookie "Domain" attribute
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder cookieDomain(String domain) {
-            this.tokenCookieBuilder.domain(domain);
-            this.idTokenCookieBuilder.domain(domain);
             return this;
         }
 
@@ -1694,223 +1162,31 @@ public final class OidcConfig {
         }
 
         /**
-         * URI of a token endpoint used to obtain a JWT based on the authentication
-         * code.
-         * If not defined, it is obtained from {@link #oidcMetadata(Resource)}, if that is not defined
-         * an attempt is made to use {@link #identityUri(URI)}/oauth2/v1/token.
+         * Force HTTPS for redirects to identity provider.
+         * Defaults to {@code false}.
          *
-         * @param uri URI to use for token endpoint
+         * @param forceHttpsRedirects flag to redirect with https
          * @return updated builder instance
          */
-        @ConfiguredOption
-        public Builder tokenEndpointUri(URI uri) {
-            this.tokenEndpointUri = uri;
+        @ConfiguredOption("false")
+        public Builder forceHttpsRedirects(boolean forceHttpsRedirects) {
+            this.forceHttpsRedirects = forceHttpsRedirects;
             return this;
         }
 
         /**
-         * Type of authentication to use when invoking the token endpoint.
-         * Current supported options:
-         * <ul>
-         *     <li>{@link io.helidon.security.providers.oidc.common.OidcConfig.ClientAuthentication#CLIENT_SECRET_BASIC}</li>
-         *     <li>{@link io.helidon.security.providers.oidc.common.OidcConfig.ClientAuthentication#CLIENT_SECRET_POST}</li>
-         *     <li>{@link io.helidon.security.providers.oidc.common.OidcConfig.ClientAuthentication#NONE}</li>
-         * </ul>
+         * Can be set to {@code true} to force the use of relative URIs in all requests,
+         * regardless of the presence or absence of proxies or no-proxy lists. By default,
+         * requests that use the Proxy will have absolute URIs. Set this flag to {@code true}
+         * if the host is unable to accept absolute URIs.
+         * Defaults to {@value #DEFAULT_RELATIVE_URIS}.
          *
-         * @param tokenEndpointAuthentication authentication type
-         * @return updated builder
-         */
-        @ConfiguredOption(key = "token-endpoint-auth", value = "CLIENT_SECRET_BASIC")
-        public Builder tokenEndpointAuthentication(ClientAuthentication tokenEndpointAuthentication) {
-
-            switch (tokenEndpointAuthentication) {
-            case CLIENT_SECRET_BASIC:
-            case CLIENT_SECRET_POST:
-            case NONE:
-                break;
-            default:
-                throw new IllegalArgumentException("Token endpoint authentication type " + tokenEndpointAuthentication
-                                                           + " is not supported.");
-            }
-            this.tokenEndpointAuthentication = tokenEndpointAuthentication;
-            return this;
-        }
-
-        /**
-         * URI of an authorization endpoint used to redirect users to for logging-in.
-         *
-         * If not defined, it is obtained from {@link #oidcMetadata(Resource)}, if that is not defined
-         * an attempt is made to use {@link #identityUri(URI)}/oauth2/v1/authorize.
-         *
-         * @param uri URI to use for token endpoint
+         * @param relativeUris relative URIs flag
          * @return updated builder instance
          */
-        @ConfiguredOption
-        public Builder authorizationEndpointUri(URI uri) {
-            this.authorizationEndpointUri = uri;
-            return this;
-        }
-
-        /**
-         * URI of a logout endpoint used to redirect users to for logging-out.
-         * If not defined, it is obtained from {@link #oidcMetadata(Resource)}, if that is not defined
-         * an attempt is made to use {@link #identityUri(URI)}/oauth2/v1/userlogout.
-         *
-         * @param logoutEndpointUri URI to use to log out
-         * @return updated builder instance
-         */
-        public Builder logoutEndpointUri(URI logoutEndpointUri) {
-            this.logoutEndpointUri = logoutEndpointUri;
-            return this;
-        }
-
-        /**
-         * Name of the cookie to use.
-         * Defaults to {@value #DEFAULT_COOKIE_NAME}.
-         *
-         * @param cookieName name of a cookie
-         * @return updated builder instance
-         */
-        @ConfiguredOption(value = DEFAULT_COOKIE_NAME)
-        public Builder cookieName(String cookieName) {
-            this.tokenCookieBuilder.cookieName(cookieName);
-            return this;
-        }
-
-        /**
-         * Name of the cookie to use for id token.
-         * Defaults to {@value #DEFAULT_COOKIE_NAME}_2.
-         *
-         * This cookie is only used when logout is enabled, as otherwise it is not needed.
-         * Content of this cookie is encrypted.
-         *
-         * @param cookieName name of a cookie
-         * @return updated builder instance
-         */
-        public Builder cookieNameIdToken(String cookieName) {
-            this.idTokenCookieBuilder.cookieName(cookieName);
-            return this;
-        }
-
-        /**
-         * Whether to use cookie to store JWT between requests.
-         * Defaults to {@value #DEFAULT_COOKIE_USE}.
-         *
-         * @param useCookie whether to use cookie to store JWT (true) or not (false))
-         * @return updated builder instance
-         */
-        @ConfiguredOption(key = "cookie-use", value = "true")
-        public Builder useCookie(Boolean useCookie) {
-            this.useCookie = useCookie;
-            return this;
-        }
-
-        /**
-         * Name of a query parameter that contains the JWT token when parameter is used.
-         *
-         * @param paramName name of the query parameter to expect
-         * @return updated builder instance
-         */
-        @ConfiguredOption(key = "query-param-name", value = DEFAULT_PARAM_NAME)
-        public Builder paramName(String paramName) {
-            this.paramName = paramName;
-            return this;
-        }
-
-        /**
-         * Whether to use a query parameter to send JWT token from application to this
-         * server.
-         *
-         * @param useParam whether to use a query parameter (true) or not (false)
-         * @return updated builder instance
-         * @see #paramName(String)
-         */
-        @ConfiguredOption(key = "query-param-use", value = "false")
-        public Builder useParam(Boolean useParam) {
-            this.useParam = useParam;
-            return this;
-        }
-
-        /**
-         * URI of the identity server, base used to retrieve OIDC metadata.
-         *
-         * @param uri full URI of an identity server (such as "http://tenantid.identity.oraclecloud.com")
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder identityUri(URI uri) {
-            this.identityUri = uri;
-            return this;
-        }
-
-        /**
-         * Proxy protocol to use when proxy is used.
-         * Defaults to {@value #DEFAULT_PROXY_PROTOCOL}.
-         *
-         * @param protocol protocol to use (such as https)
-         * @return updated builder instance
-         */
-        @ConfiguredOption(value = DEFAULT_PROXY_PROTOCOL)
-        public Builder proxyProtocol(String protocol) {
-            this.proxyProtocol = protocol;
-            return this;
-        }
-
-        /**
-         * Proxy host to use. When defined, triggers usage of proxy for HTTP requests.
-         * Setting to empty String has the same meaning as setting to null - disables proxy.
-         *
-         * @param proxyHost host of the proxy
-         * @return updated builder instance
-         * @see #proxyProtocol(String)
-         * @see #proxyPort(int)
-         */
-        @ConfiguredOption
-        public Builder proxyHost(String proxyHost) {
-            if ((proxyHost == null) || proxyHost.isEmpty()) {
-                this.proxyHost = null;
-            } else {
-                this.proxyHost = proxyHost;
-            }
-            return this;
-        }
-
-        /**
-         * Proxy port.
-         * Defaults to {@value #DEFAULT_PROXY_PORT}
-         *
-         * @param proxyPort port of the proxy server to use
-         * @return updated builder instance
-         */
-        @ConfiguredOption("80")
-        public Builder proxyPort(int proxyPort) {
-            this.proxyPort = proxyPort;
-            return this;
-        }
-
-        /**
-         * Client ID as generated by OIDC server.
-         *
-         * @param clientId the client id of this application.
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder clientId(String clientId) {
-            this.clientId = clientId;
-            return this;
-        }
-
-        /**
-         * Client secret as generated by OIDC server.
-         * Used to authenticate this application with the server when requesting
-         * JWT based on a code.
-         *
-         * @param clientSecret secret to use
-         * @return updated builder instance
-         */
-        @ConfiguredOption
-        public Builder clientSecret(String clientSecret) {
-            this.clientSecret = clientSecret;
+        @ConfiguredOption("false")
+        public Builder relativeUris(boolean relativeUris) {
+            this.relativeUris = relativeUris;
             return this;
         }
 
@@ -1968,6 +1244,7 @@ public final class OidcConfig {
          * Configure the parameter used to store the number of attempts in redirect.
          * <p>
          * Defaults to {@value #DEFAULT_ATTEMPT_PARAM}
+         *
          * @param paramName name of the parameter used in the state parameter
          * @return updated builder instance
          */
@@ -1982,6 +1259,7 @@ public final class OidcConfig {
          * attempt.
          * <p>
          * Defaults to {@value #DEFAULT_MAX_REDIRECTS}
+         *
          * @param maxRedirects maximal number of redirects from Helidon to OIDC provider
          * @return updated builder instance
          */
@@ -1992,33 +1270,481 @@ public final class OidcConfig {
         }
 
         /**
-         * Configure one of the supported types of identity servers.
+         * Proxy protocol to use when proxy is used.
+         * Defaults to {@value DEFAULT_PROXY_PROTOCOL}.
          *
-         * If the type does not have an explicit mapping, a warning is logged and the default implementation is used.
-         *
-         * @param type Type of identity server. Currently supported is {@code idcs} or not configured (for default).
+         * @param protocol protocol to use (such as https)
          * @return updated builder instance
          */
-        @ConfiguredOption(value = DEFAULT_SERVER_TYPE)
-        public Builder serverType(String type) {
-            this.serverType = type;
+        @ConfiguredOption(value = DEFAULT_PROXY_PROTOCOL)
+        public Builder proxyProtocol(String protocol) {
+            this.proxyProtocol = protocol;
             return this;
         }
 
         /**
-         * Timeout of calls using web client.
+         * Proxy host to use. When defined, triggers usage of proxy for HTTP requests.
+         * Setting to empty String has the same meaning as setting to null - disables proxy.
          *
-         * @param duration timeout
-         * @return updated builder
+         * @param proxyHost host of the proxy
+         * @return updated builder instance
+         * @see #proxyProtocol(String)
+         * @see #proxyPort(int)
          */
-        @ConfiguredOption(key = "client-timeout-millis", value = "30000")
-        public Builder clientTimeout(Duration duration) {
-            this.clientTimeout = duration;
+        @ConfiguredOption
+        public Builder proxyHost(String proxyHost) {
+            if ((proxyHost == null) || proxyHost.isEmpty()) {
+                this.proxyHost = null;
+            } else {
+                this.proxyHost = proxyHost;
+            }
             return this;
         }
 
-        private void clientTimeoutMillis(long millis) {
-            this.clientTimeout(Duration.ofMillis(millis));
+        /**
+         * Proxy port.
+         * Defaults to {@value DEFAULT_PROXY_PORT}
+         *
+         * @param proxyPort port of the proxy server to use
+         * @return updated builder instance
+         */
+        @ConfiguredOption("80")
+        public Builder proxyPort(int proxyPort) {
+            this.proxyPort = proxyPort;
+            return this;
         }
+
+        /**
+         * A {@link TokenHandler} to
+         * process header containing a JWT.
+         * Default is "Authorization" header with a prefix "bearer ".
+         *
+         * @param tokenHandler token handler to use
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "header-token")
+        public Builder headerTokenHandler(TokenHandler tokenHandler) {
+            this.headerHandler = tokenHandler;
+            return this;
+        }
+
+        /**
+         * Whether to expect JWT in a header field.
+         *
+         * @param useHeader set to true to use a header extracted with {@link #headerTokenHandler(TokenHandler)}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "header-use", value = "true")
+        public Builder useHeader(Boolean useHeader) {
+            this.useHeader = useHeader;
+            return this;
+        }
+
+        /**
+         * Name of a query parameter that contains the JWT access token when parameter is used.
+         *
+         * @param paramName name of the query parameter to expect
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "query-param-name", value = DEFAULT_PARAM_NAME)
+        public Builder paramName(String paramName) {
+            this.paramName = paramName;
+            return this;
+        }
+
+        /**
+         * Name of a query parameter that contains the JWT id token when parameter is used.
+         *
+         * @param idTokenParamName name of the query parameter to expect
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "query-id-token-param-name", value = DEFAULT_ID_TOKEN_PARAM_NAME)
+        public Builder idTokenParamName(String idTokenParamName) {
+            this.idTokenParamName = idTokenParamName;
+            return this;
+        }
+
+        /**
+         * Name of a query parameter that contains the tenant name when the parameter is used.
+         * Defaults to {@link #DEFAULT_TENANT_PARAM_NAME}.
+         *
+         * @param paramName name of the query parameter to expect
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "query-param-tenant-name", value = DEFAULT_TENANT_PARAM_NAME)
+        public Builder paramTenantName(String paramName) {
+            this.tenantParamName = paramName;
+            return this;
+        }
+
+        /**
+         * Whether to use a query parameter to send JWT token from application to this
+         * server.
+         *
+         * @param useParam whether to use a query parameter (true) or not (false)
+         * @return updated builder instance
+         * @see #paramName(String)
+         */
+        @ConfiguredOption(key = "query-param-use", value = "false")
+        public Builder useParam(Boolean useParam) {
+            this.useParam = useParam;
+            return this;
+        }
+
+        /**
+         * Name of the encryption configuration available through {@link Security#encrypt(String, byte[])} and
+         * {@link Security#decrypt(String, String)}.
+         * If configured and encryption is enabled for any cookie,
+         * Security MUST be configured in global or current {@code io.helidon.common.context.Context} (this
+         * is done automatically in Helidon MP).
+         *
+         * @param cookieEncryptionName name of the encryption configuration in security used to encrypt/decrypt cookies
+         * @return updated builder
+         */
+        @ConfiguredOption
+        public Builder cookieEncryptionName(String cookieEncryptionName) {
+            this.tokenCookieBuilder.encryptionName(cookieEncryptionName);
+            this.idTokenCookieBuilder.encryptionName(cookieEncryptionName);
+            this.tenantCookieBuilder.encryptionName(cookieEncryptionName);
+            this.refreshTokenCookieBuilder.encryptionName(cookieEncryptionName);
+            this.stateCookieBuilder.encryptionName(cookieEncryptionName);
+            return this;
+        }
+
+        /**
+         * Master password for encryption/decryption of cookies. This must be configured to the same value on each microservice
+         * using the cookie.
+         *
+         * @param cookieEncryptionPassword encryption password
+         * @return updated builder
+         */
+        @ConfiguredOption
+        public Builder cookieEncryptionPassword(char[] cookieEncryptionPassword) {
+            this.tokenCookieBuilder.encryptionPassword(cookieEncryptionPassword);
+            this.idTokenCookieBuilder.encryptionPassword(cookieEncryptionPassword);
+            this.tenantCookieBuilder.encryptionPassword(cookieEncryptionPassword);
+            this.refreshTokenCookieBuilder.encryptionPassword(cookieEncryptionPassword);
+            this.stateCookieBuilder.encryptionPassword(cookieEncryptionPassword);
+            return this;
+        }
+
+        /**
+         * Whether to encrypt token cookie created by this microservice.
+         * Defaults to {@code false}.
+         *
+         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as obtained from
+         *                                OIDC server {@code false}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(value = "false")
+        public Builder cookieEncryptionEnabled(boolean cookieEncryptionEnabled) {
+            this.tokenCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
+            return this;
+        }
+
+        /**
+         * Whether to encrypt id token cookie created by this microservice.
+         * Defaults to {@code true}.
+         *
+         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as obtained from
+         *                                OIDC server {@code false}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "cookie-encryption-id-enabled", value = "true")
+        public Builder cookieEncryptionEnabledIdToken(boolean cookieEncryptionEnabled) {
+            this.idTokenCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
+            return this;
+        }
+
+        /**
+         * Whether to encrypt tenant name cookie created by this microservice.
+         * Defaults to {@code true}.
+         *
+         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as plain text name {@code false}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "cookie-encryption-tenant-enabled", value = "true")
+        public Builder cookieEncryptionEnabledTenantName(boolean cookieEncryptionEnabled) {
+            this.tenantCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
+            return this;
+        }
+
+        /**
+         * Whether to encrypt refresh token cookie created by this microservice.
+         * Defaults to {@code true}.
+         *
+         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as obtained from
+         *                                OIDC server {@code false}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "cookie-encryption-refresh-enabled", value = "true")
+        public Builder cookieEncryptionEnabledRefreshToken(boolean cookieEncryptionEnabled) {
+            this.refreshTokenCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
+            return this;
+        }
+
+        /**
+         * Whether to encrypt state cookie created by this microservice.
+         * Defaults to {@code true}.
+         *
+         * @param cookieEncryptionEnabled whether cookie should be encrypted {@code true}, or as sent to
+         *                                OIDC server {@code false}
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "cookie-encryption-state-enabled", value = "true")
+        public Builder cookieEncryptionEnabledState(boolean cookieEncryptionEnabled) {
+            this.stateCookieBuilder.encryptionEnabled(cookieEncryptionEnabled);
+            return this;
+        }
+
+        /**
+         * When using cookie, used to set the SameSite cookie value. Can be
+         * "Strict" or "Lax"
+         *
+         * @param sameSite SameSite cookie attribute value
+         * @return updated builder instance
+         */
+        public Builder cookieSameSite(String sameSite) {
+            return cookieSameSite(SetCookie.SameSite.valueOf(sameSite.toUpperCase(Locale.ROOT)));
+        }
+
+        /**
+         * When using cookie, used to set the SameSite cookie value. Can be
+         * "Strict" or "Lax".
+         *
+         * @param sameSite SameSite cookie attribute
+         * @return updated builder instance
+         */
+        @ConfiguredOption(value = "LAX")
+        public Builder cookieSameSite(SetCookie.SameSite sameSite) {
+            this.tokenCookieBuilder.sameSite(sameSite);
+            this.idTokenCookieBuilder.sameSite(sameSite);
+            this.tenantCookieBuilder.sameSite(sameSite);
+            this.refreshTokenCookieBuilder.sameSite(sameSite);
+            this.stateCookieBuilder.sameSite(sameSite);
+            this.cookieSameSiteDefault = false;
+            return this;
+        }
+
+        /**
+         * When using cookie, if set to true, the Secure attribute will be configured.
+         * Defaults to false.
+         *
+         * @param secure whether the cookie should be secure (true) or not (false)
+         * @return updated builder instance
+         */
+        @ConfiguredOption("false")
+        public Builder cookieSecure(Boolean secure) {
+            this.tokenCookieBuilder.secure(secure);
+            this.idTokenCookieBuilder.secure(secure);
+            this.tenantCookieBuilder.secure(secure);
+            this.refreshTokenCookieBuilder.secure(secure);
+            this.stateCookieBuilder.secure(secure);
+            return this;
+        }
+
+        /**
+         * When using cookie, if set to true, the HttpOnly attribute will be configured.
+         * Defaults to {@value OidcCookieHandler.Builder#DEFAULT_HTTP_ONLY}.
+         *
+         * @param httpOnly whether the cookie should be HttpOnly (true) or not (false)
+         * @return updated builder instance
+         */
+        @ConfiguredOption("true")
+        public Builder cookieHttpOnly(Boolean httpOnly) {
+            this.tokenCookieBuilder.httpOnly(httpOnly);
+            this.idTokenCookieBuilder.httpOnly(httpOnly);
+            this.tenantCookieBuilder.httpOnly(httpOnly);
+            this.refreshTokenCookieBuilder.httpOnly(httpOnly);
+            this.stateCookieBuilder.httpOnly(httpOnly);
+            return this;
+        }
+
+        /**
+         * When using cookie, used to set MaxAge attribute of the cookie, defining how long
+         * the cookie is valid.
+         * Not used by default.
+         *
+         * @param age age in seconds
+         * @return updated builder instance
+         */
+        @ConfiguredOption
+        public Builder cookieMaxAgeSeconds(long age) {
+            this.tokenCookieBuilder.maxAge(age);
+            this.idTokenCookieBuilder.maxAge(age);
+            this.tenantCookieBuilder.maxAge(age);
+            this.refreshTokenCookieBuilder.maxAge(age);
+            this.stateCookieBuilder.maxAge(age);
+            return this;
+        }
+
+        /**
+         * Path the cookie is valid for.
+         * Defaults to "/".
+         *
+         * @param path the path to use as value of cookie "Path" attribute
+         * @return updated builder instance
+         */
+        @ConfiguredOption(value = OidcCookieHandler.Builder.DEFAULT_PATH)
+        public Builder cookiePath(String path) {
+            this.tokenCookieBuilder.path(path);
+            this.idTokenCookieBuilder.path(path);
+            this.tenantCookieBuilder.path(path);
+            this.refreshTokenCookieBuilder.path(path);
+            this.stateCookieBuilder.path(path);
+            return this;
+        }
+
+        /**
+         * Domain the cookie is valid for.
+         * Not used by default.
+         *
+         * @param domain domain to use as value of cookie "Domain" attribute
+         * @return updated builder instance
+         */
+        @ConfiguredOption
+        public Builder cookieDomain(String domain) {
+            this.tokenCookieBuilder.domain(domain);
+            this.idTokenCookieBuilder.domain(domain);
+            this.tenantCookieBuilder.domain(domain);
+            this.refreshTokenCookieBuilder.domain(domain);
+            this.stateCookieBuilder.domain(domain);
+            return this;
+        }
+
+        /**
+         * Name of the cookie to use.
+         * Defaults to {@value #DEFAULT_COOKIE_NAME}.
+         *
+         * @param cookieName name of a cookie
+         * @return updated builder instance
+         */
+        @ConfiguredOption(value = DEFAULT_COOKIE_NAME)
+        public Builder cookieName(String cookieName) {
+            this.tokenCookieBuilder.cookieName(cookieName);
+            return this;
+        }
+
+        /**
+         * Name of the cookie to use for id token.
+         * Defaults to {@value #DEFAULT_COOKIE_NAME}_2.
+         *
+         * This cookie is only used when logout is enabled, as otherwise it is not needed.
+         * Content of this cookie is encrypted.
+         *
+         * @param cookieName name of a cookie
+         * @return updated builder instance
+         */
+        @ConfiguredOption(DEFAULT_ID_COOKIE_NAME)
+        public Builder cookieNameIdToken(String cookieName) {
+            this.idTokenCookieBuilder.cookieName(cookieName);
+            return this;
+        }
+
+        /**
+         * The name of the cookie to use for the tenant name.
+         * Defaults to {@value #DEFAULT_TENANT_COOKIE_NAME}.
+         *
+         * @param cookieName name of a cookie
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "cookie-name-tenant", value = DEFAULT_TENANT_COOKIE_NAME)
+        public Builder cookieTenantName(String cookieName) {
+            this.tenantCookieBuilder.cookieName(cookieName);
+            return this;
+        }
+
+        /**
+         * The name of the cookie to use for the refresh token.
+         * Defaults to {@value #DEFAULT_REFRESH_COOKIE_NAME}.
+         *
+         * @param cookieName name of a cookie
+         * @return updated builder instance
+         */
+        @ConfiguredOption(DEFAULT_REFRESH_COOKIE_NAME)
+        public Builder cookieNameRefreshToken(String cookieName) {
+            this.refreshTokenCookieBuilder.cookieName(cookieName);
+            return this;
+        }
+
+        /**
+         * The name of the cookie to use for the state storage.
+         * Defaults to {@value #DEFAULT_STATE_COOKIE_NAME}.
+         *
+         * @param cookieName name of a cookie
+         * @return updated builder instance
+         */
+        @ConfiguredOption(DEFAULT_REFRESH_COOKIE_NAME)
+        public Builder cookieNameState(String cookieName) {
+            this.stateCookieBuilder.cookieName(cookieName);
+            return this;
+        }
+
+        /**
+         * Whether to use cookie to store JWT between requests.
+         * Defaults to {@value #DEFAULT_COOKIE_USE}.
+         *
+         * @param useCookie whether to use cookie to store JWT (true) or not (false))
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "cookie-use", value = "true")
+        public Builder useCookie(Boolean useCookie) {
+            this.useCookie = useCookie;
+            return this;
+        }
+
+        /**
+         * Add specific {@link TenantConfig} instance.
+         *
+         * @param tenantConfig tenant configuration
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = "tenants", type = TenantConfig.class, description = "Configurations of the tenants")
+        public Builder addTenantConfig(TenantConfig tenantConfig) {
+            tenantConfigurations.put(tenantConfig.name(), tenantConfig);
+            return this;
+        }
+
+        /**
+         * Whether access token signature check should be enabled.
+         * Signature check is enabled by default, and it is highly recommended to not change that.
+         * Change this setting only when you really know what you are doing, otherwise it could case security issues.
+         *
+         * @param enabled whether access token signature check is enabled
+         * @return updated builder instance
+         */
+        @ConfiguredOption("true")
+        public Builder tokenSignatureValidation(boolean enabled) {
+            tokenSignatureValidation = enabled;
+            return this;
+        }
+
+        /**
+         * Whether id token signature check should be enabled.
+         * Signature check is enabled by default, and it is highly recommended to not change that.
+         * Change this setting only when you really know what you are doing, otherwise it could case security issues.
+         *
+         * @param enabled whether id token signature check is enabled
+         * @return updated builder instance
+         */
+        @ConfiguredOption("true")
+        public Builder idTokenSignatureValidation(boolean enabled) {
+            idTokenSignatureValidation = enabled;
+            return this;
+        }
+
+        /**
+         * Whether to check if current IP address matches the one access token was issued for.
+         * This check helps with cookie replay attack prevention.
+         *
+         * @param enabled whether to check if current IP address matches the one access token was issued for
+         * @return updated builder instance
+         */
+        @ConfiguredOption("true")
+        public Builder accessTokenIpCheck(boolean enabled) {
+            accessTokenIpCheck = enabled;
+            return this;
+        }
+
     }
 }

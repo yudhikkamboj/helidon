@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
@@ -34,8 +35,6 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,8 +47,8 @@ import javax.crypto.spec.PBEKeySpec;
 /**
  * Reads a PEM file and converts it into a list of DERs so that they are imported into a {@link java.security.KeyStore} easily.
  */
-final class PemReader {
-    private static final Logger LOGGER = Logger.getLogger(PemReader.class.getName());
+public final class PemReader {
+    private static final System.Logger LOGGER = System.getLogger(PemReader.class.getName());
 
     private static final Pattern CERT_PATTERN = Pattern.compile(
             "-+BEGIN\\s+.*CERTIFICATE[^-]*-+(?:\\s|\\r|\\n)+" // Header
@@ -70,94 +69,13 @@ final class PemReader {
     private PemReader() {
     }
 
-    static PublicKey readPublicKey(InputStream input) {
-        byte[] pkBytes = readPublicKeyBytes(input);
-
-        X509EncodedKeySpec keySpec = generatePublicKeySpec(pkBytes);
-
-        try {
-            return KeyFactory.getInstance("RSA").generatePublic(keySpec);
-        } catch (Exception ignore) {
-            try {
-                return KeyFactory.getInstance("DSA").generatePublic(keySpec);
-            } catch (Exception ignore2) {
-                try {
-                    return KeyFactory.getInstance("EC").generatePublic(keySpec);
-                } catch (Exception e) {
-                    throw new PkiException("Failed to get public key. It is not RSA, DSA or EC.", e);
-                }
-            }
-        }
-    }
-
-    static PrivateKey readPrivateKey(InputStream input, char[] password) {
-
-        PrivateKeyInfo pkInfo = readPrivateKeyBytes(input);
-
-        switch (pkInfo.type) {
-        case "PKCS1-RSA":
-            return rsaPrivateKey(pkcs1RsaKeySpec(pkInfo.bytes));
-        case "PKCS1-DSA":
-            throw new UnsupportedOperationException("PKCS#1 DSA private key is not supported");
-        case "PKCS1-EC":
-            throw new UnsupportedOperationException("PKCS#1 EC private key is not supported");
-        case "PKCS8":
-        default:
-            return pkcs8(generateKeySpec(pkInfo.bytes, password));
-        }
-    }
-
-    private static KeySpec pkcs1RsaKeySpec(byte[] bytes) {
-        DerUtils.checkEnabled();
-        return DerUtils.pkcs1RsaKeySpec(bytes);
-    }
-
-    private static PrivateKey pkcs8(KeySpec keySpec) {
-        try {
-            return rsaPrivateKey(keySpec);
-        } catch (Exception rsaException) {
-            try {
-                return dsaPrivateKey(keySpec);
-            } catch (Exception dsaException) {
-                try {
-                    return ecPrivateKey(keySpec);
-                } catch (Exception ecException) {
-                    PkiException e = new PkiException("Failed to get private key. It is not RSA, DSA or EC.");
-                    e.addSuppressed(rsaException);
-                    e.addSuppressed(dsaException);
-                    e.addSuppressed(ecException);
-                    throw e;
-                }
-            }
-        }
-    }
-
-    private static PrivateKey ecPrivateKey(KeySpec keySpec) {
-        try {
-            return KeyFactory.getInstance("EC").generatePrivate(keySpec);
-        } catch (Exception e) {
-            throw new PkiException("Failed to get EC private key", e);
-        }
-    }
-
-    private static PrivateKey dsaPrivateKey(KeySpec keySpec) {
-        try {
-            return KeyFactory.getInstance("DSA").generatePrivate(keySpec);
-        } catch (Exception e) {
-            throw new PkiException("Failed to get DSA private key", e);
-        }
-    }
-
-    private static PrivateKey rsaPrivateKey(KeySpec keySpec) {
-
-        try {
-            return KeyFactory.getInstance("RSA").generatePrivate(keySpec);
-        } catch (Exception e) {
-            throw new PkiException("Failed to get RSA private key", e);
-        }
-    }
-
-    static List<X509Certificate> readCertificates(InputStream certStream) {
+    /**
+     * Reads a certificate-based input stream and converts it to a list of {@link X509Certificate}s.
+     *
+     * @param certStream cert input stream
+     * @return list of certificates
+     */
+    public static List<X509Certificate> readCertificates(InputStream certStream) {
         CertificateFactory cf;
         try {
             cf = CertificateFactory.getInstance("X.509");
@@ -199,6 +117,87 @@ final class PemReader {
         return certs;
     }
 
+    static PublicKey readPublicKey(InputStream input) {
+        byte[] pkBytes = readPublicKeyBytes(input);
+
+        X509EncodedKeySpec keySpec = generatePublicKeySpec(pkBytes);
+
+        try {
+            return KeyFactory.getInstance("RSA").generatePublic(keySpec);
+        } catch (Exception ignore) {
+            try {
+                return KeyFactory.getInstance("DSA").generatePublic(keySpec);
+            } catch (Exception ignore2) {
+                try {
+                    return KeyFactory.getInstance("EC").generatePublic(keySpec);
+                } catch (Exception e) {
+                    throw new PkiException("Failed to get public key. It is not RSA, DSA or EC.", e);
+                }
+            }
+        }
+    }
+
+    static PrivateKey readPrivateKey(InputStream input, char[] password) {
+
+        PrivateKeyInfo pkInfo = readPrivateKeyBytes(input);
+
+        switch (pkInfo.type) {
+        case "PKCS1-RSA":
+            return rsaPrivateKey(Pkcs1Util.pkcs1RsaKeySpec(pkInfo.bytes));
+        case "PKCS1-DSA":
+            throw new UnsupportedOperationException("PKCS#1 DSA private key is not supported");
+        case "PKCS1-EC":
+            throw new UnsupportedOperationException("PKCS#1 EC private key is not supported");
+        case "PKCS8":
+        default:
+            return pkcs8(generateKeySpec(pkInfo.bytes, password));
+        }
+    }
+
+    private static PrivateKey pkcs8(KeySpec keySpec) {
+        try {
+            return rsaPrivateKey(keySpec);
+        } catch (Exception rsaException) {
+            try {
+                return dsaPrivateKey(keySpec);
+            } catch (Exception dsaException) {
+                try {
+                    return ecPrivateKey(keySpec);
+                } catch (Exception ecException) {
+                    PkiException e = new PkiException("Failed to get private key. It is not RSA, DSA or EC.");
+                    e.addSuppressed(rsaException);
+                    e.addSuppressed(dsaException);
+                    e.addSuppressed(ecException);
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private static PrivateKey ecPrivateKey(KeySpec keySpec) {
+        try {
+            return KeyFactory.getInstance("EC").generatePrivate(keySpec);
+        } catch (Exception e) {
+            throw new PkiException("Failed to get EC private key", e);
+        }
+    }
+
+    private static PrivateKey dsaPrivateKey(KeySpec keySpec) {
+        try {
+            return KeyFactory.getInstance("DSA").generatePrivate(keySpec);
+        } catch (Exception e) {
+            throw new PkiException("Failed to get DSA private key", e);
+        }
+    }
+
+    private static PrivateKey rsaPrivateKey(KeySpec keySpec) {
+        try {
+            return KeyFactory.getInstance("RSA").generatePrivate(keySpec);
+        } catch (Exception e) {
+            throw new PkiException("Failed to get RSA private key", e);
+        }
+    }
+
     private static KeySpec generateKeySpec(byte[] keyBytes, char[] password) {
         if (password == null) {
             return new PKCS8EncodedKeySpec(keyBytes);
@@ -223,7 +222,7 @@ final class PemReader {
         return new X509EncodedKeySpec(bytes);
     }
 
-    private static PrivateKeyInfo readPrivateKeyBytes(InputStream in) {
+    static PrivateKeyInfo readPrivateKeyBytes(InputStream in) {
         String content;
         try {
             content = readContent(in);

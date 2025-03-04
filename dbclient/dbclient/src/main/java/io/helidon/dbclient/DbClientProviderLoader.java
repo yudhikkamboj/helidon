@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 
-import io.helidon.common.serviceloader.HelidonServiceLoader;
+import io.helidon.common.HelidonServiceLoader;
 import io.helidon.dbclient.spi.DbClientProvider;
 
 /**
@@ -29,7 +29,7 @@ import io.helidon.dbclient.spi.DbClientProvider;
  */
 final class DbClientProviderLoader {
 
-    private static final Map<String, DbClientProvider> DB_SOURCES = new HashMap<>();
+    private static final Map<String, DbClientProvider> PROVIDERS;
     private static final String[] NAMES;
     private static final DbClientProvider FIRST;
 
@@ -37,34 +37,45 @@ final class DbClientProviderLoader {
         HelidonServiceLoader<DbClientProvider> serviceLoader = HelidonServiceLoader
                 .builder(ServiceLoader.load(DbClientProvider.class))
                 .build();
+        List<DbClientProvider> providers = serviceLoader.asList();
+        Map<String, DbClientProvider> providersMap = new HashMap<>(providers.size());
+        providers.forEach(dbProvider -> providersMap.put(dbProvider.name(), dbProvider));
 
-        List<DbClientProvider> sources = serviceLoader.asList();
-
-        DbClientProvider first = null;
-
-        if (!sources.isEmpty()) {
-            first = sources.get(0);
-        }
-
-        FIRST = first;
-        sources.forEach(dbProvider -> DB_SOURCES.put(dbProvider.name(), dbProvider));
-        NAMES = sources.stream()
-                .map(DbClientProvider::name)
-                .toArray(String[]::new);
+        FIRST = providers.isEmpty() ? null : providers.get(0);
+        PROVIDERS = Map.copyOf(providersMap);
+        NAMES = PROVIDERS.keySet().toArray(new String[PROVIDERS.size()]);
     }
 
     private DbClientProviderLoader() {
+        throw new UnsupportedOperationException("Instances of DbClientProviderLoader are not allowed");
     }
 
+    /**
+     * Get the first provider.
+     *
+     * @return first provider
+     */
     static DbClientProvider first() {
         return FIRST;
     }
 
+    /**
+     * Lookup a provider by name.
+     *
+     * @param name provider name
+     * @return optional provider
+     */
     static Optional<DbClientProvider> get(String name) {
-        return Optional.ofNullable(DB_SOURCES.get(name));
+        return Optional.ofNullable(PROVIDERS.get(name));
     }
 
+    /**
+     * Get the discovered provider names.
+     *
+     * @return provider names
+     */
     static String[] names() {
         return NAMES;
     }
+
 }

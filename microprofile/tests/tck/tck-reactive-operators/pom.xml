@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+    Copyright (c) 2020, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -18,20 +18,15 @@
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>io.helidon.microprofile.tests</groupId>
-        <artifactId>tck-project</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <groupId>io.helidon.microprofile.tests.tck</groupId>
+        <artifactId>helidon-microprofile-tests-tck-project</artifactId>
+        <version>4.2.0-SNAPSHOT</version>
     </parent>
     <artifactId>tck-reactive-operators</artifactId>
-    <name>Helidon Microprofile Tests TCK Reactive Streams Operators</name>
-
-    <properties>
-        <!-- 3.0.0-JAKARTA -->
-        <skipTests>true</skipTests>
-    </properties>
+    <name>Helidon Microprofile Tests TCK Reactive Operators</name>
 
     <dependencies>
         <dependency>
@@ -39,12 +34,6 @@
             <artifactId>helidon-arquillian</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>io.helidon.microprofile.bundles</groupId>
-                    <artifactId>helidon-microprofile-3.1</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.helidon.microprofile.reactive-streams</groupId>
@@ -55,6 +44,11 @@
         <dependency>
             <groupId>org.eclipse.microprofile.reactive-streams-operators</groupId>
             <artifactId>microprofile-reactive-streams-operators-tck</artifactId>
+        </dependency>
+         <dependency>
+            <groupId>org.testng</groupId>
+            <artifactId>testng</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

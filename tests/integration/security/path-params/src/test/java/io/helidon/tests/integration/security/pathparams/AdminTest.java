@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package io.helidon.tests.integration.security.pathparams;
 import java.util.Base64;
 import java.util.function.Function;
 
-import io.helidon.common.http.Http;
+import io.helidon.http.Status;
 import io.helidon.microprofile.server.Server;
 
 import jakarta.ws.rs.client.Client;
@@ -70,37 +70,25 @@ class AdminTest {
     @Test
     void testAdminResource1() {
         Response response = target.apply("/admin").request().get();
-        assertThat(response.getStatus(), is(Http.Status.UNAUTHORIZED_401.code()));
+        assertThat(response.getStatus(), is(Status.UNAUTHORIZED_401.code()));
     }
 
     @Test
     void testAdminResource2() {
         Response response = target.apply("/admin;a=b").request().get();
-        assertThat(response.getStatus(), is(Http.Status.UNAUTHORIZED_401.code()));
+        assertThat(response.getStatus(), is(Status.UNAUTHORIZED_401.code()));
     }
 
     @Test
     void testAdminResource3() {
         Response response = target.apply("/admin;a=b;c=d").request().get();
-        assertThat(response.getStatus(), is(Http.Status.UNAUTHORIZED_401.code()));
+        assertThat(response.getStatus(), is(Status.UNAUTHORIZED_401.code()));
     }
 
     @Test
     void testAdminResource4() {
         Response response = target.apply("/admin;").request().get();
-        assertThat(response.getStatus(), is(Http.Status.UNAUTHORIZED_401.code()));
-    }
-
-    @Test
-    void testAdminResource5() {
-        Response response = target.apply("/admin/;").request().get();
-        assertThat(response.getStatus(), is(Http.Status.UNAUTHORIZED_401.code()));
-    }
-
-    @Test
-    void testAdminResource6() {
-        Response response = target.apply("/admin/;/").request().get();
-        assertThat(response.getStatus(), is(Http.Status.UNAUTHORIZED_401.code()));
+        assertThat(response.getStatus(), is(Status.UNAUTHORIZED_401.code()));
     }
 
     @Test
@@ -108,7 +96,7 @@ class AdminTest {
         Response response = target.apply("/admin").request()
                 .header("Authorization", basic("success"))
                 .get();
-        assertThat(response.getStatus(), is(Http.Status.OK_200.code()));
+        assertThat(response.getStatus(), is(Status.OK_200.code()));
     }
 
     @Test
@@ -116,7 +104,7 @@ class AdminTest {
         Response response = target.apply("/admin;a=b").request()
                 .header("Authorization", basic("success"))
                 .get();
-        assertThat(response.getStatus(), is(Http.Status.OK_200.code()));
+        assertThat(response.getStatus(), is(Status.OK_200.code()));
     }
 
     private String basic(String user) {

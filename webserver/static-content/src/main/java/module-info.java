@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,28 @@
  * limitations under the License.
  */
 
-/**
- * Static content support for Helidon WebServer.
- * Supports both classpath and file system based static content.
- */
-module io.helidon.webserver.staticcontent {
-    requires java.logging;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
-    requires io.helidon.common.http;
-    requires io.helidon.common.media.type;
-    requires io.helidon.common.reactive;
-    requires io.helidon.media.common;
-    requires io.helidon.webserver;
+/**
+ * Helidon WebServer Static Content Support.
+ */
+@Feature(value = "Static Content",
+         description = "WebServer Static content support",
+         in = HelidonFlavor.SE,
+         path = {"WebServer", "Static Content"}
+)
+module io.helidon.webserver.staticcontent {
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.common.configurable;
+    requires transitive io.helidon.webserver;
+    requires transitive io.helidon.builder.api;
+    requires io.helidon;
 
     exports io.helidon.webserver.staticcontent;
+
+    provides io.helidon.webserver.spi.ServerFeatureProvider
+            with io.helidon.webserver.staticcontent.StaticContentFeatureProvider;
 }

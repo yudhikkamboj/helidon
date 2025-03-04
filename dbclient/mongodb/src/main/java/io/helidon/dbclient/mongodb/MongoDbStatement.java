@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,35 @@
  */
 package io.helidon.dbclient.mongodb;
 
-import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import io.helidon.dbclient.DbClientServiceContext;
+import io.helidon.dbclient.DbExecuteContext;
+import io.helidon.dbclient.DbIndexedStatementParameters;
+import io.helidon.dbclient.DbNamedStatementParameters;
 import io.helidon.dbclient.DbStatement;
+import io.helidon.dbclient.DbStatementBase;
+import io.helidon.dbclient.DbStatementParameters;
 import io.helidon.dbclient.DbStatementType;
-import io.helidon.dbclient.common.AbstractStatement;
-import io.helidon.dbclient.common.DbStatementContext;
-import io.helidon.dbclient.mongodb.MongoDbTransaction.TransactionManager;
 
-import com.mongodb.reactivestreams.client.MongoDatabase;
+import com.mongodb.client.MongoDatabase;
 import jakarta.json.Json;
-import jakarta.json.JsonReaderFactory;
 import org.bson.Document;
+
+import static io.helidon.dbclient.mongodb.MongoDbStatement.MongoOperation.COMMAND;
+import static io.helidon.dbclient.mongodb.MongoDbStatement.MongoOperation.DELETE;
+import static io.helidon.dbclient.mongodb.MongoDbStatement.MongoOperation.INSERT;
+import static io.helidon.dbclient.mongodb.MongoDbStatement.MongoOperation.QUERY;
+import static io.helidon.dbclient.mongodb.MongoDbStatement.MongoOperation.UPDATE;
 
 /**
  * Common MongoDB statement builder.
  *
- * @param <S> MongoDB statement type
- * @param <R> Statement execution result type
+ * @param <S> type of subclass
  */
-abstract class MongoDbStatement<S extends DbStatement<S, R>, R> extends AbstractStatement<S, R> {
+abstract class MongoDbStatement<S extends DbStatement<S>> extends DbStatementBase<S> {
 
     /**
      * Empty JSON object.
@@ -47,98 +54,65 @@ abstract class MongoDbStatement<S extends DbStatement<S, R>, R> extends Abstract
      * Operation JSON parameter name.
      */
     protected static final String JSON_OPERATION = "operation";
+
     /**
      * Collection JSON parameter name.
      */
     protected static final String JSON_COLLECTION = "collection";
+
     /**
      * Query JSON parameter name.
      */
     protected static final String JSON_QUERY = "query";
+
     /**
      * Value JSON parameter name.
      */
     protected static final String JSON_VALUE = "value";
+
     /**
      * Projection JSON parameter name: Defines projection to restrict returned fields.
      */
     protected static final String JSON_PROJECTION = "projection";
-    /**
-     * JSON reader factory.
-     */
-    protected static final JsonReaderFactory READER_FACTORY = Json.createReaderFactory(Collections.emptyMap());
 
-    /** MongoDB database. */
     private final MongoDatabase db;
-    /** MongoDB transaction manager. Set to {@code null} when not running in transaction. */
-    private TransactionManager txManager;
 
     /**
-     * Creates an instance of MongoDB statement builder.
+     * Create a new instance.
      *
-     * @param db                 mongo database handler
-     * @param statementContext   configuration of statement
+     * @param db      MongoDb instance
+     * @param context context
      */
-    MongoDbStatement(MongoDatabase db, DbStatementContext statementContext) {
-        super(statementContext);
-
+    MongoDbStatement(MongoDatabase db, DbExecuteContext context) {
+        super(context);
         this.db = db;
-        this.txManager = null;
     }
 
     /**
-     * Set target transaction for this statement.
+     * Get the mongo db instance.
      *
-     * @param tx MongoDB transaction session
-     * @return MongoDB statement builder
+     * @return MongoDatabase
      */
-    @SuppressWarnings("unchecked")
-    <B extends MongoDbStatement> B inTransaction(TransactionManager tx) {
-        this.txManager = tx;
-        this.txManager.addStatement(this);
-        return (B) this;
-    }
-
-    String build() {
-        switch (paramType()) {
-        // Statement shall not contain any parameters, no conversion is needed.
-        case UNKNOWN:
-            return statement();
-        case INDEXED:
-            return StatementParsers.indexedParser(statement(), indexedParams()).convert();
-        // Replace parameter identifiers with values from name to value map
-        case NAMED:
-            return StatementParsers.namedParser(statement(), namedParams()).convert();
-        default:
-            throw new IllegalStateException("Unknown SQL statement type: " + paramType());
-        }
-    }
-
-    /**
-     * Statement name.
-     *
-     * @return name of this statement (never null, may be generated)
-     */
-    @Override
-    public String statementName() {
-        return super.statementName();
-    }
-
     MongoDatabase db() {
         return db;
     }
 
-    boolean noTx() {
-        return txManager == null;
-    }
-
-    TransactionManager txManager() {
-        return txManager;
-    }
-
-    @Override
-    protected String dbType() {
-        return MongoDbClientProvider.DB_TYPE;
+    /**
+     * Prepare the statement string.
+     *
+     * @return prepared statement string
+     */
+    String prepareStatement(DbClientServiceContext serviceContext) {
+        String statement = serviceContext.statement();
+        DbStatementParameters stmtParams = serviceContext.statementParameters();
+        if (stmtParams instanceof DbIndexedStatementParameters indexed) {
+            List<Object> params = indexed.parameters();
+            return StatementParsers.indexedParser(statement, params).convert();
+        } else if (stmtParams instanceof DbNamedStatementParameters named) {
+            Map<String, Object> params = named.parameters();
+            return StatementParsers.namedParser(statement, params).convert();
+        }
+        return statement;
     }
 
     /**
@@ -177,80 +151,58 @@ abstract class MongoDbStatement<S extends DbStatement<S, R>, R> extends Abstract
         }
     }
 
+    /**
+     * MongoDB statement.
+     */
     static class MongoStatement {
-        private final String preparedStmt;
 
-        private static Document/*JsonObject*/ readStmt(JsonReaderFactory jrf, String preparedStmt) {
+        private static Document readStmt(String preparedStmt) {
             return Document.parse(preparedStmt);
         }
 
-        private final Document/*JsonObject*/ jsonStmt;
+        private final String preparedStmt;
         private final MongoOperation operation;
         private final String collection;
         private final Document query;
         private final Document value;
         private final Document projection;
 
-        MongoStatement(DbStatementType dbStatementType, JsonReaderFactory jrf, String preparedStmt) {
+        /**
+         * Create a new instance.
+         *
+         * @param stmtType     statement type
+         * @param preparedStmt prepared statement
+         */
+        MongoStatement(DbStatementType stmtType, String preparedStmt) {
             this.preparedStmt = preparedStmt;
-            this.jsonStmt = readStmt(jrf, preparedStmt);
+            Document jsonStmt = readStmt(preparedStmt);
 
             MongoOperation operation;
             if (jsonStmt.containsKey(JSON_OPERATION)) {
                 operation = MongoOperation.operationByName(jsonStmt.getString(JSON_OPERATION));
                 // make sure we have alignment between statement type and operation
-                switch (dbStatementType) {
-                case QUERY:
-                case GET:
-                    validateOperation(dbStatementType, operation, MongoOperation.QUERY);
-                    break;
-                case INSERT:
-                    validateOperation(dbStatementType, operation, MongoOperation.INSERT);
-                    break;
-                case UPDATE:
-                    validateOperation(dbStatementType, operation, MongoOperation.UPDATE);
-                    break;
-                case DELETE:
-                    validateOperation(dbStatementType, operation, MongoOperation.DELETE);
-                    break;
-                case DML:
-                    validateOperation(dbStatementType, operation, MongoOperation.INSERT,
-                                      MongoOperation.UPDATE, MongoOperation.DELETE);
-                    break;
-                case COMMAND:
-                    validateOperation(dbStatementType, operation, MongoOperation.COMMAND);
-                    break;
-                default:
-                    throw new IllegalStateException(
+                switch (stmtType) {
+                    case QUERY, GET -> validateOperation(stmtType, operation, QUERY);
+                    case INSERT -> validateOperation(stmtType, operation, INSERT);
+                    case UPDATE -> validateOperation(stmtType, operation, UPDATE);
+                    case DELETE -> validateOperation(stmtType, operation, DELETE);
+                    case DML -> validateOperation(stmtType, operation, INSERT, UPDATE, DELETE);
+                    case COMMAND -> validateOperation(stmtType, operation, COMMAND);
+                    default -> throw new IllegalStateException(
                             "Operation type is not defined in statement, and cannot be inferred from statement type: "
-                                    + dbStatementType);
+                                    + stmtType);
                 }
             } else {
-                switch (dbStatementType) {
-                case QUERY:
-                    operation = MongoOperation.QUERY;
-                    break;
-                case GET:
-                    operation = MongoOperation.QUERY;
-                    break;
-                case INSERT:
-                    operation = MongoOperation.INSERT;
-                    break;
-                case UPDATE:
-                    operation = MongoOperation.UPDATE;
-                    break;
-                case DELETE:
-                    operation = MongoOperation.DELETE;
-                    break;
-                case COMMAND:
-                    operation = MongoOperation.COMMAND;
-                    break;
-                case DML:
-                default:
-                    throw new IllegalStateException(
+                operation = switch (stmtType) {
+                    case QUERY, GET -> QUERY;
+                    case INSERT -> INSERT;
+                    case UPDATE -> UPDATE;
+                    case DELETE -> DELETE;
+                    case COMMAND -> COMMAND;
+                    default -> throw new IllegalStateException(
                             "Operation type is not defined in statement, and cannot be inferred from statement type: "
-                                    + dbStatementType);
-                }
+                                    + stmtType);
+                };
             }
             this.operation = operation;
             this.collection = jsonStmt.getString(JSON_COLLECTION);
@@ -271,13 +223,9 @@ abstract class MongoDbStatement<S extends DbStatement<S, R>, R> extends Abstract
             }
 
             throw new IllegalStateException("Statement type is "
-                                                    + dbStatementType
-                                                    + ", yet operation in statement is: "
-                                                    + actual);
-        }
-
-        Document/*JsonObject*/ getJsonStmt() {
-            return jsonStmt;
+                    + dbStatementType
+                    + ", yet operation in statement is: "
+                    + actual);
         }
 
         MongoOperation getOperation() {

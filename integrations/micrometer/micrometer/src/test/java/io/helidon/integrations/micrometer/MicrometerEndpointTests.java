@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,10 @@ package io.helidon.integrations.micrometer;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 
-import io.helidon.common.http.Http;
-import io.helidon.common.http.MediaType;
 import io.helidon.config.Config;
 import io.helidon.config.ConfigSources;
-import io.helidon.webclient.WebClient;
-import io.helidon.webclient.WebClientResponse;
-import io.helidon.webserver.Routing;
+import io.helidon.http.Status;
+import io.helidon.webclient.api.WebClient;
 import io.helidon.webserver.WebServer;
 
 import org.hamcrest.MatcherAssert;
@@ -39,13 +36,13 @@ public class MicrometerEndpointTests {
 
     @Test
     public void testDefaultEndpoint() throws ExecutionException, InterruptedException {
-        runTest(MicrometerSupport.DEFAULT_CONTEXT, () -> MicrometerSupport.create());
+        runTest(MicrometerFeature.DEFAULT_CONTEXT, MicrometerFeature::create);
     }
 
     @Test
     public void testExplicitEndpointWithDefaultBuiltInRegistryViaConfig() throws ExecutionException, InterruptedException {
         String context = "/aa";
-        runTest(context, () -> MicrometerSupport.builder()
+        runTest(context, () -> MicrometerFeature.builder()
                 .config(overallTestConfig.get("explicitContext").get("metrics.micrometer"))
                 .build());
     }
@@ -53,7 +50,7 @@ public class MicrometerEndpointTests {
     @Test
     public void testExplicitEndpointWithExplicitBuiltInRegistryViaBuilder() throws ExecutionException, InterruptedException {
         String context = "/bb";
-        runTest(context, () -> MicrometerSupport.builder()
+        runTest(context, () -> MicrometerFeature.builder()
                 .meterRegistryFactorySupplier(MeterRegistryFactory.builder()
                         .enrollBuiltInRegistry(MeterRegistryFactory.BuiltInRegistryType.PROMETHEUS)
                         .build())
@@ -64,12 +61,12 @@ public class MicrometerEndpointTests {
     @Test
     public void testExplicitEndpointWithExplicitBuiltInRegistryViaConfig() throws ExecutionException, InterruptedException {
         String context = "/cc";
-        runTest(context, () -> MicrometerSupport.builder()
+        runTest(context, () -> MicrometerFeature.builder()
                 .config(overallTestConfig.get("explicitContextWithExplicitBuiltIn").get("metrics.micrometer"))
                 .build());
     }
 
-    private static void runTest(String contextForRequest, Supplier<MicrometerSupport> micrometerSupportSupplier)
+    private static void runTest(String contextForRequest, Supplier<MicrometerFeature> micrometerFeatureSupplier)
             throws ExecutionException, InterruptedException {
 
         WebServer webServer = null;
@@ -78,31 +75,20 @@ public class MicrometerEndpointTests {
             webServer = WebServer.builder()
                     .host("localhost")
                     .port(-1)
-                    .routing(prepareRouting(micrometerSupportSupplier))
+                    .routing(router -> router.addFeature(() -> micrometerFeatureSupplier.get()))
                     .build()
-                    .start()
-                    .await();
-
-            WebClientResponse webClientResponse = WebClient.builder()
+                    .start();
+            Status status = WebClient.builder()
                     .baseUri(String.format("http://localhost:%d%s", webServer.port(), contextForRequest))
                     .build()
                     .get()
-                    .accept(MediaType.TEXT_PLAIN)
-                    .request()
-                    .get();
+//                    .header(Header.ACCEPT, MediaTypes.TEXT_PLAIN.toString())
+                    .request().status();
 
-            MatcherAssert.assertThat(webClientResponse.status(), is(Http.Status.OK_200));
+            MatcherAssert.assertThat(status, is(Status.OK_200));
         } finally {
-            if (webServer != null) {
-                webServer.shutdown()
-                        .await();
-            }
+            webServer.stop();
         }
-    }
-
-    private static Routing.Builder prepareRouting(Supplier<MicrometerSupport> micrometerSupportSupplier) {
-        return Routing.builder()
-                .register(micrometerSupportSupplier.get());
     }
 
 }

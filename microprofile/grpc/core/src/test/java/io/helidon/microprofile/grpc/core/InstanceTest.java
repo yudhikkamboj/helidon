@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ public class InstanceTest {
     @Test
     public void shouldCreateSingletonSupplier() {
         Value singleton = new Value();
-        Supplier<Value> supplier = Instance.singleton(singleton);
+        Supplier<Value> supplier = InstanceSupplier.singleton(singleton);
         assertThat(supplier, is(notNullValue()));
         assertThat(supplier.get(), is(sameInstance(singleton)));
     }
@@ -40,7 +40,7 @@ public class InstanceTest {
     @Test
     public void shouldSupplySameSingleton() {
         Value singleton = new Value();
-        Supplier<Value> supplier = Instance.singleton(singleton);
+        Supplier<Value> supplier = InstanceSupplier.singleton(singleton);
 
         assertThat(supplier.get(), is(sameInstance(singleton)));
         assertThat(supplier.get(), is(sameInstance(singleton)));
@@ -49,14 +49,14 @@ public class InstanceTest {
 
     @Test
     public void shouldCreateSingletonSupplierFromClass() {
-        Supplier<Value> supplier = Instance.singleton(Value.class);
+        Supplier<Value> supplier = InstanceSupplier.singleton(Value.class);
         assertThat(supplier, is(notNullValue()));
         assertThat(supplier.get(), is(instanceOf(Value.class)));
     }
 
     @Test
     public void shouldSupplySameSingletonFromClass() {
-        Supplier<Value> supplier = Instance.singleton(Value.class);
+        Supplier<Value> supplier = InstanceSupplier.singleton(Value.class);
         Object value = supplier.get();
 
         assertThat(value, is(instanceOf(Value.class)));
@@ -66,14 +66,14 @@ public class InstanceTest {
 
     @Test
     public void shouldCreateNewInstanceSupplier() {
-        Supplier<Value> supplier = Instance.create(Value.class);
+        Supplier<Value> supplier = InstanceSupplier.create(Value.class);
         assertThat(supplier, is(notNullValue()));
         assertThat(supplier.get(), is(instanceOf(Value.class)));
     }
 
     @Test
     public void shouldSupplyNewInstance() {
-        Supplier<Value> supplier = Instance.create(Value.class);
+        Supplier<Value> supplier = InstanceSupplier.create(Value.class);
         Object valueOne = supplier.get();
         Object valueTwo = supplier.get();
 

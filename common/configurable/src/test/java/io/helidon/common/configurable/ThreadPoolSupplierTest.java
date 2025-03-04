@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,13 @@
 
 package io.helidon.common.configurable;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Handler;
-import java.util.logging.LogRecord;
-import java.util.logging.Logger;
 
 import io.helidon.common.context.ContextAwareExecutorService;
 import io.helidon.config.Config;
-import io.helidon.config.ConfigSources;
 
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.BeforeAll;
@@ -41,7 +33,6 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.not;
@@ -68,12 +59,12 @@ class ThreadPoolSupplierTest {
                 .threadNamePrefix("thread-pool-unit-test-")
                 .corePoolSize(2)
                 .daemon(true)
-                .prestart(true)
+                .shouldPrestart(true)
                 .queueCapacity(10)
                 .build();
         builtInstance = ensureOurExecutor(builtSupplier.getThreadPool());
 
-        configuredSupplier = ThreadPoolSupplier.create(Config.create().get("unit.thread-pool"));
+        configuredSupplier = ThreadPoolSupplier.create(Config.create().get("unit.thread-pool"), "test-thread-pool");
         configuredInstance = ensureOurExecutor(configuredSupplier.getThreadPool());
     }
 
@@ -86,7 +77,7 @@ class ThreadPoolSupplierTest {
     @Test
     void testDefaultInstance() throws ExecutionException, InterruptedException {
         testInstance(defaultInstance,
-                     "helidon-",
+                     "helidon-test-thread-pool-",
                      10,
                      10000,
                      10,
@@ -117,48 +108,36 @@ class ThreadPoolSupplierTest {
     }
 
     @Test
-    void testExperimentalConfig() {
-        String thresholdKey = "growth-threshold";
-        String rateKey = "growth-rate";
-        String threshold = "1025";
-        String rate = "77";
-        Logger log = Logger.getLogger(ThreadPoolSupplier.class.getName());
-        List<LogRecord> logRecords = new ArrayList<>();
-        Handler handler = new Handler() {
-            @Override
-            public void publish(LogRecord record) {
-                logRecords.add(record);
-            }
+    void testNameAndThreadPrefixName() throws ExecutionException, InterruptedException {
+        // Name      | threadNamePrefix| Derived Name           | Derived threadNamePrefix |
+        // --------- |-----------------| ---------------------- | ------------------------ |
+        // none      | none            | helidon-thread-pool-N  | helidon-                 |
+        // "mypool"  | none            | mypool                 | helidon-mypool-          |
+        // none      | "mythread-"     | mythread-thread-pool-N | mythread-                |
+        // "mypool"  | "mythread-"     | mypool                 | mythread-                |
 
-            @Override
-            public void flush() {
-            }
+        ThreadPoolSupplier supplier = ThreadPoolSupplier.builder().build();
+        ThreadPool pool = (ThreadPool)ensureOurExecutor(supplier.getThreadPool());
+        testNaming(pool, "helidon-thread-pool-", "helidon-");
 
-            @Override
-            public void close() throws SecurityException {
-            }
-        };
+        supplier = ThreadPoolSupplier.builder().name("mypool").build();
+        pool = (ThreadPool)ensureOurExecutor(supplier.getThreadPool());
+        testNaming(pool, "mypool", "helidon-mypool-");
 
-        try {
-            log.addHandler(handler);
-            Config config = Config.create(ConfigSources.create(Map.of(thresholdKey, threshold, rateKey, rate)));
-            ExecutorService executor = ThreadPoolSupplier.create(config, "test-thread-pool").get();
-            Optional<ThreadPool> asThreadPool = ThreadPool.asThreadPool(executor);
-            ThreadPool pool = asThreadPool.orElseThrow(() -> new RuntimeException("not a thread pool"));
-            assertThat(pool.getGrowthThreshold(), is(Integer.parseInt(threshold)));
-            assertThat(pool.getGrowthRate(), is(Integer.parseInt(rate)));
-            assertThat(logRecords.size(), is(2));
-            if (logRecords.get(0).getMessage().contains(thresholdKey)) {
-                assertThat(logRecords.get(0).getMessage(), containsString("growth-threshold\" is EXPERIMENTAL"));
-                assertThat(logRecords.get(1).getMessage(), containsString("growth-rate\" is EXPERIMENTAL"));
-            } else {
-                assertThat(logRecords.get(1).getMessage(), containsString("growth-threshold\" is EXPERIMENTAL"));
-                assertThat(logRecords.get(0).getMessage(), containsString("growth-rate\" is EXPERIMENTAL"));
-            }
-            pool.shutdown();
-        } finally {
-            log.removeHandler(handler);
-        }
+        supplier = ThreadPoolSupplier.builder().threadNamePrefix("mythread-").build();
+        pool = (ThreadPool)ensureOurExecutor(supplier.getThreadPool());
+        testNaming(pool, "mythread-thread-pool-", "mythread-");
+
+        supplier = ThreadPoolSupplier.builder().name("mypool").threadNamePrefix("mythread-").build();
+        pool = (ThreadPool)ensureOurExecutor(supplier.getThreadPool());
+        testNaming(pool, "mypool", "mythread-");
+    }
+
+    private void testNaming(ThreadPool pool, String name, String threadNamePrefix) throws ExecutionException, InterruptedException {
+        AtomicReference<String> threadName = new AtomicReference<>();
+        pool.submit(() -> threadName.set(Thread.currentThread().getName())).get();
+        assertThat(pool.getName(), startsWith(name));
+        assertThat(threadName.get(), startsWith(threadNamePrefix));
     }
 
     private void testInstance(ThreadPoolExecutor theInstance,
@@ -170,11 +149,11 @@ class ThreadPoolSupplierTest {
         // test that we did indeed create an executor service
         assertThat(theInstance, notNullValue());
         // test that pool size is configured correctly
-        assertThat(theInstance.getCorePoolSize(), is(corePoolSize));
+        assertThat("core pool size", theInstance.getCorePoolSize(), is(corePoolSize));
         // test that queue-capacity is configured correctly
-        assertThat(theInstance.getQueue().remainingCapacity(), is(queueCapacity));
+        assertThat("queue remaining capacity", theInstance.getQueue().remainingCapacity(), is(queueCapacity));
         // test that prestart is configured correctly
-        assertThat(theInstance.getPoolSize(), is(poolSize));
+        assertThat("pool size", theInstance.getPoolSize(), is(poolSize));
 
         AtomicReference<String> threadName = new AtomicReference<>();
         theInstance

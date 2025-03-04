@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,11 @@
  * Provides support for Microstream-HealthChecks features integration.
  */
 module io.helidon.integrations.microstream.health {
-    exports io.helidon.integrations.microstream.health;
 
-    requires transitive io.helidon.health;
     requires transitive io.helidon.common;
+    requires transitive io.helidon.health;
     requires transitive microstream.storage.embedded;
+
+    exports io.helidon.integrations.microstream.health;
+	
 }

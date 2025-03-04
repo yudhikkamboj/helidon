@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 
+import io.helidon.common.testing.junit5.RestoreSystemPropertiesExt;
 import io.helidon.config.spi.ConfigNode;
 import io.helidon.config.spi.ConfigSource;
-import io.helidon.config.test.infra.RestoreSystemPropertiesExt;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,6 +67,7 @@ public class BuilderImplTest {
                                           eq(true), //cachingEnabled
                                           notNull(), //changesExecutor
                                           eq(true), //keyResolving
+                                          eq(false), // fail when key resolving cannot find ref
                                           isNull() //aliasGenerator
         );
     }
@@ -91,6 +92,7 @@ public class BuilderImplTest {
                                           eq(true), //cachingEnabled
                                           eq(myExecutor), //changesExecutor
                                           eq(true), //keyResolving
+                                          eq(false), // fail when key resolving cannot find ref
                                           isNull() //aliasGenerator
         );
     }
@@ -116,6 +118,7 @@ public class BuilderImplTest {
                                           eq(true), //cachingEnabled
                                           eq(myExecutor), //changesExecutor
                                           eq(false), //keyResolving
+                                          eq(false), // fail when key resolving cannot find ref
                                           isNull() //aliasGenerator
         );
     }

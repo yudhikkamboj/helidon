@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,17 @@
 
 package io.helidon.config.encryption;
 
+import java.lang.System.Logger.Level;
 import java.security.PrivateKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.common.pki.KeyConfig;
+import io.helidon.common.pki.Keys;
 import io.helidon.config.Config;
+import io.helidon.config.ConfigItem;
 import io.helidon.config.MissingValueException;
 import io.helidon.config.spi.ConfigFilter;
 
@@ -58,11 +58,9 @@ import io.helidon.config.spi.ConfigFilter;
  * @see ConfigProperties#REQUIRE_ENCRYPTION_ENV_VARIABLE
  */
 public final class EncryptionFilter implements ConfigFilter {
-    private static final String PREFIX_LEGACY_AES = "${AES=";
-    private static final String PREFIX_LEGACY_RSA = "${RSA=";
     static final String PREFIX_GCM = "${GCM=";
     static final String PREFIX_RSA = "${RSA-P=";
-    private static final Logger LOGGER = Logger.getLogger(EncryptionFilter.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(EncryptionFilter.class.getName());
     private static final String PREFIX_ALIAS = "${ALIAS=";
     private static final String PREFIX_CLEAR = "${CLEAR=";
 
@@ -135,6 +133,19 @@ public final class EncryptionFilter implements ConfigFilter {
         return maybeDecode(key, stringValue);
     }
 
+    @Override
+    public ConfigItem apply(Config.Key key, ConfigItem itemPolicy) {
+        String item = apply(key, itemPolicy.item());
+        if (item.equals(itemPolicy.item())) {
+            //This was not config item handled by this filter.
+            return itemPolicy;
+        }
+        return ConfigItem.builder()
+                .cacheItem(false)
+                .item(item)
+                .build();
+    }
+
     private String maybeDecode(Config.Key key, String value) {
         Set<String> processedValues = new HashSet<>();
 
@@ -180,21 +191,12 @@ public final class EncryptionFilter implements ConfigFilter {
 
     private String decryptRsa(PrivateKey privateKey, String value) {
         // service_password=${RSA=mYRkg+4Q4hua1kvpCCI2hg==}
-        if (value.startsWith(PREFIX_LEGACY_RSA)) {
-            LOGGER.log(Level.WARNING, () -> "You are using legacy RSA encryption. Please re-encrypt the value with RSA-P.");
-            String b64Value = removePlaceholder(PREFIX_LEGACY_RSA, value);
-            try {
-                return EncryptionUtil.decryptRsaLegacy(privateKey, b64Value);
-            } catch (ConfigEncryptionException e) {
-                LOGGER.log(Level.FINEST, e, () -> "Failed to decrypt " + value);
-                return value;
-            }
-        } else if (value.startsWith(PREFIX_RSA)) {
+        if (value.startsWith(PREFIX_RSA)) {
             String b64Value = removePlaceholder(PREFIX_RSA, value);
             try {
                 return EncryptionUtil.decryptRsa(privateKey, b64Value);
             } catch (ConfigEncryptionException e) {
-                LOGGER.log(Level.FINEST, e, () -> "Failed to decrypt " + value);
+                LOGGER.log(Level.TRACE, () -> "Failed to decrypt " + value, e);
                 return value;
             }
         }
@@ -205,21 +207,12 @@ public final class EncryptionFilter implements ConfigFilter {
     private String decryptAes(char[] masterPassword, String value) {
         // google_client_secret=${AES=mYRkg+4Q4hua1kvpCCI2hg==}
 
-        if (value.startsWith(PREFIX_LEGACY_AES)) {
-            LOGGER.log(Level.WARNING, () -> "You are using legacy AES encryption. Please re-encrypt the value with GCM.");
-            String b64Value = value.substring(PREFIX_LEGACY_AES.length(), value.length() - 1);
-            try {
-                return EncryptionUtil.decryptAesLegacy(masterPassword, b64Value);
-            } catch (ConfigEncryptionException e) {
-                LOGGER.log(Level.FINEST, e, () -> "Failed to decrypt " + value);
-                return value;
-            }
-        } else if (value.startsWith(PREFIX_GCM)) {
+        if (value.startsWith(PREFIX_GCM)) {
             String b64Value = value.substring(PREFIX_GCM.length(), value.length() - 1);
             try {
                 return EncryptionUtil.decryptAes(masterPassword, b64Value);
             } catch (ConfigEncryptionException e) {
-                LOGGER.log(Level.FINEST, e, () -> "Failed to decrypt " + value);
+                LOGGER.log(Level.TRACE, () -> "Failed to decrypt " + value, e);
                 return value;
             }
         }
@@ -233,7 +226,7 @@ public final class EncryptionFilter implements ConfigFilter {
     public static class Builder {
         private boolean fromConfig = false;
         private char[] masterPassword;
-        private KeyConfig privateKeyConfig;
+        private Keys privateKeyConfig;
         private boolean requireEncryption = true;
 
         private Builder fromConfig() {
@@ -258,7 +251,7 @@ public final class EncryptionFilter implements ConfigFilter {
          * @param privateKey private key to use
          * @return updated builder instance
          */
-        public Builder privateKey(KeyConfig privateKey) {
+        public Builder privateKey(Keys privateKey) {
             this.privateKeyConfig = privateKey;
             return this;
         }

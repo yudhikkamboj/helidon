@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package io.helidon.microprofile.messaging;
 
+import java.util.concurrent.Flow;
+
 import org.eclipse.microprofile.reactive.messaging.Message;
+import org.reactivestreams.FlowAdapters;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -27,6 +30,10 @@ class WrappingPublisher implements Publisher<Object> {
 
     WrappingPublisher(Publisher<?> source) {
         this.source = source;
+    }
+
+    WrappingPublisher(Flow.Publisher<?> source) {
+        this.source = FlowAdapters.toPublisher(source);
     }
 
     @Override

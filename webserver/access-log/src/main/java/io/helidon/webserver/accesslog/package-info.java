@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /**
- * Access log support for Helidon WebServer.
+ * Helidon WebServer Access Log Support.
  *
- * @see io.helidon.webserver.accesslog.AccessLogSupport
+ * @see io.helidon.webserver.accesslog.AccessLogFeature
  */
 package io.helidon.webserver.accesslog;

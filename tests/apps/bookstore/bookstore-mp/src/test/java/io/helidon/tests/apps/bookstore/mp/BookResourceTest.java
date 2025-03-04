@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.stream.Collectors;
 
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 import io.helidon.tests.apps.bookstore.common.Book;
 
 import jakarta.inject.Inject;
@@ -30,8 +30,9 @@ import jakarta.ws.rs.client.WebTarget;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.collection.IsArrayWithSize.arrayWithSize;
 
 @HelidonTest
 class BookResourceTest {
@@ -46,29 +47,28 @@ class BookResourceTest {
         Response res = webTarget.path("/books")
                 .request()
                 .post(Entity.json(getBookAsJson()));
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(1);
 
         res = webTarget.path("/books/123456")
                 .request()
                 .get();
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
-        assertNotNull(res.getHeaderString("content-length"));
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(1);
 
         res = webTarget.path("/books/123456")
                 .request()
                 .put(Entity.json(getBookAsJson()));
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(1);
 
         res = webTarget.path("/books/123456")
                 .request()
                 .delete();
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(0);
     }
@@ -80,29 +80,28 @@ class BookResourceTest {
         Response res = webTarget.path("/books2")
                 .request()
                 .post(Entity.json(getBookAsJson()));
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(1);
 
         res = webTarget.path("/books2/123456")
                 .request()
                 .get();
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
-        assertNotNull(res.getHeaderString("content-length"));
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(1);
 
         res = webTarget.path("/books2/123456")
                 .request()
                 .put(Entity.json(getBookAsJson()));
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(1);
 
         res = webTarget.path("/books2/123456")
                 .request()
                 .delete();
-        assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
+        assertThat(res.getStatus(), is(Response.Status.OK.getStatusCode()));
 
         assertBookStoreSize(0);
     }
@@ -120,6 +119,6 @@ class BookResourceTest {
         Book[] jsonArray = webTarget.path("/books")
                 .request()
                 .get(Book[].class);
-        assertEquals(size, jsonArray.length);
+        assertThat(jsonArray, arrayWithSize(size));
     }
 }

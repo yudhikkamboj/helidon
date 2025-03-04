@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,70 +15,73 @@
  */
 package io.helidon.dbclient.jdbc;
 
-import java.util.List;
-import java.util.Map;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
-import io.helidon.common.reactive.Single;
+import io.helidon.dbclient.DbClientServiceContext;
 import io.helidon.dbclient.DbRow;
+import io.helidon.dbclient.DbStatementException;
 import io.helidon.dbclient.DbStatementGet;
-import io.helidon.dbclient.common.DbStatementContext;
+import io.helidon.dbclient.DbStatementType;
 
 /**
- * A JDBC get implementation.
- * Delegates to {@link io.helidon.dbclient.jdbc.JdbcStatementQuery} and processes the result using a subscriber
- * to read the first value.
+ * JDBC implementation of {@link DbStatementGet}.
  */
-class JdbcStatementGet implements DbStatementGet {
+class JdbcStatementGet extends JdbcStatement<DbStatementGet> implements DbStatementGet {
 
-    private final JdbcStatementQuery query;
-
-    JdbcStatementGet(JdbcExecuteContext executeContext,
-                     DbStatementContext statementContext) {
-
-        this.query = new JdbcStatementQuery(executeContext,
-                                            statementContext);
+    /**
+     * Create a new instance.
+     *
+     * @param connectionPool connection pool
+     * @param context        execution context
+     */
+    JdbcStatementGet(JdbcConnectionPool connectionPool, JdbcExecuteContext context) {
+        super(connectionPool, context);
     }
 
     @Override
-    public JdbcStatementGet params(List<?> parameters) {
-        query.params(parameters);
-        return this;
+    public DbStatementType statementType() {
+        return DbStatementType.GET;
     }
 
     @Override
-    public JdbcStatementGet params(Map<String, ?> parameters) {
-        query.params(parameters);
-        return this;
+    public Optional<DbRow> execute() {
+        return doExecute((future, context) -> {
+            try {
+                return doExecute(this, future, context);
+            } finally {
+                closeConnection();
+            }
+        });
     }
 
-    @Override
-    public JdbcStatementGet namedParam(Object parameters) {
-        query.namedParam(parameters);
-        return this;
-    }
+    /**
+     * Execute the given statement.
+     *
+     * @param dbStmt  db statement
+     * @param future  query future
+     * @param context service context
+     * @return query result
+     */
+    static Optional<DbRow> doExecute(JdbcStatement<? extends DbStatementGet> dbStmt,
+                                     CompletableFuture<Long> future,
+                                     DbClientServiceContext context) {
 
-    @Override
-    public JdbcStatementGet indexedParam(Object parameters) {
-        query.indexedParam(parameters);
-        return this;
-    }
-
-    @Override
-    public JdbcStatementGet addParam(Object parameter) {
-        query.addParam(parameter);
-        return this;
-    }
-
-    @Override
-    public JdbcStatementGet addParam(String name, Object parameter) {
-        query.addParam(name, parameter);
-        return this;
-    }
-
-    @Override
-    public Single<Optional<DbRow>> execute() {
-        return Single.create(query.execute())
-                .toOptionalSingle();
+        try (PreparedStatement statement = dbStmt.prepareStatement(context);
+             ResultSet rs = statement.executeQuery()) {
+            if (rs.next()) {
+                Optional<DbRow> result = Optional.of(JdbcRow.create(rs, dbStmt.context()));
+                future.complete(1L);
+                return result;
+            } else {
+                future.complete(0L);
+                return Optional.empty();
+            }
+        } catch (SQLException ex) {
+            throw new DbStatementException("Failed to execute Statement", dbStmt.context().statement(), ex);
+        }
     }
 }

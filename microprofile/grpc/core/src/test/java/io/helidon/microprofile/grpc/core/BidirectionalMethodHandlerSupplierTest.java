@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.microprofile.grpc.core;
 
+import io.helidon.grpc.api.Grpc;
 import io.helidon.grpc.core.MethodHandler;
 
 import io.grpc.MethodDescriptor;
@@ -197,27 +198,27 @@ public class BidirectionalMethodHandlerSupplierTest {
      * The test service with bi-directional streaming methods.
      */
     public interface Service {
-        @Bidirectional
+        @Grpc.Bidirectional
         StreamObserver<Long> bidi(StreamObserver<String> observer);
 
-        @Bidirectional
-        @RequestType(Long.class)
-        @ResponseType(String.class)
+        @Grpc.Bidirectional
+        @Grpc.RequestType(Long.class)
+        @Grpc.ResponseType(String.class)
         StreamObserver bidiReqResp(StreamObserver observer);
 
-        @Bidirectional
+        @Grpc.Bidirectional
         StreamObserver<Long> badArg(String bad);
 
-        @Bidirectional
+        @Grpc.Bidirectional
         StreamObserver<Long> tooManyArgs(StreamObserver<String> observer, String bad);
 
-        @Unary
+        @Grpc.Unary
         void unary(String request, StreamObserver<String> observer);
 
-        @ServerStreaming
+        @Grpc.ServerStreaming
         void serverStreaming(String request, StreamObserver<String> observer);
 
-        @ClientStreaming
+        @Grpc.ClientStreaming
         StreamObserver<String> clientStreaming(StreamObserver<String> request);
     }
 }

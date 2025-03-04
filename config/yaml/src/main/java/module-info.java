@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,28 @@
  * limitations under the License.
  */
 
-import io.helidon.config.yaml.YamlConfigParser;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
 /**
  * YAML Parser implementation.
  */
+@Feature(value = "YAML",
+        description = "YAML media type support for config",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"Config", "YAML"}
+)
 module io.helidon.config.yaml {
 
-    requires java.logging;
-
+    requires io.helidon.common;
     requires org.yaml.snakeyaml;
 
+    requires static io.helidon.common.features.api;
+
     requires transitive io.helidon.config;
-    requires io.helidon.common;
 
     exports io.helidon.config.yaml;
 
-    provides io.helidon.config.spi.ConfigParser with YamlConfigParser;
+    provides io.helidon.config.spi.ConfigParser with io.helidon.config.yaml.YamlConfigParser;
+	
 }

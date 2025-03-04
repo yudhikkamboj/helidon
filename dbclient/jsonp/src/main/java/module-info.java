@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,27 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
- * Helidon DB JSON-P Mapper.
+ * Helidon Database Client JSON-P Mapper.
  */
+@Feature(value = "JSON-P",
+        description = "JSON Processing mapping DbRow",
+        in = HelidonFlavor.SE,
+        path = {"DbClient", "JSON-P"}
+)
 module io.helidon.dbclient.jsonp {
-    requires java.logging;
+
     requires io.helidon.dbclient;
     requires jakarta.json;
+
+    requires static io.helidon.common.features.api;
 
     exports io.helidon.dbclient.jsonp;
 
     provides io.helidon.dbclient.spi.DbMapperProvider with io.helidon.dbclient.jsonp.JsonProcessingMapperProvider;
+	
 }
 

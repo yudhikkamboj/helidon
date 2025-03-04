@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,23 @@
 
 package io.helidon.microprofile.grpc.server.spi;
 
-import java.util.concurrent.CompletionStage;
-
 import io.helidon.config.Config;
-import io.helidon.grpc.server.GrpcRouting;
-import io.helidon.grpc.server.GrpcServer;
-import io.helidon.grpc.server.GrpcServerConfiguration;
+import io.helidon.webserver.grpc.GrpcRouting;
 
 import jakarta.enterprise.inject.spi.BeanManager;
 
 /**
- * A context to allow a microprofile gRPC server extensions to configure additional
- * services or components for the gRPC server or use the CDI bean manager.
+ * A context to allow Microprofile server extensions to configure additional
+ * services or components or use the CDI bean manager.
  */
 public interface GrpcMpContext {
 
     /**
      * Obtain the Helidon configuration.
      *
-     * @return  the Helidon configuration
+     * @return the Helidon configuration
      */
     Config config();
-
-    /**
-     * Obtain the {@link GrpcServerConfiguration}.
-     *
-     * @return the {@link GrpcServerConfiguration}
-     */
-    GrpcServerConfiguration.Builder grpcServerConfiguration();
 
     /**
      * Obtain the {@link GrpcRouting.Builder} to allow modifications
@@ -54,23 +43,9 @@ public interface GrpcMpContext {
     GrpcRouting.Builder routing();
 
     /**
-     * Obtain the {@link jakarta.enterprise.inject.spi.BeanManager}.
+     * Obtain the {@link BeanManager}.
      *
-     * @return the {@link jakarta.enterprise.inject.spi.BeanManager}
+     * @return the {@link BeanManager}
      */
     BeanManager beanManager();
-
-    /**
-     * Return a completion stage is completed when the gRPC server is started.
-     *
-     * @return a completion stage is completed when the gRPC server is started
-     */
-    CompletionStage<GrpcServer> whenStarted();
-
-    /**
-     * Return a completion stage is completed when the gRPC server is shut down.
-     *
-     * @return a completion stage is completed when the gRPC server is shut down
-     */
-    CompletionStage<GrpcServer> whenShutdown();
 }

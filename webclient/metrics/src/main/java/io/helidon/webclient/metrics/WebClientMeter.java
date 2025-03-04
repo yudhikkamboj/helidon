@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,10 @@
  */
 package io.helidon.webclient.metrics;
 
-import io.helidon.common.http.Http;
-import io.helidon.common.reactive.Single;
-import io.helidon.webclient.WebClientServiceRequest;
-
-import org.eclipse.microprofile.metrics.Metadata;
-import org.eclipse.microprofile.metrics.Meter;
-import org.eclipse.microprofile.metrics.MetricType;
+import io.helidon.http.Method;
+import io.helidon.metrics.api.Counter;
+import io.helidon.webclient.api.WebClientServiceRequest;
+import io.helidon.webclient.api.WebClientServiceResponse;
 
 /**
  * Client metric meter for all requests.
@@ -33,38 +30,26 @@ public class WebClientMeter extends WebClientMetric {
     }
 
     @Override
-    MetricType metricType() {
-        return MetricType.METERED;
-    }
-
-    @Override
-    public Single<WebClientServiceRequest> request(WebClientServiceRequest request) {
-        Http.RequestMethod method = request.method();
-        request.whenResponseReceived()
-                .thenAccept(response -> {
-                    if (shouldContinueOnError(method, response.status().code())) {
-                        updateMeter(createMetadata(request, null));
-                    }
-                });
-
-        request.whenComplete()
-                .thenAccept(response -> {
-                    if (shouldContinueOnSuccess(method, response.status().code())) {
-                        updateMeter(createMetadata(request, null));
-                    }
-                })
-                .exceptionally(throwable -> {
-                    if (shouldContinueOnError(method)) {
-                        updateMeter(createMetadata(request, null));
-                    }
-                    return null;
-                });
-
-        return Single.just(request);
+    public WebClientServiceResponse handle(Chain chain, WebClientServiceRequest request) {
+        Method method = request.method();
+        try {
+            WebClientServiceResponse response = chain.proceed(request);
+            int code = response.status().code();
+            if (shouldContinueOnSuccess(method, code) || shouldContinueOnError(method, code)) {
+                updateMeter(createMetadata(request, null));
+            }
+            return response;
+        } catch (Throwable ex) {
+            if (shouldContinueOnError(method)) {
+                updateMeter(createMetadata(request, null));
+            }
+            throw ex;
+        }
     }
 
     private void updateMeter(Metadata metadata) {
-        Meter meter = metricRegistry().meter(metadata);
-        meter.mark();
+        meterRegistry().getOrCreate(Counter.builder(metadata.name())
+                                            .description(metadata.description()))
+                .increment();
     }
 }

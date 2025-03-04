@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,30 @@
  * limitations under the License.
  */
 
-import io.helidon.webclient.security.WebClientSecurityProvider;
-import io.helidon.webclient.spi.WebClientServiceProvider;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
 /**
- * Helidon WebClient Security.
+ * Helidon WebClient Security Support.
  */
+@Feature(value = "Security",
+         description = "WebClient security support",
+         in = HelidonFlavor.SE,
+         path = {"WebClient", "Security"}
+)
 module io.helidon.webclient.security {
-    requires java.logging;
 
-    requires io.helidon.security;
     requires io.helidon.security.providers.common;
     requires io.helidon.webclient;
 
+    requires transitive io.helidon.security;
+    requires transitive io.helidon.webclient.api;
+
+    requires static io.helidon.common.features.api;
+
     exports io.helidon.webclient.security;
 
-    provides WebClientServiceProvider with WebClientSecurityProvider;
+    provides io.helidon.webclient.spi.WebClientServiceProvider
+            with io.helidon.webclient.security.WebClientSecurityProvider;
+
 }

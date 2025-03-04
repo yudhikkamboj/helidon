@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.integrations.micrometer;
 
 import java.util.ArrayList;
@@ -27,11 +28,11 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
-import io.helidon.common.http.Http;
-import io.helidon.config.Config;
-import io.helidon.webserver.Handler;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
+import io.helidon.common.config.Config;
+import io.helidon.http.Status;
+import io.helidon.webserver.http.Handler;
+import io.helidon.webserver.http.ServerRequest;
+import io.helidon.webserver.http.ServerResponse;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
@@ -63,7 +64,8 @@ import io.micrometer.core.instrument.config.MeterRegistryConfig;
  *     In Micrometer, different registries report their contents in different formats. Further, there is no common abstract
  *     method defined on {@code MeterRegistry} which all implementations override; each {@code MeterRegistry}  has its own
  *     particular way of furnishing metrics output.
- *
+ * </p>
+ * <p>
  *     By default, we use a {@code PrometheusMeterRegistry} to support Prometheus/OpenMetrics format. Developers can enroll other
  *     registries to support other formats. We need to know which registry to use in response to receiving an HTTP request for
  *     Micrometer metrics output.
@@ -82,7 +84,9 @@ import io.micrometer.core.instrument.config.MeterRegistryConfig;
  *     order of enrollment. The first function that returns a non-empty {@code Optional} wins and must populate and return the
  *     {@link ServerResponse}.
  * </p>
+ * @deprecated Use the Helidon neutral metrics API and {@code unwrap} its types to their Micrometer counterparts
  */
+@Deprecated(forRemoval = true, since = "4.1")
 public final class MeterRegistryFactory {
 
     /**
@@ -161,7 +165,6 @@ public final class MeterRegistryFactory {
             builtInRegistryEnrollments.put(builtInRegistryType, meterRegistry);
         });
         registryEnrollments.forEach(e -> compositeMeterRegistry.add(e.meterRegistry()));
-
     }
 
     /**
@@ -226,14 +229,14 @@ public final class MeterRegistryFactory {
         }
     }
 
-    Handler matchingHandler(ServerRequest serverRequest, ServerResponse serverResponse) {
+    Handler matchingHandler(ServerRequest serverRequest,
+                            ServerResponse serverResponse) {
         return registryEnrollments.stream()
                 .map(e -> e.handlerFn().apply(serverRequest))
+                .flatMap(Optional::stream)
                 .findFirst()
-                .filter(Optional::isPresent)
-                .map(Optional::get)
                 .orElse((req, res) -> res
-                        .status(Http.Status.NOT_ACCEPTABLE_406)
+                        .status(Status.NOT_ACCEPTABLE_406)
                         .send(NO_MATCHING_REGISTRY_ERROR_MESSAGE));
     }
 
@@ -266,7 +269,8 @@ public final class MeterRegistryFactory {
         public Builder config(Config config) {
 
             config.get(BUILTIN_REGISTRIES_CONFIG_KEY)
-                    .ifExists(this::enrollBuiltInRegistries);
+                    .as(Config.class)
+                    .ifPresent(this::enrollBuiltInRegistries);
 
             return this;
         }
@@ -306,7 +310,9 @@ public final class MeterRegistryFactory {
          * @param handlerFunction returns {@code Optional<Handler>}; if present, capable of responding to the specified request
          * @return updated builder instance
          */
-        public Builder enrollRegistry(MeterRegistry meterRegistry, Function<ServerRequest, Optional<Handler>> handlerFunction) {
+        public Builder enrollRegistry(MeterRegistry meterRegistry,
+                                          Function<ServerRequest,
+                                                  Optional<Handler>> handlerFunction) {
             explicitRegistryEnrollments.add(new Enrollment(meterRegistry, handlerFunction));
             return this;
         }
@@ -316,12 +322,12 @@ public final class MeterRegistryFactory {
             return logRecords;
         }
 
-        private List<Enrollment> explicitAndBuiltInEnrollments() {
+        List<Enrollment> explicitAndBuiltInEnrollments() {
             List<Enrollment> result = new ArrayList<>(explicitRegistryEnrollments);
             builtInRegistriesRequested.forEach((builtInRegistrySupportType, builtInRegistrySupport) -> {
                 MeterRegistry meterRegistry = builtInRegistrySupport.registry();
                 result.add(new Enrollment(meterRegistry,
-                        builtInRegistrySupport.requestToHandlerFn(meterRegistry)));
+                                          builtInRegistrySupport.requestToHandlerFn(meterRegistry)));
             });
             return result;
         }
@@ -355,7 +361,7 @@ public final class MeterRegistryFactory {
                                         BuiltInRegistryType.valueByName(registryType);
 
                                 MicrometerBuiltInRegistrySupport builtInRegistrySupport =
-                                        MicrometerBuiltInRegistrySupport.create(type, registryConfig.asNode());
+                                        MicrometerBuiltInRegistrySupport.create(type, registryConfig.as(Config.class));
 
                                 candidateBuiltInRegistryTypes.put(type, builtInRegistrySupport);
                             } catch (BuiltInRegistryType.UnrecognizedBuiltInRegistryTypeException e) {
@@ -393,13 +399,15 @@ public final class MeterRegistryFactory {
         return builtInRegistryEnrollments;
     }
 
-
     private static class Enrollment {
 
         private final MeterRegistry meterRegistry;
-        private final Function<ServerRequest, Optional<Handler>> handlerFn;
+        private final Function<ServerRequest,
+                Optional<Handler>> handlerFn;
 
-        private Enrollment(MeterRegistry meterRegistry, Function<ServerRequest, Optional<Handler>> handlerFn) {
+        private Enrollment(MeterRegistry meterRegistry,
+                               Function<ServerRequest,
+                                       Optional<Handler>> handlerFn) {
             this.meterRegistry = meterRegistry;
             this.handlerFn = handlerFn;
         }
@@ -408,7 +416,8 @@ public final class MeterRegistryFactory {
             return meterRegistry;
         }
 
-        private Function<ServerRequest, Optional<Handler>> handlerFn() {
+        private Function<ServerRequest,
+                Optional<Handler>> handlerFn() {
             return handlerFn;
         }
     }

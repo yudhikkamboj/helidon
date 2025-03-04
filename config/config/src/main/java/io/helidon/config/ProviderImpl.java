@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.config;
 
+import java.lang.System.Logger.Level;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,12 +30,11 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import io.helidon.config.spi.ConfigFilter;
+import io.helidon.config.spi.ConfigNode;
 import io.helidon.config.spi.ConfigNode.ObjectNode;
 
 /**
@@ -42,7 +42,7 @@ import io.helidon.config.spi.ConfigNode.ObjectNode;
  */
 class ProviderImpl implements Config.Context {
 
-    private static final Logger LOGGER = Logger.getLogger(ConfigFactory.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(ConfigFactory.class.getName());
 
     private final List<Consumer<ConfigDiff>> listeners = new LinkedList<>();
 
@@ -54,6 +54,7 @@ class ProviderImpl implements Config.Context {
 
     private final Executor changesExecutor;
     private final boolean keyResolving;
+    private final boolean keyResolvingFailOnMissing;
     private final Function<String, List<String>> aliasGenerator;
 
     private ConfigDiff lastConfigsDiff;
@@ -68,6 +69,7 @@ class ProviderImpl implements Config.Context {
                  boolean cachingEnabled,
                  Executor changesExecutor,
                  boolean keyResolving,
+                 boolean keyResolvingFailOnMissing,
                  Function<String, List<String>> aliasGenerator) {
         this.configMapperManager = configMapperManager;
         this.configSource = configSource;
@@ -80,6 +82,7 @@ class ProviderImpl implements Config.Context {
         this.lastConfig = (AbstractConfigImpl) Config.empty();
 
         this.keyResolving = keyResolving;
+        this.keyResolvingFailOnMissing = keyResolvingFailOnMissing;
         this.aliasGenerator = aliasGenerator;
     }
 
@@ -112,6 +115,10 @@ class ProviderImpl implements Config.Context {
     @Override
     public synchronized Config last() {
         return lastConfig;
+    }
+
+    Optional<ConfigNode> lazyValue(String string) {
+        return configSource.lazyValue(string);
     }
 
     void onChange(Consumer<ConfigDiff> listener) {
@@ -153,10 +160,22 @@ class ProviderImpl implements Config.Context {
             }
 
             Map<String, String> tokenValueMap = tokenToValueMap(flattenValueNodes);
+            boolean failOnMissingKeyReference = getBoolean(flattenValueNodes,
+                                                           "config.key-resolving.fail-on-missing-reference",
+                                                           keyResolvingFailOnMissing);
 
             resolveTokenFunction = (token) -> {
                 if (token.startsWith("$")) {
-                    return tokenValueMap.get(parseTokenReference(token));
+                    String tokenRef = parseTokenReference(token);
+                    String resolvedValue = tokenValueMap.get(tokenRef);
+                    if (resolvedValue.isEmpty()) {
+                        if (failOnMissingKeyReference) {
+                            throw new ConfigException(String.format("Missing token '%s' to resolve a key reference.", tokenRef));
+                        } else {
+                            return token;
+                        }
+                    }
+                    return resolvedValue;
                 }
                 return token;
             };
@@ -164,25 +183,33 @@ class ProviderImpl implements Config.Context {
         return ObjectNodeBuilderImpl.create(rootNode, resolveTokenFunction).build();
     }
 
+    /*
+     * Returns a map of required replacement tokens to their respective values from the current config tree.
+     * The values may be empty strings, representing unresolved references.
+     */
     private Map<String, String> tokenToValueMap(Map<String, String> flattenValueNodes) {
         return flattenValueNodes.keySet()
                 .stream()
                 .flatMap(this::tokensFromKey)
                 .distinct()
-                .collect(Collectors.toMap(Function.identity(), t ->
-                        flattenValueNodes.compute(Config.Key.unescapeName(t), (k, v) -> {
-                            if (v == null) {
-                                throw new ConfigException(String.format("Missing token '%s' to resolve.", t));
-                            } else if (v.equals("")) {
-                                throw new ConfigException(String.format("Missing value in token '%s' definition.", t));
-                            } else if (v.startsWith("$")) {
-                                throw new ConfigException(String.format(
-                                        "Key token '%s' references to a reference in value. A recursive references is not "
-                                                + "allowed.",
-                                        t));
-                            }
-                            return Config.Key.escapeName(v);
-                        })));
+                .collect(Collectors.toMap(Function.identity(), t -> {
+                                              // t is the reference we need to resolve
+                                              // we cannot use compute, as that modifies the map we are currently navigating
+                                              String value = flattenValueNodes.get(Config.Key.unescapeName(t));
+                                              if (value == null) {
+                                                  value = "";
+                                              } else {
+                                                  if (value.startsWith("$")) {
+                                                      throw new ConfigException(String.format(
+                                                              "Key token '%s' references to a reference in value. A recursive"
+                                                                      + " references is not allowed.",
+                                                              t));
+                                                  }
+                                                  value = Config.Key.escapeName(value);
+                                              }
+                                              // either null (not found), or escaped value
+                                              return value;
+                                          }));
     }
 
     private Stream<String> tokensFromKey(String s) {
@@ -215,7 +242,7 @@ class ProviderImpl implements Config.Context {
                 lastConfig = newConfig;
             }
 
-            LOGGER.log(Level.FINER, "Change event is not fired, there is no change from the last load.");
+            LOGGER.log(Level.TRACE, "Change event is not fired, there is no change from the last load.");
         }
     }
 
@@ -227,7 +254,7 @@ class ProviderImpl implements Config.Context {
         }
 
         if (configDiffs != null) {
-            LOGGER.log(Level.FINER, String.format("Firing last event %s (again)", configDiffs));
+            LOGGER.log(Level.TRACE, String.format("Firing last event %s (again)", configDiffs));
 
             changesExecutor.execute(() -> {
                 for (Consumer<ConfigDiff> listener : listeners) {
@@ -247,6 +274,14 @@ class ProviderImpl implements Config.Context {
         chain.filterProviders.stream()
                 .map(providerFunction -> providerFunction.apply(config))
                 .forEachOrdered(filter -> filter.init(config));
+    }
+
+    private boolean getBoolean(Map<String, String> valueNodes, String key, boolean defaultValue) {
+        String value = valueNodes.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
     }
 
     /**
@@ -282,22 +317,33 @@ class ProviderImpl implements Config.Context {
         public String apply(Config.Key key, String stringValue) {
             if (cachingEnabled) {
                 if (!valueCache.containsKey(key)) {
-                    String value = proceedFilters(key, stringValue);
-                    valueCache.put(key, value);
+                    ConfigItem configItem = ConfigItem.builder()
+                            .cacheItem(cachingEnabled)
+                            .item(stringValue)
+                            .build();
+                    configItem = proceedFilters(key, configItem);
+                    String value = configItem.item();
+                    if (configItem.cacheItem()) {
+                        valueCache.put(key, value);
+                    }
                     return value;
                 }
                 return valueCache.get(key);
             } else {
-                return proceedFilters(key, stringValue);
+                ConfigItem configItem = ConfigItem.builder()
+                        .cacheItem(cachingEnabled)
+                        .item(stringValue)
+                        .build();
+                return proceedFilters(key, configItem).item();
             }
-
         }
 
-        private String proceedFilters(Config.Key key, String stringValue) {
+        private ConfigItem proceedFilters(Config.Key key, ConfigItem configItem) {
+            ConfigItem toReturn = configItem;
             for (Function<Config, ConfigFilter> configFilterProvider : filterProviders) {
-                stringValue = configFilterProvider.apply(config).apply(key, stringValue);
+                toReturn = configFilterProvider.apply(config).apply(key, toReturn);
             }
-            return stringValue;
+            return toReturn;
         }
 
         void enableCaching() {

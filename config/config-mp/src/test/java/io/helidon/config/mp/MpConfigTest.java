@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.arrayContaining;
 import static org.hamcrest.Matchers.arrayWithSize;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 
 /**
@@ -115,6 +116,18 @@ public class MpConfigTest {
     }
 
     @Test
+    void testStringList() {
+        List<String> values = config.getValues("mp-array", String.class);
+        assertThat(values, contains("a", "b", "c"));
+    }
+
+    @Test
+    void testIntList() {
+        List<Integer> values = config.getValues("mp-list", Integer.class);
+        assertThat(values, contains(1, 2, 3));
+    }
+
+    @Test
     void mutableTest() {
         // THIS MUST WORK - the spec says the sources can be mutable and config must use the latest values
         var mutable = new MutableConfigSource();
@@ -179,6 +192,23 @@ public class MpConfigTest {
 
         MpConfig.toHelidonConfig(config);
         assertThat(TestMapperProvider.getCreationCount(), is(1));
+    }
+
+    @Test
+    public void testSeConfigAsMap() {
+        Config mpConfig = ConfigProviderResolver.instance().getBuilder()
+                .withSources(MpConfigSources.create(Map.of(
+                        "client.headers.0.name", "foo"
+                )))
+                .build();
+        io.helidon.config.Config seConfig = MpConfig.toHelidonConfig(mpConfig);
+        Map<String, String> map;
+
+        map = seConfig.get("client").asMap().orElse(Map.of());
+        assertThat(map.get("client.headers.0.name"), is("foo"));
+
+        map = seConfig.get("client").detach().asMap().orElse(Map.of());
+        assertThat(map.get("headers.0.name"), is("foo"));
     }
 
     // Github issue #2206
@@ -322,4 +352,3 @@ public class MpConfigTest {
         }
     }
 }
-

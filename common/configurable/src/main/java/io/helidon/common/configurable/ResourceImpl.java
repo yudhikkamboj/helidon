@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,35 +19,42 @@ package io.helidon.common.configurable;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.System.Logger.Level;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * Implementation of {@link Resource}.
  */
 class ResourceImpl implements Resource {
-    private static final Logger LOGGER = Logger.getLogger(Resource.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(Resource.class.getName());
 
     private final Resource.Source source;
     private final String location;
     private final InputStream stream;
+    private final ResourceConfig config;
 
     private volatile boolean streamObtained;
     private volatile byte[] cachedBytes;
 
-    ResourceImpl(Resource.Source resourceSource, String location, byte[] bytes) {
+    ResourceImpl(ResourceConfig config, Resource.Source resourceSource, byte[] bytes) {
         this.source = resourceSource;
-        this.location = location;
+        this.location = config.description();
         this.stream = new ByteArrayInputStream(bytes);
         this.cachedBytes = bytes;
+        this.config = config;
     }
 
-    ResourceImpl(Resource.Source resourceSource, String location, InputStream stream) {
+    ResourceImpl(ResourceConfig config, Resource.Source resourceSource, InputStream stream) {
         this.source = resourceSource;
-        this.location = location;
+        this.location = config.description();
         this.stream = stream;
+        this.config = config;
+    }
+
+    @Override
+    public ResourceConfig prototype() {
+        return config;
     }
 
     @Override
@@ -113,18 +120,18 @@ class ResourceImpl implements Resource {
         }
     }
 
+    @Override
+    public String toString() {
+        return "Resource { source='" + source + "',"
+                + "location='" + location + "'}";
+    }
+
     private void check() {
         if (streamObtained && (cachedBytes == null)) {
             throw new IllegalStateException(
                     "Once you get the stream, you cannot call other methods on this resource:" + source + " ("
                             + location + ")");
         }
-    }
-
-    @Override
-    public String toString() {
-        return "Resource { source='" + source + "',"
-                + "location='" + location + "'}";
     }
 
 }

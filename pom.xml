@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2016, 2022 Oracle and/or its affiliates.
+    Copyright (c) 2016, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,13 +17,15 @@
 
 -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.helidon</groupId>
         <artifactId>helidon-dependencies</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <version>4.2.0-SNAPSHOT</version>
         <relativePath>./dependencies/pom.xml</relativePath>
     </parent>
     <artifactId>helidon-project</artifactId>
@@ -33,7 +35,7 @@
     <description>Java libraries for writing microservices</description>
 
     <properties>
-        <version.java>17</version.java>
+        <version.java>21</version.java>
 
         <doclint>all</doclint>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -47,23 +49,37 @@
         <spotbugs.skip>false</spotbugs.skip>
         <spotbugs.threshold>Medium</spotbugs.threshold>
 
+        <!-- owasp dependency check -->
         <dependency-check.skip>false</dependency-check.skip>
         <checkstyle.skip>false</checkstyle.skip>
+
+        <!-- Maven dependency check -->
+        <dependency-plugin-check-dependencies.skip>false</dependency-plugin-check-dependencies.skip>
+        <javadoc.fail-on-warnings>false</javadoc.fail-on-warnings>
+
         <!--
         !Version statement! - begin
 
         Changing these version requires approval for a new third party dependency!
         -->
-        <version.lib.arquillian>1.7.0.Alpha10</version.lib.arquillian>
-        <version.lib.asciidoctor.diagram>1.5.18</version.lib.asciidoctor.diagram>
-        <version.lib.asm>6.0</version.lib.asm>
-        <version.lib.checkstyle>9.1</version.lib.checkstyle>
+        <version.lib.arquillian>1.7.0.Final</version.lib.arquillian>
+        <version.lib.asm>9.7.1</version.lib.asm>
+        <version.lib.checkstyle>10.12.5</version.lib.checkstyle>
+        <version.lib.commons-io>2.14.0</version.lib.commons-io>
         <version.lib.groovy-all>2.4.14</version.lib.groovy-all>
+        <version.lib.microprofile-core-profile>10.0.3</version.lib.microprofile-core-profile>
+        <version.lib.sigtest>1.4</version.lib.sigtest>
+        <version.lib.jsonp-tck>2.1.1</version.lib.jsonp-tck>
+        <version.lib.microprofile-cdi-tck>4.0.13</version.lib.microprofile-cdi-tck>
+        <version.lib.microprofile-restful-tck>3.1.5</version.lib.microprofile-restful-tck>
         <!-- Silence javadoc error org.jboss.logging.annotations.Message$Format not found -->
         <version.lib.jboss-logging-annotations>2.2.1.Final</version.lib.jboss-logging-annotations>
+        <version.lib.jsoup>1.15.3</version.lib.jsoup>
         <version.lib.junit4>4.13.1</version.lib.junit4>
+        <version.lib.junit-platform>1.9.3</version.lib.junit-platform>
         <version.lib.kafka-junit5>3.2.3</version.lib.kafka-junit5>
-        <version.lib.netty.tcnative>2.0.51.Final</version.lib.netty.tcnative>
+        <version.lib.mockito>2.23.4</version.lib.mockito>
+        <version.lib.mockserver>5.15.0</version.lib.mockserver>
         <version.lib.restito>0.9.1</version.lib.restito>
         <version.lib.rxjava2-jdk9-interop>0.1.0</version.lib.rxjava2-jdk9-interop>
         <version.lib.rxjava>2.2.10</version.lib.rxjava>
@@ -72,16 +88,24 @@
         <!-- 2.x versions used http (not https) to access maven central -->
         <version.lib.shrinkwrap-resolver>3.0.1</version.lib.shrinkwrap-resolver>
         <version.lib.spotbugs-annotations>3.1.12</version.lib.spotbugs-annotations>
-        <version.lib.surefire.testng>3.0.0-M5</version.lib.surefire.testng>
-        <version.lib.testng>7.5</version.lib.testng>
+        <version.lib.surefire.testng>3.1.2</version.lib.surefire.testng>
+        <version.lib.testng>7.8.0</version.lib.testng>
         <version.lib.zipkin.junit>2.12.5</version.lib.zipkin.junit>
-        <version.lib.bedrock>5.0.11</version.lib.bedrock>
+        <version.lib.bedrock>7.0.1</version.lib.bedrock>
         <version.lib.awaitility>3.1.6</version.lib.awaitility>
         <version.lib.weld-junit>3.0.0.Final</version.lib.weld-junit>
         <version.lib.jmh>1.23</version.lib.jmh>
+        <version.lib.vertx-core>4.3.8</version.lib.vertx-core>
         <version.lib.wiremock>2.26.3</version.lib.wiremock>
         <version.lib.commons-lang3>3.10</version.lib.commons-lang3>
-        <version.lib.classgraph>4.8.87</version.lib.classgraph>
+        <version.lib.classgraph>4.8.165</version.lib.classgraph>
+        <version.lib.plexus.classworlds>2.7.0</version.lib.plexus.classworlds>
+        <version.lib.plexus.utils>3.3.0</version.lib.plexus.utils>
+        <version.lib.maven.plugin.annotations>3.9.0</version.lib.maven.plugin.annotations>
+        <version.lib.maven.plugin.api>3.9.3</version.lib.maven.plugin.api>
+        <version.lib.maven.plugin.project>2.2.1</version.lib.maven.plugin.project>
+        <version.lib.apiguardian.api>1.1.2</version.lib.apiguardian.api>
+        <version.lib.groovy>2.4.16</version.lib.groovy>
         <!--
         !Version statement! - end
         -->
@@ -89,50 +113,54 @@
         <!-- maven plugin versions -->
         <version.plugin.archetype-packaging>3.1.2</version.plugin.archetype-packaging>
         <version.plugin.archetype>3.1.2</version.plugin.archetype>
-        <version.plugin.build-helper>1.12</version.plugin.build-helper>
-        <version.plugin.checkstyle>3.1.2</version.plugin.checkstyle>
-        <version.plugin.compiler>3.8.1</version.plugin.compiler>
-        <version.plugin.dependency>3.1.2</version.plugin.dependency>
+        <version.plugin.ant>3.1.0</version.plugin.ant>
+        <version.plugin.build-helper>3.4.0</version.plugin.build-helper>
+        <version.plugin.checkstyle>3.3.1</version.plugin.checkstyle>
+        <version.plugin.compiler>3.11.0</version.plugin.compiler>
+        <version.plugin.dependency>3.6.0</version.plugin.dependency>
         <version.plugin.directory>1.0</version.plugin.directory>
         <version.plugin.eclipselink>2.7.5.1</version.plugin.eclipselink>
-        <version.plugin.enforcer>3.0.0-M1</version.plugin.enforcer>
-        <version.plugin.exec>1.6.0</version.plugin.exec>
-        <version.plugin.failsafe>3.0.0-M5</version.plugin.failsafe>
+        <version.plugin.enforcer>3.3.0</version.plugin.enforcer>
+        <version.plugin.exec>3.1.0</version.plugin.exec>
+        <version.plugin.failsafe>3.1.2</version.plugin.failsafe>
         <version.plugin.glassfish-copyright>2.3</version.plugin.glassfish-copyright>
-        <version.plugin.helidon-build-tools>3.0.0-M3</version.plugin.helidon-build-tools>
+        <version.plugin.helidon-build-tools>4.0.16</version.plugin.helidon-build-tools>
         <version.plugin.hibernate-enhance>${version.lib.hibernate}</version.plugin.hibernate-enhance>
+        <version.plugin.install>3.1.2</version.plugin.install>
+        <version.plugin.invoker>3.2.2</version.plugin.invoker>
         <version.plugin.jacoco>0.8.5</version.plugin.jacoco>
-        <version.plugin.jandex>1.1.0</version.plugin.jandex>
-        <version.plugin.jar>3.0.2</version.plugin.jar>
-        <version.plugin.javadoc>3.3.1</version.plugin.javadoc>
+        <version.plugin.jandex>3.1.2</version.plugin.jandex>
+        <version.plugin.jar>3.3.0</version.plugin.jar>
+        <version.plugin.javadoc>3.6.2</version.plugin.javadoc>
         <version.plugin.jaxb>2.5.0</version.plugin.jaxb>
         <version.plugin.license>1.16</version.plugin.license>
         <version.plugin.os>1.5.0.Final</version.plugin.os>
+        <version.plugin.plugin>3.9.0</version.plugin.plugin>
         <version.plugin.project-info-reports>3.0.0</version.plugin.project-info-reports>
         <version.plugin.protobuf>0.6.1</version.plugin.protobuf>
-        <version.plugin.resources>2.7</version.plugin.resources>
+        <version.plugin.resources>3.3.1</version.plugin.resources>
         <version.plugin.scm-publish-plugin>3.0.0</version.plugin.scm-publish-plugin>
-        <version.plugin.shade>3.0.0</version.plugin.shade>
+        <version.plugin.shade>3.5.0</version.plugin.shade>
         <version.plugin.source>3.0.1</version.plugin.source>
-        <version.plugin.spotbugs>4.4.2.2</version.plugin.spotbugs>
-        <version.plugin.findsecbugs>1.11.0</version.plugin.findsecbugs>
-        <version.plugin.dependency-check>6.5.3</version.plugin.dependency-check>
-        <version.plugin.surefire>3.0.0-M5</version.plugin.surefire>
+        <version.plugin.spotbugs>4.7.3.5</version.plugin.spotbugs>
+        <version.plugin.findsecbugs>1.12.0</version.plugin.findsecbugs>
+        <version.plugin.dependency-check>12.1.0</version.plugin.dependency-check>
+        <version.plugin.surefire>3.1.0</version.plugin.surefire>
         <version.plugin.toolchains>1.1</version.plugin.toolchains>
         <version.plugin.version-plugin>2.3</version.plugin.version-plugin>
-        <version.plugin.buildnumber>1.4</version.plugin.buildnumber>
+        <version.plugin.buildnumber>3.1.0</version.plugin.buildnumber>
         <version.plugin.wiremock>2.14.0</version.plugin.wiremock>
 
-        <version.helidon-cli>3.0.0-M3</version.helidon-cli>
+        <version.helidon-cli>3.0.0</version.helidon-cli>
 
         <!-- Links to external javadocs. If you see a hardcoded version it means the javadocs for the version we use is not available. -->
-        <javadoc.link.jakarta-jaxrs>https://jakarta.ee/specifications/restful-ws/3.0/apidocs/</javadoc.link.jakarta-jaxrs>
-        <javadoc.link.jakarta-cdi>https://jakarta.ee/specifications/cdi/3.0/apidocs/</javadoc.link.jakarta-cdi>
-        <javadoc.link.jakarta-jsonb>https://jakarta.ee/specifications/jsonb/2.0/apidocs/</javadoc.link.jakarta-jsonb>
-        <javadoc.link.jakarta-persistence>https://jakarta.ee/specifications/persistence/3.0/apidocs/</javadoc.link.jakarta-persistence>
-        <javadoc.link.jakarta-jsonp>https://jakarta.ee/specifications/jsonp/2.0/apidocs/</javadoc.link.jakarta-jsonp>
+        <javadoc.link.jakarta-jaxrs>https://jakarta.ee/specifications/restful-ws/3.1/apidocs/</javadoc.link.jakarta-jaxrs>
+        <javadoc.link.jakarta-cdi>https://jakarta.ee/specifications/cdi/4.0/apidocs/</javadoc.link.jakarta-cdi>
+        <javadoc.link.jakarta-jsonb>https://jakarta.ee/specifications/jsonb/3.0/apidocs/</javadoc.link.jakarta-jsonb>
+        <javadoc.link.jakarta-persistence>https://jakarta.ee/specifications/persistence/3.1/apidocs/</javadoc.link.jakarta-persistence>
+        <javadoc.link.jakarta-jsonp>https://jakarta.ee/specifications/jsonp/2.1/apidocs/</javadoc.link.jakarta-jsonp>
         <javadoc.link.jakarta-inject>https://jakarta.ee/specifications/dependency-injection/2.0/apidocs/</javadoc.link.jakarta-inject>
-        <javadoc.link.jakarta-jaxb>https://jakarta.ee/specifications/xml-binding/3.0/apidocs/</javadoc.link.jakarta-jaxb>
+        <javadoc.link.jakarta-jaxb>https://jakarta.ee/specifications/xml-binding/4.0/apidocs/</javadoc.link.jakarta-jaxb>
         <javadoc.link.jakarta-transaction>https://jakarta.ee/specifications/transactions/2.0/apidocs/</javadoc.link.jakarta-transaction>
 
         <javadoc.link.microprofile-config>https://download.eclipse.org/microprofile/microprofile-config-${version.lib.microprofile-config}/apidocs/</javadoc.link.microprofile-config>
@@ -150,59 +178,67 @@
 
 
         <javadoc.link.jersey>https://eclipse-ee4j.github.io/jersey.github.io/apidocs/${version.lib.jersey}/jersey</javadoc.link.jersey>
-        <javadoc.link.weld>https://docs.jboss.org/weld/javadoc/3.0/weld-spi/</javadoc.link.weld>
-        <javadoc.link.narayana>http://narayana.io/docs/api/</javadoc.link.narayana>
-        <javadoc.link.eclipselink>https://www.eclipse.org/eclipselink/api/3.0/</javadoc.link.eclipselink>
+        <javadoc.link.weld>https://javadoc.io/doc/org.jboss.weld/weld-spi/${version.lib.weld-api}</javadoc.link.weld>
+        <javadoc.link.narayana>https://narayana.io/docs/api/</javadoc.link.narayana>
+        <javadoc.link.eclipselink>https://www.eclipse.org/eclipselink/api/4.0/</javadoc.link.eclipselink>
+        <javadoc.link.hibernate>https://docs.jboss.org/hibernate/orm/${version.lib.hibernate.family}/javadocs/</javadoc.link.hibernate>
+        <javadoc.link.ojdbc>https://docs.oracle.com/en/database/oracle/oracle-database/${version.lib.ojdbc.family}/jajdb/</javadoc.link.ojdbc>
+        <javadoc.link.ucp>https://docs.oracle.com/en/database/oracle/oracle-database/${version.lib.ojdbc.family}/jjuar/</javadoc.link.ucp>
 
-        <javadoc.jackson.version>2.12</javadoc.jackson.version>
+        <javadoc.jackson.version>2.14</javadoc.jackson.version>
         <javadoc.link.jackson-annotations>https://fasterxml.github.io/jackson-annotations/javadoc/${javadoc.jackson.version}/</javadoc.link.jackson-annotations>
         <javadoc.link.jackson-core>https://fasterxml.github.io/jackson-core/javadoc/${javadoc.jackson.version}/</javadoc.link.jackson-core>
         <javadoc.link.jackson-databind>https://fasterxml.github.io/jackson-databind/javadoc/${javadoc.jackson.version}/</javadoc.link.jackson-databind>
-        <javadoc.link.netty>https://static.javadoc.io/io.netty/netty-transport/${version.lib.netty}</javadoc.link.netty>
-        <javadoc.link.netty-transport>https://static.javadoc.io/io.netty/netty-transport/${version.lib.netty}</javadoc.link.netty-transport>
-        <javadoc.link.reactive-streams>http://www.reactive-streams.org/reactive-streams-${version.lib.reactivestreams}-javadoc</javadoc.link.reactive-streams>
+        <javadoc.link.oci-common>https://javadoc.io/static/com.oracle.oci.sdk/oci-java-sdk-common/${version.lib.oci}/</javadoc.link.oci-common>
+        <javadoc.link.oci-addons-oke-workload-identity>https://javadoc.io/static/com.oracle.oci.sdk/oci-java-sdk-addons-oke-workload-identity/${version.lib.oci}/</javadoc.link.oci-addons-oke-workload-identity>
+        <javadoc.link.reactive-streams>https://www.reactive-streams.org/reactive-streams-${version.lib.reactivestreams}-javadoc</javadoc.link.reactive-streams>
         <javadoc.link.typesafe-config>https://static.javadoc.io/com.typesafe/config/${version.lib.typesafe-config}</javadoc.link.typesafe-config>
         <javadoc.link.opentracing>https://static.javadoc.io/io.opentracing/opentracing-api/${version.lib.opentracing}</javadoc.link.opentracing>
         <javadoc.link.prometheus>https://static.javadoc.io/io.prometheus/simpleclient/${version.lib.prometheus}</javadoc.link.prometheus>
         <javadoc.link.zipkin>https://static.javadoc.io/io.zipkin.reporter2/zipkin-reporter/2.12.3</javadoc.link.zipkin>
 
         <!--suppress UnresolvedMavenProperty -->
-        <javadoc.packagelist.dir>${top.parent.basedir}/etc/javadoc</javadoc.packagelist.dir>
-        <site.output.dir>${project.build.directory}/docs</site.output.dir>
+        <javadoc.pkg.dir>${top.parent.basedir}/etc/javadoc</javadoc.pkg.dir>
     </properties>
 
     <modules>
-        <module>parent</module>
-        <module>dependencies</module>
-        <module>bom</module>
+        <module>all</module>
         <module>applications</module>
-        <module>licensing</module>
+        <module>bom</module>
+        <module>builder</module>
+        <module>bundles</module>
         <module>common</module>
         <module>config</module>
-        <module>media</module>
-        <module>webserver</module>
-        <module>security</module>
-        <module>lra</module>
-        <module>microprofile</module>
-        <module>tracing</module>
-        <module>bundles</module>
-        <module>metrics</module>
-        <module>health</module>
-        <module>grpc</module>
-        <module>openapi</module>
-        <module>jersey</module>
-        <module>webclient</module>
-        <module>integrations</module>
+        <module>cors</module>
         <module>dbclient</module>
-        <module>messaging</module>
+        <module>dependencies</module>
         <module>fault-tolerance</module>
         <module>graphql</module>
+        <module>grpc</module>
+        <module>health</module>
+        <module>helidon</module>
+        <module>http</module>
+        <module>integrations</module>
+        <module>jersey</module>
+        <module>licensing</module>
         <module>logging</module>
+        <module>lra</module>
+        <module>messaging</module>
+        <module>metrics</module>
+        <module>microprofile</module>
+        <module>openapi</module>
+        <module>parent</module>
         <module>scheduling</module>
-        <module>service-common</module>
+        <module>security</module>
+        <module>tracing</module>
+        <module>webclient</module>
+        <module>webserver</module>
+        <module>websocket</module>
+        <module>codegen</module>
+        <module>service</module>
+        <module>metadata</module>
+        <module>testing</module>
     </modules>
-
-
 
     <build>
         <extensions>
@@ -224,6 +260,7 @@
                         <target>${version.java}</target>
                         <release>${version.java}</release>
                         <forceJavacCompilerUse>true</forceJavacCompilerUse>
+                        <proc>full</proc>
                         <compilerArgs>
                             <arg>-Xlint:unchecked</arg>
                             <!--
@@ -232,6 +269,13 @@
                             <arg>-Xpkginfo:always</arg>
                         </compilerArgs>
                     </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.ow2.asm</groupId>
+                            <artifactId>asm</artifactId>
+                            <version>${version.lib.asm}</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -240,167 +284,180 @@
                     <configuration>
                         <source>${version.java}</source>
                         <failOnError>true</failOnError>
+                        <failOnWarnings>${javadoc.fail-on-warnings}</failOnWarnings>
                         <!-- we are not interested in each file that is generated -->
                         <quiet>true</quiet>
-                        <!--<verbose>true</verbose>-->
-                        <isOffline>true</isOffline>
+                        <offline>true</offline>
                         <offlineLinks>
                             <offlineLink>
                                 <url>${javadoc.link.jackson-annotations}</url>
-                                <location>${javadoc.packagelist.dir}/jackson-annotations</location>
+                                <location>${javadoc.pkg.dir}/jackson-annotations</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jackson-core}</url>
-                                <location>${javadoc.packagelist.dir}/jackson-core</location>
+                                <location>${javadoc.pkg.dir}/jackson-core</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jackson-databind}</url>
-                                <location>${javadoc.packagelist.dir}/jackson-databind</location>
+                                <location>${javadoc.pkg.dir}/jackson-databind</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-jaxrs}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-jaxrs</location>
-                            </offlineLink>
-                            <offlineLink>
-                                <url>${javadoc.link.netty}</url>
-                                <location>${javadoc.packagelist.dir}/netty</location>
+                                <location>${javadoc.pkg.dir}/jakarta-jaxrs</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-cdi}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-cdi</location>
+                                <location>${javadoc.pkg.dir}/jakarta-cdi</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-inject}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-inject</location>
+                                <location>${javadoc.pkg.dir}/jakarta-inject</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.reactive-streams}</url>
-                                <location>${javadoc.packagelist.dir}/reactive-streams</location>
+                                <location>${javadoc.pkg.dir}/reactive-streams</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jersey}</url>
-                                <location>${javadoc.packagelist.dir}/jersey</location>
+                                <location>${javadoc.pkg.dir}/jersey</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.typesafe-config}</url>
-                                <location>${javadoc.packagelist.dir}/typesafe-config</location>
-                            </offlineLink>
-                            <offlineLink>
-                                <url>${javadoc.link.netty-transport}</url>
-                                <location>${javadoc.packagelist.dir}/netty-transport</location>
+                                <location>${javadoc.pkg.dir}/typesafe-config</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.opentracing}</url>
-                                <location>${javadoc.packagelist.dir}/opentracing</location>
+                                <location>${javadoc.pkg.dir}/opentracing</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.prometheus}</url>
-                                <location>${javadoc.packagelist.dir}/prometheus</location>
+                                <location>${javadoc.pkg.dir}/prometheus</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.zipkin}</url>
-                                <location>${javadoc.packagelist.dir}/zipkin</location>
+                                <location>${javadoc.pkg.dir}/zipkin</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-jsonb}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-jsonb</location>
+                                <location>${javadoc.pkg.dir}/jakarta-jsonb</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-persistence}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-persistence</location>
+                                <location>${javadoc.pkg.dir}/jakarta-persistence</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-jsonp}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-jsonp</location>
+                                <location>${javadoc.pkg.dir}/jakarta-jsonp</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-jaxb}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-jaxb</location>
+                                <location>${javadoc.pkg.dir}/jakarta-jaxb</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.jakarta-transaction}</url>
-                                <location>${javadoc.packagelist.dir}/jakarta-transaction</location>
+                                <location>${javadoc.pkg.dir}/jakarta-transaction</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-config}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-config</location>
+                                <location>${javadoc.pkg.dir}/microprofile-config</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-health}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-health</location>
+                                <location>${javadoc.pkg.dir}/microprofile-health</location>
                             </offlineLink>
 
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-metrics}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-metrics</location>
+                                <location>${javadoc.pkg.dir}/microprofile-metrics</location>
                             </offlineLink>
 
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-fault-tolerance-api}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-fault-tolerance-api</location>
+                                <location>${javadoc.pkg.dir}/microprofile-fault-tolerance-api</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-graphql}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-graphql</location>
+                                <location>${javadoc.pkg.dir}/microprofile-graphql</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-jwt}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-jwt</location>
+                                <location>${javadoc.pkg.dir}/microprofile-jwt</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-lra-api}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-lra-api</location>
+                                <location>${javadoc.pkg.dir}/microprofile-lra-api</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-openapi-api}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-openapi-api</location>
+                                <location>${javadoc.pkg.dir}/microprofile-openapi-api</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-reactive-messaging-api}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-reactive-messaging-api</location>
+                                <location>${javadoc.pkg.dir}/microprofile-reactive-messaging-api</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-reactive-streams-operators-api}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-reactive-streams-operators-api</location>
+                                <location>${javadoc.pkg.dir}/microprofile-reactive-streams-operators-api</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-rest-client}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-rest-client</location>
+                                <location>${javadoc.pkg.dir}/microprofile-rest-client</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.microprofile-tracing}</url>
-                                <location>${javadoc.packagelist.dir}/microprofile-tracing</location>
+                                <location>${javadoc.pkg.dir}/microprofile-tracing</location>
                             </offlineLink>
 
                             <offlineLink>
                                 <url>${javadoc.link.weld}</url>
-                                <location>${javadoc.packagelist.dir}/weld</location>
+                                <location>${javadoc.pkg.dir}/weld</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.narayana}</url>
-                                <location>${javadoc.packagelist.dir}/narayana</location>
+                                <location>${javadoc.pkg.dir}/narayana</location>
                             </offlineLink>
                             <offlineLink>
                                 <url>${javadoc.link.eclipselink}</url>
-                                <location>${javadoc.packagelist.dir}/eclipselink</location>
+                                <location>${javadoc.pkg.dir}/eclipselink</location>
+                            </offlineLink>
+                            <offlineLink>
+                                <url>${javadoc.link.hibernate}</url>
+                                <location>${javadoc.pkg.dir}/hibernate</location>
+                            </offlineLink>
+                            <offlineLink>
+                                <url>${javadoc.link.ojdbc}</url>
+                                <location>${javadoc.pkg.dir}/ojdbc</location>
+                            </offlineLink>
+                            <offlineLink>
+                                <url>${javadoc.link.ucp}</url>
+                                <location>${javadoc.pkg.dir}/ucp</location>
+                            </offlineLink>
+                            <offlineLink>
+                                <url>${javadoc.link.oci-common}</url>
+                                <location>${javadoc.pkg.dir}/oci-common</location>
+                            </offlineLink>
+                            <offlineLink>
+                                <url>${javadoc.link.oci-addons-oke-workload-identity}</url>
+                                <location>${javadoc.pkg.dir}/oci-addons-oke-workload-identity</location>
                             </offlineLink>
                         </offlineLinks>
                         <additionalJOptions combine.children="append">
                             <additionalJOption>-J-Dhttp.agent=maven-javadoc-plugin</additionalJOption>
-                            <additionalJOption>--add-exports=java.base/sun.security.util=io.helidon.common.pki</additionalJOption>
                         </additionalJOptions>
-                        <additionalOptions>
-                            <!--<additionalOption> - -add-stylesheet ${top.parent.basedir}/etc/helidon-javadoc.css</additionalOption>-->
-                        </additionalOptions>
-                        <!-- <excludePackageNames>io.helidon.config.tests.*:io.helidon.config.testing.*:io.helidon.config.test.*</excludePackageNames> -->
                         <sourceFileExcludes>
                             <sourceFileExclude>**/target/**/*.java</sourceFileExclude>
                             <sourceFileExclude>**/*_.java</sourceFileExclude>
+                            <sourceFileExclude>**/*__*.java</sourceFileExclude>
                         </sourceFileExcludes>
-                        <dependencySourceExcludes>
-
-                        </dependencySourceExcludes>
+                        <dependencySourceExcludes/>
                     </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.ow2.asm</groupId>
+                            <artifactId>asm</artifactId>
+                            <version>${version.lib.asm}</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -433,6 +490,13 @@
                         <argLine>${surefire.argLine} ${surefire.coverage.argline}</argLine>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.ow2.asm</groupId>
+                            <artifactId>asm</artifactId>
+                            <version>${version.lib.asm}</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -456,7 +520,7 @@
                     <version>${version.plugin.exec}</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.jboss.jandex</groupId>
+                    <groupId>io.smallrye</groupId>
                     <artifactId>jandex-maven-plugin</artifactId>
                     <version>${version.plugin.jandex}</version>
                 </plugin>
@@ -485,6 +549,31 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-dependency-plugin</artifactId>
                     <version>${version.plugin.dependency}</version>
+                    <executions>
+                        <execution>
+                            <id>check-dependencies</id>
+                            <goals>
+                                <goal>analyze-only</goal>
+                            </goals>
+                            <phase>none</phase>
+                            <configuration>
+                                <skip>${dependency-plugin-check-dependencies.skip}</skip>
+                                <ignoredPackagings>
+                                    <packaging>pom</packaging>
+                                </ignoredPackagings>
+                                <ignoreNonCompile>true</ignoreNonCompile>
+                                <failOnWarning>true</failOnWarning>
+                                <ignoredDependencies>
+                                    <dependency>io.helidon.common.features:helidon-common-features-api:*</dependency>
+                                </ignoredDependencies>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${version.plugin.install}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -559,8 +648,10 @@
                     <configuration>
                         <skip>${dependency-check.skip}</skip>
                         <skipTestScope>true</skipTestScope>
-                        <failBuildOnAnyVulnerability>false</failBuildOnAnyVulnerability>
+                        <failBuildOnCVSS>0</failBuildOnCVSS>
                         <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                        <!--suppress MavenModelInspection -->
+                        <nvdApiKey>${nvd-api-key}</nvdApiKey>
                         <excludes>
                             <!-- Exclude stuff we do not deploy -->
                             <exclude>io.helidon.tracing:helidon-tracing-tests</exclude>
@@ -587,7 +678,7 @@
                     <version>${version.plugin.protobuf}</version>
                     <configuration>
                         <!--suppress UnresolvedMavenProperty -->
-                        <protocArtifact>com.google.protobuf:protoc:3.17.3:exe:${os.detected.classifier}</protocArtifact>
+                        <protocArtifact>com.google.protobuf:protoc:${version.lib.google-protobuf}:exe:${os.detected.classifier}</protocArtifact>
                         <pluginId>grpc-java</pluginId>
                         <!--suppress UnresolvedMavenProperty -->
                         <pluginArtifact>
@@ -618,30 +709,15 @@
                     </dependencies>
                 </plugin>
                 <plugin>
-                    <groupId>com.ethlo.persistence.tools</groupId>
-                    <artifactId>eclipselink-maven-plugin</artifactId>
-                    <version>${version.plugin.eclipselink}</version>
-                    <configuration>
-                        <updatePersistenceXml>false</updatePersistenceXml>
-                    </configuration>
-                    <dependencies>
-                        <dependency>
-                            <groupId>org.eclipse.persistence</groupId>
-                            <artifactId>org.eclipse.persistence.jpa</artifactId>
-                            <version>${version.lib.eclipselink}</version>
-                        </dependency>
-                    </dependencies>
-                </plugin>
-                <plugin>
                     <groupId>org.hibernate.orm.tooling</groupId>
                     <artifactId>hibernate-enhance-maven-plugin</artifactId>
                     <version>${version.plugin.hibernate-enhance}</version>
+                    <!-- Force upgrade for latest Java support -->
                     <dependencies>
                         <dependency>
-                            <!-- used by hibernate plugin - requires update for Java 17 -->
                             <groupId>net.bytebuddy</groupId>
                             <artifactId>byte-buddy</artifactId>
-                            <version>${version.lib.byte-buddy}</version>
+                            <version>${version.lib.bytebuddy}</version>
                         </dependency>
                     </dependencies>
                 </plugin>
@@ -718,6 +794,16 @@
                 </plugin>
                 <plugin>
                     <groupId>io.helidon.build-tools</groupId>
+                    <artifactId>sitegen-maven-plugin</artifactId>
+                    <version>${version.plugin.helidon-build-tools}</version>
+                </plugin>
+                <plugin>
+                    <groupId>io.helidon.build-tools</groupId>
+                    <artifactId>helidon-javadoc-maven-plugin</artifactId>
+                    <version>${version.plugin.helidon-build-tools}</version>
+                </plugin>
+                <plugin>
+                    <groupId>io.helidon.build-tools</groupId>
                     <artifactId>snakeyaml-codegen-maven-plugin</artifactId>
                     <version>${version.plugin.helidon-build-tools}</version>
                 </plugin>
@@ -755,6 +841,10 @@
                                 <typo>buidler</typo>
                                 <typo>vuilder</typo>
                                 <typo>bidler</typo>
+                                <typo>microrpofile</typo>
+                                <typo>depenedency</typo>
+                                <typo>configuraiton</typo>
+                                <typo>Respnose</typo>
                             </typos>
                         </typosConfig>
                     </configuration>
@@ -766,6 +856,44 @@
                     <configuration>
                         <mode>fail</mode>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-antrun-plugin</artifactId>
+                    <version>${version.plugin.ant}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-invoker-plugin</artifactId>
+                    <version>${version.plugin.invoker}</version>
+                    <configuration>
+                        <addTestClassPath>true</addTestClassPath>
+                        <settingsFile>src/it/settings.xml</settingsFile>
+                        <mergeUserSettings>true</mergeUserSettings>
+                        <localRepositoryPath>${project.build.directory}/it-repo</localRepositoryPath>
+                        <!--suppress MavenModelInspection -->
+                        <ignoreFailures>${maven.test.failure.ignore}</ignoreFailures>
+                        <showErrors>true</showErrors>
+                        <!--suppress UnresolvedMavenProperty, MavenModelInspection -->
+                        <skipInvocation>${skipTests}</skipInvocation>
+                        <!--suppress UnresolvedMavenProperty, MavenModelInspection -->
+                        <skipInstallation>${skipTests}</skipInstallation>
+                        <pomIncludes>
+                            <pomInclude>projects/*/pom.xml</pomInclude>
+                        </pomIncludes>
+                        <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
+                        <goals>
+                            <goal>clean</goal>
+                            <goal>install</goal>
+                        </goals>
+                    </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.codehaus.groovy</groupId>
+                            <artifactId>groovy</artifactId>
+                            <version>${version.lib.groovy}</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -799,16 +927,6 @@
                             <goal>highest-basedir</goal>
                         </goals>
                         <phase>validate</phase>
-                        <configuration>
-                            <property>top.parent.basedir</property>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>generate-top-parent-basedir-site</id>
-                        <goals>
-                            <goal>highest-basedir</goal>
-                        </goals>
-                        <phase>pre-site</phase>
                         <configuration>
                             <property>top.parent.basedir</property>
                         </configuration>
@@ -856,27 +974,6 @@
                 <artifactId>buildnumber-maven-plugin</artifactId>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-site-plugin</artifactId>
-                <inherited>false</inherited>
-                <configuration>
-                    <skip>false</skip>
-                    <siteDirectory>docs</siteDirectory>
-                </configuration>
-                <dependencies>
-                    <dependency>
-                        <groupId>io.helidon.build-tools</groupId>
-                        <artifactId>sitegen-maven-plugin</artifactId>
-                        <version>${version.plugin.helidon-build-tools}</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.asciidoctor</groupId>
-                        <artifactId>asciidoctorj-diagram</artifactId>
-                        <version>${version.lib.asciidoctor.diagram}</version>
-                    </dependency>
-                </dependencies>
-            </plugin>
-            <plugin>
                 <groupId>io.helidon.build-tools</groupId>
                 <artifactId>helidon-services-plugin</artifactId>
                 <executions>
@@ -888,6 +985,15 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>${version.plugin.plugin}</version>
+                <configuration>
+                    <requiredMavenVersion>[3.6.1,)</requiredMavenVersion>
+                    <requiredJavaVersion>[${version.java}.0,)</requiredJavaVersion>
+                </configuration>
             </plugin>
         </plugins>
     </build>
@@ -941,6 +1047,36 @@
                 <version>${version.lib.opentracing}</version>
             </dependency>
             <dependency>
+                <groupId>jakarta.ee.tck.coreprofile</groupId>
+                <artifactId>core-profile-tck-impl</artifactId>
+                <version>${version.lib.microprofile-core-profile}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.netbeans.tools</groupId>
+                <artifactId>sigtest-maven-plugin</artifactId>
+                <version>${version.lib.sigtest}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.enterprise</groupId>
+                <artifactId>cdi-tck-core-impl</artifactId>
+                <version>${version.lib.microprofile-cdi-tck}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.enterprise</groupId>
+                <artifactId>cdi-tck-api</artifactId>
+                <version>${version.lib.microprofile-cdi-tck}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.enterprise</groupId>
+                <artifactId>cdi-tck-lang-model</artifactId>
+                <version>${version.lib.microprofile-cdi-tck}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.ws.rs</groupId>
+                <artifactId>jakarta-restful-ws-tck</artifactId>
+                <version>${version.lib.microprofile-restful-tck}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.github.akarnokd</groupId>
                 <artifactId>rxjava2-jdk9-interop</artifactId>
                 <version>${version.lib.rxjava2-jdk9-interop}</version>
@@ -956,14 +1092,24 @@
                 <version>${version.lib.restito}</version>
             </dependency>
             <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-tcnative-boringssl-static</artifactId>
-                <version>${version.lib.netty.tcnative}</version>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${version.lib.mockito}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mock-server</groupId>
+                <artifactId>mockserver-netty-no-dependencies</artifactId>
+                <version>${version.lib.mockserver}</version>
             </dependency>
             <dependency>
                 <groupId>org.eclipse.jgit</groupId>
                 <artifactId>org.eclipse.jgit.junit</artifactId>
                 <version>${version.lib.jgit}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jboss.weld</groupId>
+                <artifactId>weld-porting-package-tck</artifactId>
+                <version>${version.lib.weld}</version>
             </dependency>
             <dependency>
                 <groupId>io.zipkin.zipkin2</groupId>
@@ -984,6 +1130,16 @@
                 <groupId>org.reactivestreams</groupId>
                 <artifactId>reactive-streams-tck-flow</artifactId>
                 <version>${version.lib.reactivestreams}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-core</artifactId>
+                <version>${version.lib.vertx-core}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-web-client</artifactId>
+                <version>${version.lib.vertx-core}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.maven.wagon</groupId>
@@ -1072,16 +1228,31 @@
                 <groupId>org.testng</groupId>
                 <artifactId>testng</artifactId>
                 <version>${version.lib.testng}</version>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>com.google.code.findbugs</groupId>
-                            <artifactId>jsr305</artifactId>
-                        </exclusion>
-                    </exclusions>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.google.code.findbugs</groupId>
+                        <artifactId>jsr305</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.platform</groupId>
+                <artifactId>junit-platform-launcher</artifactId>
+                <version>${version.lib.junit-platform}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.platform</groupId>
+                <artifactId>junit-platform-suite-engine</artifactId>
+                <version>${version.lib.junit-platform}</version>
             </dependency>
             <dependency>
                 <groupId>org.jboss.arquillian.junit</groupId>
                 <artifactId>arquillian-junit-container</artifactId>
+                <version>${version.lib.arquillian}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jboss.arquillian.junit5</groupId>
+                <artifactId>arquillian-junit5-core</artifactId>
                 <version>${version.lib.arquillian}</version>
             </dependency>
             <dependency>
@@ -1177,52 +1348,62 @@
                 <artifactId>classgraph</artifactId>
                 <version>${version.lib.classgraph}</version>
             </dependency>
+            <!-- Used for OIDC integration tests -->
+            <dependency>
+                <groupId>org.jsoup</groupId>
+                <artifactId>jsoup</artifactId>
+                <version>${version.lib.jsoup}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>${version.lib.commons-io}</version>
+            </dependency>
+            <!-- Injection TCK tests -->
+            <dependency>
+                <groupId>jakarta.inject</groupId>
+                <artifactId>jakarta.inject-tck</artifactId>
+                <version>${version.lib.jakarta.inject}</version>
+            </dependency>
+            <!-- Maven plugin -->
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-artifact</artifactId>
+                <version>${version.lib.maven.plugin.api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-model</artifactId>
+                <version>${version.lib.maven.plugin.api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-plugin-api</artifactId>
+                <version>${version.lib.maven.plugin.api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven.plugin-tools</groupId>
+                <artifactId>maven-plugin-annotations</artifactId>
+                <version>${version.lib.maven.plugin.annotations}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-project</artifactId>
+                <version>${version.lib.maven.plugin.project}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <!-- dependency convergence -->
+                <groupId>org.apiguardian</groupId>
+                <artifactId>apiguardian-api</artifactId>
+                <version>${version.lib.apiguardian.api}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <reporting>
-        <excludeDefaults>true</excludeDefaults>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${version.plugin.javadoc}</version>
-                <configuration>
-                    <!-- Default configuration for all reports -->
-                </configuration>
-                <reportSets>
-                    <reportSet>
-                        <id>default</id>
-                        <inherited>false</inherited>
-                        <configuration>
-                            <skip>false</skip>
-                            <skippedModules>
-helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,helidon-mp-graal-native-image-extension,helidon-graal-native-image-extension,helidon-config-test-infrastructure,helidon-webserver-test-support
-                            </skippedModules>
-                            <excludePackageNames>io.grpc</excludePackageNames>
-                            <sourceFileExcludes>
-                                <sourceFileExclude>**/target/**/*.java</sourceFileExclude>
-                                <sourceFileExclude>**/internal/**/*.java</sourceFileExclude>
-                                <sourceFileExclude>**/test/**/*.java</sourceFileExclude>
-                                <sourceFileExclude>**/*_.java</sourceFileExclude>
-                                <sourceFileExclude>**/io/grpc/stub/**/*.java</sourceFileExclude>
-                            </sourceFileExcludes>
-                            <additionalDependencies>
-                                <additionalDependency>
-                                    <groupId>org.jboss.logging</groupId>
-                                    <artifactId>jboss-logging-annotations</artifactId>
-                                    <version>${version.lib.jboss-logging-annotations}</version>
-                                </additionalDependency>
-                            </additionalDependencies>
-                        </configuration>
-                        <reports>
-                            <report>aggregate-no-fork</report>
-                        </reports>
-                    </reportSet>
-                </reportSets>
-            </plugin>
-        </plugins>
-    </reporting>
 
     <profiles>
         <profile>
@@ -1230,37 +1411,6 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
             <modules>
                 <module>tests</module>
             </modules>
-        </profile>
-        <profile>
-            <id>examples</id>
-            <modules>
-                <module>examples</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>archetypes</id>
-            <modules>
-                <module>archetypes</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>sources</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-source-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>attach-sources</id>
-                                <goals>
-                                    <goal>jar-no-fork</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <id>javadoc</id>
@@ -1271,6 +1421,7 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <executions>
                             <execution>
+                                <id>attach-javadocs</id>
                                 <goals>
                                     <goal>jar</goal>
                                 </goals>
@@ -1290,8 +1441,10 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                         <executions>
                             <execution>
                                 <goals>
-                                    <goal>check</goal>
+                                    <goal>spotbugs</goal>
+                                    <goal>verify</goal>
                                 </goals>
+                                <phase>verify</phase>
                             </execution>
                         </executions>
                     </plugin>
@@ -1363,139 +1516,13 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
             </build>
         </profile>
         <profile>
-            <id>coverage</id>
-            <properties>
-                <jacoco.report-missing.force-zere>true</jacoco.report-missing.force-zere>
-                <!-- top.parent.basedir is generated by directory:highest-basedir -->
-                <!--suppress UnresolvedMavenProperty -->
-                <jacoco.outputDir>${top.parent.basedir}/target</jacoco.outputDir>
-                <jacoco.report.path>${jacoco.outputDir}/jacoco.exec</jacoco.report.path>
-                <jacoco.report.it.path>${jacoco.outputDir}/jacoco-it.exec</jacoco.report.it.path>
-                <!-- jacoco.agent.*.arg properties are generated by jacoco:prepare-agent -->
-                <!--suppress UnresolvedMavenProperty -->
-                <surefire.coverage.argline>${jacoco.agent.ut.arg}</surefire.coverage.argline>
-                <!--suppress UnresolvedMavenProperty -->
-                <failsafe.coverage.argline>${jacoco.agent.it.arg}</failsafe.coverage.argline>
-                <maven.test.failure.ignore>true</maven.test.failure.ignore>
-            </properties>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-surefire-plugin</artifactId>
-                            <configuration>
-                                <rerunFailingTestsCount>10</rerunFailingTestsCount>
-                                <properties>
-                                    <property>
-                                        <name>listener</name>
-                                        <value>org.sonar.java.jacoco.JUnitListener</value>
-                                    </property>
-                                </properties>
-                            </configuration>
-                        </plugin>
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-failsafe-plugin</artifactId>
-                            <configuration>
-                                <rerunFailingTestsCount>10</rerunFailingTestsCount>
-                                <properties>
-                                    <property>
-                                        <name>listener</name>
-                                        <value>org.sonar.java.jacoco.JUnitListener</value>
-                                    </property>
-                                </properties>
-                                <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
-                            </configuration>
-                        </plugin>
-                        <plugin>
-                            <groupId>org.jacoco</groupId>
-                            <artifactId>jacoco-maven-plugin</artifactId>
-                            <version>${version.plugin.jacoco}</version>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-                <plugins>
-                    <plugin>
-                        <groupId>org.jacoco</groupId>
-                        <artifactId>jacoco-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>prepare-ut-agent</id>
-                                <phase>process-test-classes</phase>
-                                <goals>
-                                    <goal>prepare-agent</goal>
-                                </goals>
-                                <configuration>
-                                    <destFile>${jacoco.report.path}</destFile>
-                                    <propertyName>jacoco.agent.ut.arg</propertyName>
-                                    <append>true</append>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>prepare-it-agent</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>prepare-agent</goal>
-                                </goals>
-                                <configuration>
-                                    <destFile>${jacoco.report.it.path}</destFile>
-                                    <propertyName>jacoco.agent.it.arg</propertyName>
-                                    <append>true</append>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>jacoco-report-unit-tests</id>
-                                <phase>test</phase>
-                                <goals>
-                                    <goal>report</goal>
-                                </goals>
-                                <configuration>
-                                    <dataFile>${jacoco.report.path}</dataFile>
-                                    <outputDirectory>${project.build.directory}/jacoco</outputDirectory>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>jacoco-report-integration-tests</id>
-                                <phase>post-integration-test</phase>
-                                <goals>
-                                    <goal>report-integration</goal>
-                                </goals>
-                                <configuration>
-                                    <dataFile>${jacoco.report.it.path}</dataFile>
-                                    <outputDirectory>${project.build.directory}/jacoco-it</outputDirectory>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
             <id>release</id>
+            <modules>
+                <module>archetypes</module>
+                <module>docs</module>
+            </modules>
             <build>
                 <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>enforce-no-snapshots</id>
-                                <goals>
-                                    <goal>enforce</goal>
-                                </goals>
-                                <phase>validate</phase>
-                                <configuration>
-                                    <rules>
-                                        <requireReleaseDeps>
-                                            <message>No snapshots allowed during the release build!</message>
-                                        </requireReleaseDeps>
-                                    </rules>
-                                    <fail>true</fail>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
@@ -1524,12 +1551,35 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
             </build>
         </profile>
         <profile>
+            <id>no-snapshots</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>enforce-no-snapshots</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <phase>validate</phase>
+                                <configuration>
+                                    <rules>
+                                        <requireReleaseDeps>
+                                            <message>No snapshots allowed during the release build!</message>
+                                        </requireReleaseDeps>
+                                    </rules>
+                                    <fail>true</fail>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>toolchain</id>
-            <activation>
-                <file>
-                    <exists>${user.home}/.m2/toolchains.xml</exists>
-                </file>
-            </activation>
             <properties>
                 <jdkToolchainVersion>${java.vm.specification.version}</jdkToolchainVersion>
             </properties>
@@ -1554,35 +1604,6 @@ helidon-parent,helidon-dependencies,helidon-bom,helidon-se,helidon-mp,io.grpc,he
                         </executions>
                     </plugin>
                 </plugins>
-            </build>
-        </profile>
-        <profile>
-            <id>loom</id>
-            <activation>
-                <jdk>18-loom</jdk>
-            </activation>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-compiler-plugin</artifactId>
-                            <configuration>
-                                <source>18</source>
-                                <target>18</target>
-                                <release>18</release>
-                            </configuration>
-                        </plugin>
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-javadoc-plugin</artifactId>
-                            <configuration>
-                                <source>18</source>
-                                <release>18</release>
-                            </configuration>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
             </build>
         </profile>
     </profiles>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 package io.helidon.integrations.cdi.jpa;
 
 import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.AbstractList;
@@ -245,7 +246,7 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
      *
      * @param persistenceXMLSchemaVersion a {@link String}
      * representation of the version of JPA being supported; may be
-     * {@code null} in which case "{@code 2.2}" will be used instead
+     * {@code null} in which case "{@code 3.1}" will be used instead
      *
      * @param persistenceProviderClassName the fully-qualified class
      * name of a {@link PersistenceProvider} implementation; may be
@@ -402,7 +403,7 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
      *
      * @param persistenceXMLSchemaVersion a {@link String}
      * representation of the version of JPA being supported; may be
-     * {@code null} in which case "{@code 2.2}" will be used instead
+     * {@code null} in which case "{@code 3.1}" will be used instead
      *
      * @param persistenceProviderClassName the fully-qualified class
      * name of a {@link PersistenceProvider} implementation; may be
@@ -535,7 +536,7 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
         this.persistenceUnitName = persistenceUnitName;
         this.persistenceUnitRootUrl = persistenceUnitRootUrl;
         this.persistenceProviderClassName = persistenceProviderClassName;
-        this.persistenceXMLSchemaVersion = persistenceXMLSchemaVersion == null ? "2.2" : persistenceXMLSchemaVersion;
+        this.persistenceXMLSchemaVersion = persistenceXMLSchemaVersion == null ? "3.1" : persistenceXMLSchemaVersion;
         this.originalClassLoader = classLoader;
         this.classLoader = classLoader;
         this.tempClassLoaderSupplier = tempClassLoaderSupplier;
@@ -988,7 +989,11 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
         final List<URL> jarFileUrls = new ArrayList<>();
         for (final String jarFile : jarFiles) {
             if (jarFile != null) {
-                jarFileUrls.add(createJarFileURL(rootUrl, jarFile));
+                try {
+                    jarFileUrls.add(createJarFileURL(rootUrl, jarFile));
+                } catch (URISyntaxException e) {
+                    throw (MalformedURLException) new MalformedURLException(e.getMessage()).initCause(e);
+                }
             }
         }
 
@@ -1011,7 +1016,7 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
         assert managedClasses != null;
         String name = persistenceUnit.getName();
         if (name == null || name.isEmpty()) {
-            name = JpaExtension.DEFAULT_PERSISTENCE_UNIT_NAME;
+            name = PersistenceExtension.DEFAULT_PERSISTENCE_UNIT_NAME;
         }
 
         final Boolean excludeUnlistedClasses = persistenceUnit.isExcludeUnlistedClasses();
@@ -1027,7 +1032,7 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
                 }
             }
             // Also add "default" ones
-            myUnlistedClasses = unlistedClasses.get(JpaExtension.DEFAULT_PERSISTENCE_UNIT_NAME);
+            myUnlistedClasses = unlistedClasses.get(PersistenceExtension.DEFAULT_PERSISTENCE_UNIT_NAME);
             if (myUnlistedClasses != null && !myUnlistedClasses.isEmpty()) {
                 for (final Class<?> unlistedClass : myUnlistedClasses) {
                     if (unlistedClass != null) {
@@ -1075,7 +1080,7 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
         final PersistenceUnitInfoBean returnValue =
             new PersistenceUnitInfoBean(name,
                                         rootUrl,
-                                        "2.2",
+                                        "3.1",
                                         persistenceUnit.getProvider(),
                                         classLoader,
                                         tempClassLoaderSupplier,
@@ -1095,12 +1100,9 @@ public class PersistenceUnitInfoBean implements PersistenceUnitInfo {
     }
 
     private static URL createJarFileURL(final URL persistenceUnitRootUrl, final String jarFileUrlString)
-        throws MalformedURLException {
-        Objects.requireNonNull(persistenceUnitRootUrl);
-        Objects.requireNonNull(jarFileUrlString);
+        throws MalformedURLException, URISyntaxException {
         // Revisit: probably won't work if persistenceUnitRootUrl is, say, a jar URL
-        final URL returnValue = new URL(persistenceUnitRootUrl, jarFileUrlString);
-        return returnValue;
+        return persistenceUnitRootUrl.toURI().resolve(jarFileUrlString).toURL();
     }
 
 

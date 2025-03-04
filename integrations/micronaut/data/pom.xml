@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+    Copyright (c) 2020, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.helidon.integrations.micronaut</groupId>
         <artifactId>helidon-integrations-micronaut-project</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <version>4.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>helidon-integrations-micronaut-data</artifactId>
@@ -49,6 +49,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>io.helidon.common.features</groupId>
+            <artifactId>helidon-common-features-api</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
             <groupId>io.helidon.integrations.micronaut</groupId>
             <artifactId>helidon-integrations-micronaut-cdi</artifactId>
             <scope>test</scope>
@@ -56,6 +61,11 @@
         <dependency>
             <groupId>io.micronaut</groupId>
             <artifactId>micronaut-runtime</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut.validation</groupId>
+            <artifactId>micronaut-validation</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -67,13 +77,6 @@
             <groupId>io.micronaut.data</groupId>
             <artifactId>micronaut-data-model</artifactId>
             <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <!-- 3.0.0-JAKARTA -->
-                    <groupId>io.micronaut</groupId>
-                    <artifactId>micronaut-validation</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.helidon.microprofile.cdi</groupId>
@@ -86,8 +89,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.helidon.microprofile.tests</groupId>
-            <artifactId>helidon-microprofile-tests-junit5</artifactId>
+            <groupId>io.helidon.microprofile.testing</groupId>
+            <artifactId>helidon-microprofile-testing-junit5</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -116,9 +119,8 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.helidon.config</groupId>
-            <artifactId>helidon-config-testing</artifactId>
-            <scope>test</scope>
+            <groupId>io.helidon.common.testing</groupId>
+            <artifactId>helidon-common-testing-junit5</artifactId>
         </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
@@ -155,12 +157,16 @@
                                     <artifactId>micronaut-inject-java</artifactId>
                                     <version>${version.lib.micronaut}</version>
                                 </path>
-                                <!-- 3.0.0-JAKARTA -->
-<!--                                <path>-->
-<!--                                    <groupId>io.micronaut</groupId>-->
-<!--                                    <artifactId>micronaut-validation</artifactId>-->
-<!--                                    <version>${version.lib.micronaut}</version>-->
-<!--                                </path>-->
+                                <path>
+                                    <groupId>io.micronaut</groupId>
+                                    <artifactId>micronaut-core-processor</artifactId>
+                                    <version>${version.lib.micronaut}</version>
+                                </path>
+                                <path>
+                                    <groupId>io.micronaut.validation</groupId>
+                                    <artifactId>micronaut-validation-processor</artifactId>
+                                    <version>${version.lib.micronaut.validation}</version>
+                                </path>
                                 <path>
                                     <groupId>io.micronaut.data</groupId>
                                     <artifactId>micronaut-data-processor</artifactId>
@@ -175,6 +181,15 @@
                         </configuration>
                     </execution>
                 </executions>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.helidon.common.features</groupId>
+                            <artifactId>helidon-common-features-processor</artifactId>
+                            <version>${helidon.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
             </plugin>
         </plugins>
     </build>

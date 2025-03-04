@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,25 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * config module.
  */
+@Feature(value = "Object Mapping",
+        description = "Object mapping support for Config",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"Config", "ObjectMapping"}
+)
 module io.helidon.config.objectmapping {
-    requires java.logging;
+
     requires io.helidon.config;
+
+    requires static io.helidon.common.features.api;
 
     exports io.helidon.config.objectmapping;
 
     provides io.helidon.config.spi.ConfigMapperProvider with io.helidon.config.objectmapping.ObjectConfigMapperProvider;
+	
 }

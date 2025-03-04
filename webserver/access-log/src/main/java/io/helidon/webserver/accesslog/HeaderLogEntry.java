@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,15 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.webserver.accesslog;
 
 import java.util.List;
+
+import io.helidon.http.HeaderName;
+import io.helidon.http.HeaderNames;
 
 /**
  * Access log entry for header values.
  */
 public final class HeaderLogEntry extends AbstractLogEntry {
-    private final String headerName;
+    private final HeaderName headerName;
 
     private HeaderLogEntry(Builder builder) {
         super(builder);
@@ -48,9 +52,19 @@ public final class HeaderLogEntry extends AbstractLogEntry {
         return new Builder(headerName);
     }
 
+    /**
+     * Create a fluent API builder for a header log entry.
+     *
+     * @param headerName header name
+     * @return a fluent API builder
+     */
+    public static Builder builder(HeaderName headerName) {
+        return new Builder(headerName);
+    }
+
     @Override
     protected String doApply(AccessLogContext context) {
-        List<String> values = context.serverRequest().headers().all(headerName);
+        List<String> values = context.serverRequest().headers().all(headerName, List::of);
         if (values.isEmpty()) {
             return NOT_AVAILABLE;
         }
@@ -62,12 +76,21 @@ public final class HeaderLogEntry extends AbstractLogEntry {
     }
 
     /**
-     * Fluent API builder for {@link io.helidon.webserver.accesslog.HeaderLogEntry}.
+     * Fluent API builder for {@link HeaderLogEntry}.
      */
     public static final class Builder extends AbstractLogEntry.Builder<HeaderLogEntry, Builder> {
-        private final String headerName;
+        private final HeaderName headerName;
 
         private Builder(String headerName) {
+            this.headerName = HeaderNames.create(headerName);
+        }
+
+        /**
+         * Header name to log.
+         *
+         * @param headerName header name
+         */
+        public Builder(HeaderName headerName) {
             this.headerName = headerName;
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,16 @@
  */
 package io.helidon.dbclient;
 
-import io.helidon.common.reactive.Single;
-
 /**
- * DML Database statement.
+ * Data Manipulation Language (DML) database statement.
  * A DML statement modifies records in the database and returns the number of modified records.
  */
-public interface DbStatementDml extends DbStatement<DbStatementDml, Single<Long>> {
+public interface DbStatementDml extends DbStatement<DbStatementDml> {
+
+    /**
+     * Execute this statement using the parameters configured with {@code params} and {@code addParams} methods.
+     *
+     * @return The result of this statement.
+     */
+    long execute();
 }

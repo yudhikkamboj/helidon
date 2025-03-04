@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,36 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+import io.helidon.common.features.api.Preview;
+
 /**
  * Support for Micrometer in Helidon SE.
  */
+@Preview
+@Feature(value = "Micrometer",
+        description = "Micrometer integration",
+        in = HelidonFlavor.SE,
+        path = "Micrometer"
+)
 module io.helidon.integrations.micrometer {
 
-    requires java.logging;
-
-    requires static jakarta.annotation;
-
-    requires io.helidon.common.http;
-    requires io.helidon.servicecommon.rest;
     requires io.helidon.config;
+    requires io.helidon.http;
     requires io.helidon.webserver.cors;
-
+    requires java.logging;
     requires micrometer.core;
     requires micrometer.registry.prometheus;
     requires simpleclient;
+
+    requires static io.helidon.common.features.api;
+    requires static io.helidon.config.metadata;
+    requires static jakarta.annotation;
+
+    requires transitive io.helidon.common;
+    requires transitive io.helidon.servicecommon;
+    requires micrometer.registry.prometheus.simpleclient;
 
     exports io.helidon.integrations.micrometer;
 

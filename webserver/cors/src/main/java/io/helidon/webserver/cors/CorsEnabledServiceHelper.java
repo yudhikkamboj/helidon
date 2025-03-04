@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,21 @@
  */
 package io.helidon.webserver.cors;
 
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.lang.System.Logger.Level;
 
 import io.helidon.config.Config;
-import io.helidon.webserver.Handler;
+import io.helidon.cors.CrossOriginConfig;
+import io.helidon.webserver.http.Handler;
 
 /**
- * Allows services (including Helidon built-in services) to register CORS support easily.
+ * Allows services (including Helidon WebServer built-in services) to register CORS support easily.
  * <p>
- *     Callers use either {@link #create(String)} or {@link #create(String, CrossOriginConfig)} to initialize the helper for a
- *     service. The helper uses the {@link CrossOriginConfig} instance to set up CORS behavior for the service. If the caller
- *     passes a null {@code CrossOriginConfig} or invokes the other variant of {@code create} then the sets up CORS using a
- *     default configuration:
+ * Callers use either {@link #create(String)} or {@link #create(String, CrossOriginConfig)} to initialize the helper for a
+ * service. The helper uses the {@link CrossOriginConfig} instance to set up CORS behavior for the service. If the caller
+ * passes a null {@code CrossOriginConfig} or invokes the other variant of {@code create} then the sets up CORS using a
+ * default configuration:
  * </p>
- *     <pre>
+ * <pre>
  *     enabled: true
  *     allow-origins: ["*"]
  *     allow-methods: ["GET", "HEAD", "OPTIONS"]
@@ -37,7 +37,7 @@ import io.helidon.webserver.Handler;
  *     allow-credentials: false
  *     max-age: 3600
  *     </pre>
- *     All of those settings except for {@code allow-methods} are the defaults for {@code CrossOriginConfig}.
+ * All of those settings except for {@code allow-methods} are the defaults for {@code CrossOriginConfig}.
  */
 public class CorsEnabledServiceHelper {
 
@@ -46,9 +46,9 @@ public class CorsEnabledServiceHelper {
      */
     public static final String CORS_CONFIG_KEY = "cors";
 
-    private static final Handler NO_OP_HANDLER = (req, res) -> req.next();
+    private static final Handler NO_OP_HANDLER = (req, res) -> res.next();
 
-    private static final Logger LOGGER = Logger.getLogger(CorsEnabledServiceHelper.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(CorsEnabledServiceHelper.class.getName());
 
     private final String serviceName;
     private final CrossOriginConfig crossOriginConfig;
@@ -61,7 +61,7 @@ public class CorsEnabledServiceHelper {
     /**
      * Creates a new helper based on the provided config.
      *
-     * @param serviceName name of the service (for logging)
+     * @param serviceName       name of the service (for logging)
      * @param crossOriginConfig {@link CrossOriginConfig} containing CORS set-up; if null, a default is used
      * @return new helper initialized with the CORS configuration
      */
@@ -82,12 +82,6 @@ public class CorsEnabledServiceHelper {
         return new CorsEnabledServiceHelper(serviceName, defaultCrossOriginConfig());
     }
 
-    private static CrossOriginConfig defaultCrossOriginConfig() {
-        return CrossOriginConfig.builder()
-                .allowMethods("GET", "HEAD", "OPTIONS")
-                .build();
-    }
-
     /**
      * Constructs a {@link Handler} for performing CORS processing, according to the previously-provided {@link Config}.
      *
@@ -97,13 +91,19 @@ public class CorsEnabledServiceHelper {
         CorsSupport.Builder builder = CorsSupport.builder().name(serviceName);
         if (crossOriginConfig.isEnabled()) {
             builder.addCrossOrigin(crossOriginConfig);
-            LOGGER.log(Level.CONFIG, String.format("CORS is configured for service %s with %s", serviceName,
-                    crossOriginConfig));
+            LOGGER.log(Level.TRACE, String.format("CORS is configured for service %s with %s", serviceName,
+                                                  crossOriginConfig));
         } else {
             // CORS is disabled for this service. Return the no-op handler.
-            LOGGER.log(Level.CONFIG, () -> String.format("CORS is disabled for service %s", serviceName));
+            LOGGER.log(Level.TRACE, () -> String.format("CORS is disabled for service %s", serviceName));
             return NO_OP_HANDLER;
         }
         return builder.build();
+    }
+
+    private static CrossOriginConfig defaultCrossOriginConfig() {
+        return CrossOriginConfig.builder()
+                .allowMethods("GET", "HEAD", "OPTIONS")
+                .build();
     }
 }

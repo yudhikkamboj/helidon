@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.security.AuthenticationResponse;
 import io.helidon.security.EndpointConfig;
 import io.helidon.security.OutboundSecurityResponse;
@@ -34,14 +36,14 @@ import io.helidon.security.providers.common.OutboundConfig;
 import io.helidon.security.providers.common.OutboundTarget;
 import io.helidon.security.spi.AuthenticationProvider;
 import io.helidon.security.spi.OutboundSecurityProvider;
-import io.helidon.security.spi.SynchronousProvider;
+import io.helidon.security.spi.SecurityProvider;
 import io.helidon.security.util.TokenHandler;
 
 /**
  * Security provider that extracts a username (or service name) from a header.
  * This provider also supports propagation of identity through a header.
  */
-public class HeaderAtnProvider extends SynchronousProvider implements AuthenticationProvider, OutboundSecurityProvider {
+public class HeaderAtnProvider implements AuthenticationProvider, OutboundSecurityProvider {
     private final boolean optional;
     private final boolean authenticate;
     private final boolean propagate;
@@ -83,7 +85,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
     }
 
     @Override
-    protected AuthenticationResponse syncAuthenticate(ProviderRequest providerRequest) {
+    public AuthenticationResponse authenticate(ProviderRequest providerRequest) {
         if (!authenticate) {
             return AuthenticationResponse.abstain();
         }
@@ -126,9 +128,9 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
     }
 
     @Override
-    protected OutboundSecurityResponse syncOutbound(ProviderRequest providerRequest,
-                                                    SecurityEnvironment outboundEnv,
-                                                    EndpointConfig outboundEndpointConfig) {
+    public OutboundSecurityResponse outboundSecurity(ProviderRequest providerRequest,
+                                                     SecurityEnvironment outboundEnv,
+                                                     EndpointConfig outboundEndpointConfig) {
 
         Optional<Subject> toPropagate;
         if (subjectType == SubjectType.USER) {
@@ -178,6 +180,9 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
     /**
      * A fluent api Builder for {@link HeaderAtnProvider}.
      */
+    @Configured(prefix = HeaderAtnService.PROVIDER_CONFIG_KEY,
+                description = "Security provider that extracts a username (or service name) from a header.",
+                provides = {SecurityProvider.class, AuthenticationProvider.class})
     public static final class Builder implements io.helidon.common.Builder<Builder, HeaderAtnProvider> {
         private final OutboundConfig.Builder outboundBuilder = OutboundConfig.builder();
 
@@ -217,10 +222,10 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
             config.get("authenticate").asBoolean().ifPresent(this::authenticate);
             config.get("propagate").asBoolean().ifPresent(this::propagate);
             config.get("principal-type").asString().map(SubjectType::valueOf).ifPresent(this::subjectType);
-            config.get("atn-token").as(TokenHandler::create).ifPresent(this::atnTokenHandler);
-            config.get("outbound-token").as(TokenHandler::create).ifPresent(this::outboundTokenHandler);
+            config.get("atn-token").map(TokenHandler::create).ifPresent(this::atnTokenHandler);
+            config.get("outbound-token").map(TokenHandler::create).ifPresent(this::outboundTokenHandler);
 
-            config.get("outbound").asList(OutboundTarget::create)
+            config.get("outbound").mapList(OutboundTarget::create)
                     .ifPresent(it -> it.forEach(outboundBuilder::addTarget));
 
             return this;
@@ -232,6 +237,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param subjectType type of principal
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "principal-type", value = "USER")
         public Builder subjectType(SubjectType subjectType) {
             this.subjectType = subjectType;
 
@@ -252,6 +258,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param propagate whether to propagate identity (true) or not (false)
          * @return updated builder instance
          */
+        @ConfiguredOption("false")
         public Builder propagate(boolean propagate) {
             this.propagate = propagate;
             return this;
@@ -263,6 +270,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param authenticate whether to authenticate (true) or not (false)
          * @return updated builder instance
          */
+        @ConfiguredOption("true")
         public Builder authenticate(boolean authenticate) {
             this.authenticate = authenticate;
             return this;
@@ -274,6 +282,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param tokenHandler token handler instance
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "atn-token")
         public Builder atnTokenHandler(TokenHandler tokenHandler) {
             this.atnTokenHandler = tokenHandler;
 
@@ -287,6 +296,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param tokenHandler token handler instance
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "outbound-token")
         public Builder outboundTokenHandler(TokenHandler tokenHandler) {
             this.outboundTokenHandler = tokenHandler;
 
@@ -301,6 +311,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param optional whether authentication is optional (true) or required (false)
          * @return updated builder instance
          */
+        @ConfiguredOption("false")
         public Builder optional(boolean optional) {
             this.optional = optional;
             return this;
@@ -312,6 +323,7 @@ public class HeaderAtnProvider extends SynchronousProvider implements Authentica
          * @param target outbound target
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "outbound", kind = ConfiguredOption.Kind.LIST)
         public Builder addOutboundTarget(OutboundTarget target) {
             this.outboundBuilder.addTarget(target);
             return this;

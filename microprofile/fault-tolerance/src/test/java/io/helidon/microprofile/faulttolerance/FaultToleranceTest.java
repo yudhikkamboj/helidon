@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.microprofile.faulttolerance;
 
+import java.lang.System.Logger.Level;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
@@ -27,7 +28,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
 import jakarta.enterprise.inject.literal.NamedLiteral;
 import jakarta.enterprise.inject.spi.CDI;
@@ -45,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 @HelidonTest
 abstract class FaultToleranceTest {
+    private static final System.Logger LOGGER = System.getLogger(FaultToleranceTest.class.getName());
 
     private static final long TIMEOUT = 5000;
     private static final TimeUnit TIMEOUT_UNITS = TimeUnit.MILLISECONDS;
@@ -76,8 +78,10 @@ abstract class FaultToleranceTest {
     }
 
     static void printStatus(String message, String status) {
-        System.out.println(message + " -> " + status + " [Thread: "
-                                   + Thread.currentThread().getName() + "]");
+        if (LOGGER.isLoggable(Level.DEBUG)) {
+            LOGGER.log(Level.DEBUG, message + " -> " + status
+                    + " [Thread: " + Thread.currentThread().threadId() + "]");
+        }
     }
 
     @SuppressWarnings("unchecked")

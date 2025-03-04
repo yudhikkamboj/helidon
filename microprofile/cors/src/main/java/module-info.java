@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,28 +14,32 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Support for CORS.
  */
+@Feature(value = "CORS",
+        description = "CORS support for Server",
+        in = HelidonFlavor.MP,
+        path = {"Server", "CORS"}
+)
 module io.helidon.microprofile.cors {
 
-    requires jakarta.ws.rs;
-    requires io.helidon.config;
     requires io.helidon.config.mp;
-    requires io.helidon.webserver.cors;
-
-    // Following to help with JavaDoc...
-    requires io.helidon.jersey.common;
-    requires io.helidon.webserver.jersey;
-    requires io.helidon.webserver;
+    requires io.helidon.config;
+    requires io.helidon.jersey.common; // Following to help with JavaDoc...
     requires io.helidon.microprofile.config;
-
-    // ---
+    requires io.helidon.webserver.cors;
+    requires io.helidon.webserver;
     requires jersey.common;
     requires microprofile.config.api;
 
-    requires jakarta.interceptor.api;
-    requires jakarta.cdi;
+    requires static io.helidon.common.features.api;
+
+    requires transitive jakarta.cdi;
+    requires transitive jakarta.ws.rs;
 
     exports io.helidon.microprofile.cors;
 
@@ -43,4 +47,6 @@ module io.helidon.microprofile.cors {
             with io.helidon.microprofile.cors.CrossOriginAutoDiscoverable;
 
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.cors.CorsCdiExtension;
+
+    opens io.helidon.microprofile.cors to weld.core.impl, org.glassfish.hk2.utilities;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.lang.reflect.Type;
 import java.util.Objects;
 import java.util.function.Supplier;
 
+import io.helidon.grpc.api.Grpc;
 import io.helidon.grpc.core.GrpcHelper;
 import io.helidon.grpc.core.MethodHandler;
 import io.helidon.grpc.core.SafeStreamObserver;
@@ -34,8 +35,7 @@ import io.grpc.stub.StreamObserver;
 /**
  * A base class for {@link MethodHandlerSupplier} implementations.
  */
-abstract class AbstractMethodHandlerSupplier
-        implements MethodHandlerSupplier {
+abstract class AbstractMethodHandlerSupplier implements MethodHandlerSupplier {
 
     private final MethodDescriptor.MethodType methodType;
 
@@ -55,8 +55,8 @@ abstract class AbstractMethodHandlerSupplier
     }
 
     /**
-     * Determine whether the specified method is annotated with {@link GrpcMethod}
-     * or another annotation that is itself annotated with {@link GrpcMethod}
+     * Determine whether the specified method is annotated with {@link io.helidon.grpc.api.Grpc.GrpcMethod}
+     * or another annotation that is itself annotated with {@link io.helidon.grpc.api.Grpc.GrpcMethod}
      * with a type matching this handler's {@link #methodType}.
      *
      * @param method  the method to test
@@ -67,8 +67,8 @@ abstract class AbstractMethodHandlerSupplier
             return false;
         }
 
-        GrpcMethod annotation = method.firstAnnotationOrMetaAnnotation(GrpcMethod.class);
-        return annotation != null && methodType.equals(annotation.type());
+        Grpc.GrpcMethod annotation = method.firstAnnotationOrMetaAnnotation(Grpc.GrpcMethod.class);
+        return annotation != null && methodType.equals(annotation.value());
     }
 
     /**
@@ -77,12 +77,11 @@ abstract class AbstractMethodHandlerSupplier
      * @param <ReqT>  the request type
      * @param <RespT> the response type
      */
-    public abstract static class AbstractHandler<ReqT, RespT>
-            implements MethodHandler<ReqT, RespT> {
+    abstract static class AbstractHandler<ReqT, RespT> implements MethodHandler<ReqT, RespT> {
 
         private final String methodName;
         private final AnnotatedMethod method;
-        private final Supplier<?> instance;
+        private final Supplier<?> instanceSupplier;
         private final MethodDescriptor.MethodType methodType;
         private Class<?> requestType = Empty.class;
         private Class<?> responseType = Empty.class;
@@ -92,16 +91,16 @@ abstract class AbstractMethodHandlerSupplier
          *
          * @param methodName the name of the gRPC method
          * @param method   the underlying handler method this handler should call
-         * @param instance the supplier to use to obtain the object to call the method on
+         * @param instanceSupplier the supplier to use to obtain the object to call the method on
          * @param methodType the type of method handled by this handler
          */
         protected AbstractHandler(String methodName,
                                   AnnotatedMethod method,
-                                  Supplier<?> instance,
+                                  Supplier<?> instanceSupplier,
                                   MethodDescriptor.MethodType methodType) {
             this.methodName = methodName;
             this.method = method;
-            this.instance = instance;
+            this.instanceSupplier = instanceSupplier;
             this.methodType = methodType;
         }
 
@@ -119,7 +118,7 @@ abstract class AbstractMethodHandlerSupplier
             }
 
             try {
-                invoke(method.declaredMethod(), instance.get(), request, safe);
+                invoke(method.declaredMethod(), instanceSupplier.get(), request, safe);
             } catch (Throwable thrown) {
                 safe.onError(GrpcHelper.ensureStatusException(thrown, Status.INTERNAL));
             }
@@ -142,7 +141,7 @@ abstract class AbstractMethodHandlerSupplier
         public StreamObserver<ReqT> invoke(StreamObserver<RespT> observer) {
             StreamObserver<RespT> safe = SafeStreamObserver.ensureSafeObserver(observer);
             try {
-                return invoke(method.declaredMethod(), instance.get(), safe);
+                return invoke(method.declaredMethod(), instanceSupplier.get(), safe);
             } catch (Throwable thrown) {
                 throw GrpcHelper.ensureStatusRuntimeException(thrown, Status.INTERNAL);
             }
@@ -154,7 +153,7 @@ abstract class AbstractMethodHandlerSupplier
          * @param method    the {@link Method} to invoke
          * @param instance  the service instance to invoke the method on
          * @param observer  the method response observer
-         * @return  the {@link StreamObserver} to receive requests from the client
+         * @return the {@link StreamObserver} to receive requests from the client
          * @throws InvocationTargetException if an error occurs invoking the method
          * @throws IllegalAccessException    if the method cannot be accessed
          */
@@ -163,7 +162,7 @@ abstract class AbstractMethodHandlerSupplier
 
         @Override
         public Class<?> getRequestType() {
-            RequestType annotation = method.getAnnotation(RequestType.class);
+            Grpc.RequestType annotation = method.getAnnotation(Grpc.RequestType.class);
             if (annotation != null) {
                 return annotation.value();
             }
@@ -171,7 +170,7 @@ abstract class AbstractMethodHandlerSupplier
         }
 
         /**
-         * Set the request type to use if no {@link RequestType} annotation
+         * Set the request type to use if no {@link io.helidon.grpc.api.Grpc.RequestType} annotation
          * is present on the annotated method.
          *
          * @param requestType  the request type
@@ -182,7 +181,7 @@ abstract class AbstractMethodHandlerSupplier
 
         @Override
         public Class<?> getResponseType() {
-            ResponseType annotation = method.getAnnotation(ResponseType.class);
+            Grpc.ResponseType annotation = method.getAnnotation(Grpc.ResponseType.class);
             if (annotation != null) {
                 return annotation.value();
             }
@@ -195,7 +194,7 @@ abstract class AbstractMethodHandlerSupplier
         }
 
         /**
-         * Set the response type to use if no {@link ResponseType} annotation
+         * Set the response type to use if no {@link io.helidon.grpc.api.Grpc.ResponseType} annotation
          * is present on the annotated method.
          * @param responseType  the response type
          */
@@ -263,10 +262,9 @@ abstract class AbstractMethodHandlerSupplier
      *
      * @param <V> the type of the response
      */
-    private static class NullHandlingResponseObserver<V>
-            implements StreamObserver<V> {
+    private static class NullHandlingResponseObserver<V> implements StreamObserver<V> {
 
-        private final StreamObserver delegate;
+        private final StreamObserver<V> delegate;
 
         private NullHandlingResponseObserver(StreamObserver<V> delegate) {
             this.delegate = delegate;
@@ -276,7 +274,7 @@ abstract class AbstractMethodHandlerSupplier
         @SuppressWarnings("unchecked")
         public void onNext(V value) {
             if (value == null) {
-                delegate.onNext(Empty.getDefaultInstance());
+                delegate.onNext((V) Empty.getDefaultInstance());
             }
             delegate.onNext(value);
         }

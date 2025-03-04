@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package io.helidon.microprofile.faulttolerance;
 
-import io.helidon.microprofile.tests.junit5.AddBean;
+import io.helidon.microprofile.testing.junit5.AddBean;
 
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
@@ -60,5 +60,13 @@ class FallbackTest extends FaultToleranceTest {
         String value = bean.fallbackHandler("someValue");
         assertThat(bean.getCalled(), is(true));
         assertThat(value, is("fallbackHandler"));
+    }
+
+    @Test
+    void testFallbackHandler2() {
+        assertThat(bean.getCalled(), is(false));
+        String value = bean.fallbackHandler2("someValue");
+        assertThat(bean.getCalled(), is(true));
+        assertThat(value, is("fallbackHandler2"));
     }
 }

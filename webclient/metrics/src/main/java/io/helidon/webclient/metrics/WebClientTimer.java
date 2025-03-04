@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,11 @@ package io.helidon.webclient.metrics;
 
 import java.time.Duration;
 
-import io.helidon.common.http.Http;
-import io.helidon.common.reactive.Single;
-import io.helidon.webclient.WebClientServiceRequest;
-
-import org.eclipse.microprofile.metrics.Metadata;
-import org.eclipse.microprofile.metrics.MetricType;
-import org.eclipse.microprofile.metrics.Timer;
+import io.helidon.http.Method;
+import io.helidon.http.Status;
+import io.helidon.metrics.api.Timer;
+import io.helidon.webclient.api.WebClientServiceRequest;
+import io.helidon.webclient.api.WebClientServiceResponse;
 
 /**
  * Timer which measures the length of request.
@@ -35,41 +33,29 @@ class WebClientTimer extends WebClientMetric {
     }
 
     @Override
-    MetricType metricType() {
-        return MetricType.TIMER;
-    }
-
-    @Override
-    public Single<WebClientServiceRequest> request(WebClientServiceRequest request) {
+    public WebClientServiceResponse handle(Chain chain, WebClientServiceRequest request) {
         long start = System.nanoTime();
-        Http.RequestMethod method = request.method();
-
-        request.whenResponseReceived()
-                .thenAccept(response -> {
-                    if (shouldContinueOnError(method, response.status().code())) {
-                        updateTimer(createMetadata(request, response), start);
-                    }
-                });
-        request.whenComplete()
-                .thenAccept(response -> {
-                    if (shouldContinueOnSuccess(method, response.status().code())) {
-                        updateTimer(createMetadata(request, response), start);
-                    }
-                })
-                .exceptionally(throwable -> {
-                    if (shouldContinueOnError(method)) {
-                        updateTimer(createMetadata(request, null), start);
-                    }
-                    return null;
-                });
-
-        return Single.just(request);
+        Method method = request.method();
+        try {
+            WebClientServiceResponse response = chain.proceed(request);
+            Status status = response.status();
+            if (shouldContinueOnError(method, status.code())) {
+                updateTimer(createMetadata(request, response), start);
+            }
+            return response;
+        } catch (Throwable ex) {
+            if (shouldContinueOnError(method)) {
+                updateTimer(createMetadata(request, null), start);
+            }
+            throw ex;
+        }
     }
 
     private void updateTimer(Metadata metadata, long start) {
         long time = System.nanoTime() - start;
-        Timer timer = metricRegistry().timer(metadata);
-        timer.update(Duration.ofNanos(time));
+        Timer timer = meterRegistry().getOrCreate(Timer.builder(metadata.name())
+                                                    .description(metadata.description()));
+        timer.record(Duration.ofNanos(time));
     }
 
 }

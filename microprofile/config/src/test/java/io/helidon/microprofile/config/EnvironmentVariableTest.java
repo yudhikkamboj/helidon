@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package io.helidon.microprofile.config;
 
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
+import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,6 +30,15 @@ import static org.hamcrest.Matchers.notNullValue;
 class EnvironmentVariableTest {
 
     private Config config;
+
+    @BeforeAll
+    static void initClass() {
+        ConfigProviderResolver configProvider = ConfigProviderResolver.instance();
+        configProvider.registerConfig(configProvider.getBuilder()
+                                              .addDefaultSources()
+                                              .build(),
+                                      Thread.currentThread().getContextClassLoader());
+    }
 
     @BeforeEach
     void installConfig() {

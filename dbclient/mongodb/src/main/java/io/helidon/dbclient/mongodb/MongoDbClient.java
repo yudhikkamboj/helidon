@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,52 +15,62 @@
  */
 package io.helidon.dbclient.mongodb;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
-
-import io.helidon.common.reactive.Single;
-import io.helidon.common.reactive.Subscribable;
 import io.helidon.dbclient.DbClient;
+import io.helidon.dbclient.DbClientBase;
+import io.helidon.dbclient.DbClientContext;
 import io.helidon.dbclient.DbExecute;
 import io.helidon.dbclient.DbTransaction;
-import io.helidon.dbclient.common.DbClientContext;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoCredential;
-import com.mongodb.reactivestreams.client.ClientSession;
-import com.mongodb.reactivestreams.client.MongoClient;
-import com.mongodb.reactivestreams.client.MongoClients;
-import com.mongodb.reactivestreams.client.MongoDatabase;
-import org.reactivestreams.Subscription;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoDatabase;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * MongoDB driver handler.
  */
-public class MongoDbClient implements DbClient {
-    private final MongoDbClientConfig config;
+public class MongoDbClient extends DbClientBase implements DbClient {
     private final MongoClient client;
     private final MongoDatabase db;
-    private final ConnectionString connectionString;
-    private final DbClientContext clientContext;
 
     /**
      * Creates an instance of MongoDB driver handler.
      *
      * @param builder builder for mongoDB database
      */
-    MongoDbClient(MongoDbClientProviderBuilder builder) {
-        this.clientContext = DbClientContext.builder()
+    MongoDbClient(MongoDbClientBuilder builder) {
+        super(DbClientContext.builder()
+                .statements(builder.statements())
                 .dbMapperManager(builder.dbMapperManager())
                 .mapperManager(builder.mapperManager())
                 .clientServices(builder.clientServices())
-                .statements(builder.statements())
-                .build();
+                .dbType(MongoDbClientProvider.DB_TYPE)
+                .build());
 
-        this.config = builder.dbConfig();
-        this.connectionString = new ConnectionString(config.url());
-        this.client = initMongoClient();
-        this.db = initMongoDatabase();
+        MongoDbClientConfig config = builder.dbConfig();
+        ConnectionString connectionString = new ConnectionString(config.url());
+
+        MongoClientSettings.Builder settingsBuilder = MongoClientSettings.builder()
+                .applyConnectionString(connectionString);
+
+        String dbName = connectionString.getDatabase();
+        if ((config.username() != null) || (config.password() != null)) {
+            String credDb = (config.credDb() == null) ? connectionString.getDatabase() : config.credDb();
+
+            MongoCredential credentials = MongoCredential.createCredential(
+                    config.username(),
+                    requireNonNull(credDb),
+                    config.password().toCharArray());
+
+            settingsBuilder.credential(credentials);
+        }
+
+        this.client = MongoClients.create(settingsBuilder.build());
+        this.db = client.getDatabase(dbName != null ? dbName : "admin");
     }
 
     /**
@@ -69,80 +79,30 @@ public class MongoDbClient implements DbClient {
      * Used in jUnit tests to mock MongoDB driver internals.
      *
      * @param builder builder for mongoDB database
-     * @param client MongoDB client provided externally
-     * @param db MongoDB database provided externally
+     * @param client  MongoDB client provided externally
+     * @param db      MongoDB database provided externally
      */
-    MongoDbClient(MongoDbClientProviderBuilder builder, MongoClient client, MongoDatabase db) {
-        this.clientContext = DbClientContext.builder()
+    MongoDbClient(MongoDbClientBuilder builder, MongoClient client, MongoDatabase db) {
+        super(DbClientContext.builder()
+                .statements(builder.statements())
                 .dbMapperManager(builder.dbMapperManager())
                 .mapperManager(builder.mapperManager())
                 .clientServices(builder.clientServices())
-                .statements(builder.statements())
-                .build();
+                .dbType(MongoDbClientProvider.DB_TYPE)
+                .build());
 
-        this.config = builder.dbConfig();
-        this.connectionString = config != null ? new ConnectionString(config.url()) : null;
         this.client = client;
         this.db = db;
     }
 
-    private static final class MongoSessionSubscriber implements org.reactivestreams.Subscriber<ClientSession> {
-
-        private final CompletableFuture<ClientSession> txFuture;
-        private ClientSession tx;
-        private Subscription subscription;
-
-        MongoSessionSubscriber(CompletableFuture<ClientSession> txFuture) {
-            this.txFuture = txFuture;
-            this.tx = null;
-        }
-
-        @Override
-        public void onSubscribe(Subscription subscription) {
-            this.subscription = subscription;
-            this.subscription.request(1);
-        }
-
-        @Override
-        public void onNext(ClientSession session) {
-            this.tx = session;
-            this.subscription.cancel();
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            txFuture.completeExceptionally(t);
-        }
-
-        @Override
-        public void onComplete() {
-            txFuture.complete(tx);
-        }
-
+    @Override
+    public DbExecute execute() {
+        return new MongoDbExecute(context(), db);
     }
 
     @Override
-    public <U, T extends Subscribable<U>> T inTransaction(Function<DbTransaction, T> executor) {
-        // Disable MongoDB transactions until they are tested.
-        throw new UnsupportedOperationException("Transactions are not yet supported in MongoDB");
-
-        //        CompletableFuture<ClientSession> txFuture = new CompletableFuture<>();
-        //        client.startSession().subscribe(new MongoSessionSubscriber(txFuture));
-        //        return txFuture.thenCompose(tx -> {
-        //            MongoDbTransaction mongoTx = new MongoDbTransaction(
-        //                    db, tx, statements, dbMapperManager, mapperManager, services);
-        //            CompletionStage<T> future = executor.apply(mongoTx);
-        //            // FIXME: Commit and rollback return Publisher so another future must be introduced here
-        //            // to cover commit or rollback. This future may be passed using allRegistered call
-        //            // and combined with transaction future
-        //            future.thenRun(mongoTx.txManager()::allRegistered);
-        //            return future;
-        //        });
-    }
-
-    @Override
-    public <U, T extends Subscribable<U>> T execute(Function<DbExecute, T> executor) {
-        return executor.apply(new MongoDbExecute(db, clientContext));
+    public DbTransaction transaction() {
+        throw new UnsupportedOperationException("Transactions are not supported");
     }
 
     @Override
@@ -150,47 +110,16 @@ public class MongoDbClient implements DbClient {
         return MongoDbClientProvider.DB_TYPE;
     }
 
-    // MongoDB internals are not blocking. Single instance is returned as already completed.
     @Override
-    public <C> Single<C> unwrap(Class<C> cls) {
+    public <C> C unwrap(Class<C> cls) {
         if (MongoClient.class.isAssignableFrom(cls)) {
-            final CompletableFuture<MongoClient> future = new CompletableFuture<>();
-            future.complete(client);
-            return Single.create(future).map(cls::cast);
-        } else if (MongoDatabase.class.isAssignableFrom(cls)) {
-            final CompletableFuture<MongoDatabase> future = new CompletableFuture<>();
-            future.complete(db);
-            return Single.create(future).map(cls::cast);
-        } else {
-            throw new UnsupportedOperationException(String.format("Class %s is not supported for unwrap", cls.getName()));
+            return cls.cast(client);
         }
-    }
-
-    /**
-     * Constructor helper to build MongoDB client from provided configuration.
-     */
-    private MongoClient initMongoClient() {
-        MongoClientSettings.Builder settingsBuilder = MongoClientSettings.builder()
-                .applyConnectionString(connectionString);
-
-        if ((config.username() != null) || (config.password() != null)) {
-            String credDb = (config.credDb() == null) ? connectionString.getDatabase() : config.credDb();
-
-            MongoCredential credentials = MongoCredential.createCredential(
-                    config.username(),
-                    credDb,
-                    config.password().toCharArray());
-
-            settingsBuilder.credential(credentials);
+        if (MongoDatabase.class.isAssignableFrom(cls)) {
+            return cls.cast(db);
         }
-
-        return MongoClients.create(settingsBuilder.build());
-    }
-
-    /**
-     * Constructor helper to build MongoDB database from provided configuration and client.
-     */
-    private MongoDatabase initMongoDatabase() {
-        return client.getDatabase(connectionString.getDatabase());
+        throw new UnsupportedOperationException(String.format(
+                "Class %s is not supported for unwrap",
+                cls.getName()));
     }
 }

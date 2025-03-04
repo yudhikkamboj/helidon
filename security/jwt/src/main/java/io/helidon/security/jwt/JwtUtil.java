@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 import javax.crypto.Mac;
 
 import jakarta.json.Json;
+import jakarta.json.JsonArray;
 import jakarta.json.JsonBuilderFactory;
 import jakarta.json.JsonNumber;
 import jakarta.json.JsonObject;
@@ -287,7 +288,7 @@ public final class JwtUtil {
             return ((Address) object).getJson();
         }
         if (object instanceof Collection) {
-            return JSON.createArrayBuilder((Collection) object).build();
+            return JSON.createArrayBuilder((Collection<?>) object).build();
         }
         return JSON_PROVIDER.createValue(String.valueOf(object));
     }
@@ -296,7 +297,7 @@ public final class JwtUtil {
         Matcher matcher = LOCALE_PATTERN.matcher(locale);
         Locale result;
         if (matcher.matches()) {
-            result = new Locale(matcher.group(1), matcher.group(2));
+            result = Locale.of(matcher.group(1), matcher.group(2));
         } else {
             result = Locale.forLanguageTag(locale);
         }
@@ -309,8 +310,12 @@ public final class JwtUtil {
     }
 
     static Optional<List<String>> toScopes(JsonObject json) {
-        return getString(json, "scope")
-                .map(it -> Arrays.asList(it.split(" ")));
+        if (json.get(Jwt.SCOPE) instanceof JsonArray) {
+            return getStrings(json, Jwt.SCOPE);
+        } else {
+            return getString(json, Jwt.SCOPE)
+                    .map(it -> Arrays.asList(it.split(" ")));
+        }
     }
 
     static Optional<ZoneId> toTimeZone(JsonObject json, String name) {

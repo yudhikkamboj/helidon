@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,23 @@
 /**
  * Integration of Micronaut into CDI.
  */
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.integrations.micronaut.cdi {
-    requires jakarta.annotation;
-    requires java.logging;
-
-    requires io.micronaut.inject;
-    requires io.micronaut.core;
-    requires io.micronaut.aop;
-
-    requires jakarta.cdi;
-    requires jakarta.inject;
-    requires jakarta.interceptor.api;
-
-    requires microprofile.config.api;
 
     requires io.helidon.common;
+    requires jakarta.inject;
+    requires microprofile.config.api;
+
+    requires transitive io.micronaut.aop;
+    requires transitive io.micronaut.core;
+    requires transitive io.micronaut.inject;
+    requires transitive jakarta.annotation;
+    requires transitive jakarta.cdi;
 
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.integrations.micronaut.cdi.MicronautCdiExtension;
 
     uses io.micronaut.inject.BeanDefinitionReference;
 
     exports io.helidon.integrations.micronaut.cdi;
+
 }

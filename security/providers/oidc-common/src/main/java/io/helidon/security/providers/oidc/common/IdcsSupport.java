@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,15 @@ package io.helidon.security.providers.oidc.common;
 
 import java.net.URI;
 import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 
-import io.helidon.common.http.FormParams;
-import io.helidon.common.http.Http;
-import io.helidon.common.http.MediaType;
+import io.helidon.common.parameters.Parameters;
+import io.helidon.http.HeaderNames;
+import io.helidon.http.HeaderValues;
+import io.helidon.http.Status;
 import io.helidon.security.SecurityException;
 import io.helidon.security.jwt.jwk.JwkKeys;
-import io.helidon.webclient.WebClient;
-import io.helidon.webclient.WebClientResponse;
+import io.helidon.webclient.api.HttpClientResponse;
+import io.helidon.webclient.api.WebClient;
 
 import jakarta.json.JsonObject;
 
@@ -45,40 +45,30 @@ class IdcsSupport {
                            URI signJwkUri,
                            Duration clientTimeout) {
         //  need to get token to be able to request this endpoint
-        FormParams form = FormParams.builder()
+        Parameters form = Parameters.builder("idcs-form-params")
                 .add("grant_type", "client_credentials")
                 .add("scope", "urn:opc:idm:__myscopes__")
                 .build();
 
-        try {
-            WebClientResponse response = appWebClient.post()
-                    .uri(tokenEndpointUri)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .submit(form)
-                    .await(clientTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        try (HttpClientResponse response = appWebClient.post()
+                .uri(tokenEndpointUri)
+                .header(HeaderValues.ACCEPT_JSON)
+                .submit(form)) {
 
-            if (response.status().family() == Http.ResponseStatus.Family.SUCCESSFUL) {
-                JsonObject json = response.content()
-                        .as(JsonObject.class)
-                        .await(clientTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            if (response.status().family() == Status.Family.SUCCESSFUL) {
+                JsonObject json = response.as(JsonObject.class);
 
                 String accessToken = json.getString("access_token");
 
                 // get the jwk from server
                 JsonObject jwkJson = generalClient.get()
                         .uri(signJwkUri)
-                        .headers(it -> {
-                            it.add(Http.Header.AUTHORIZATION, "Bearer " + accessToken);
-                            return it;
-                        })
-                        .request(JsonObject.class)
-                        .await(clientTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                        .header(HeaderNames.AUTHORIZATION, "Bearer " + accessToken)
+                        .requestEntity(JsonObject.class);
 
                 return JwkKeys.create(jwkJson);
             } else {
-                String errorEntity = response.content()
-                        .as(String.class)
-                        .await(clientTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                String errorEntity = response.as(String.class);
                 throw new SecurityException("Failed to read JWK from IDCS. Status: " + response.status()
                                                     + ", entity: " + errorEntity);
             }

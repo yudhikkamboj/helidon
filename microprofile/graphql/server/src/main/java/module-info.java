@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,38 +14,45 @@
  * limitations under the License.
  */
 
-import io.helidon.microprofile.graphql.server.GraphQlCdiExtension;
+import io.helidon.common.features.api.Aot;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
 /**
  * GraphQL microprofile server module.
  */
+@Feature(value = "GraphQL",
+        description = "MicroProfile GraphQL spec implementation",
+        in = HelidonFlavor.MP,
+        path = "GraphQL"
+)
+@Aot(description = "Experimental support, tested on limited use cases")
 module io.helidon.microprofile.graphql.server {
-    requires java.logging;
-    requires java.desktop;
 
-    requires jakarta.json.bind;
-    requires jakarta.annotation;
-    requires jakarta.cdi;
-    requires jakarta.interceptor.api;
-    requires org.eclipse.yasson;
-
-    requires org.jboss.jandex;
-
+    requires com.graphqljava.extendedscalars;
+    requires com.graphqljava;
     requires io.helidon.config;
-    requires io.helidon.webserver;
     requires io.helidon.graphql.server;
     requires io.helidon.microprofile.cdi;
     requires io.helidon.microprofile.server;
-
-    requires graphql.java;
-    requires graphql.java.extended.scalars;
-    requires microprofile.graphql.api;
+    requires io.helidon.webserver.graphql;
+    requires jakarta.annotation;
+    requires jakarta.json.bind;
+    requires java.desktop;
     requires microprofile.config.api;
+    requires microprofile.graphql.api;
+    requires org.eclipse.yasson;
+    requires org.jboss.jandex;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive jakarta.cdi;
 
     exports io.helidon.microprofile.graphql.server;
 
     provides jakarta.enterprise.inject.spi.Extension with
-            GraphQlCdiExtension;
+            io.helidon.microprofile.graphql.server.GraphQlCdiExtension;
 
     opens io.helidon.microprofile.graphql.server to weld.core.impl;
+	
 }

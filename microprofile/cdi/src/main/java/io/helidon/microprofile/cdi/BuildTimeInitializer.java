@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,11 @@
  */
 package io.helidon.microprofile.cdi;
 
-import io.helidon.common.LogConfig;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
+
+import io.helidon.logging.common.LogConfig;
 
 /**
  * Holds the container singleton.
@@ -25,30 +29,56 @@ import io.helidon.common.LogConfig;
 final class BuildTimeInitializer {
     private static volatile HelidonContainerImpl container;
 
+    private static final Lock CONTAINER_ACCESS = new ReentrantLock(true);
+
     static {
         // need to initialize logging as soon as possible
         LogConfig.initClass();
-        createContainer();
+
+        try {
+            createContainer();
+        } catch (Throwable e) {
+            System.getLogger(BuildTimeInitializer.class.getName())
+                    .log(System.Logger.Level.ERROR, "Failed to initialize CDI container", e);
+            throw e;
+        }
     }
 
     private BuildTimeInitializer() {
     }
 
-    static synchronized HelidonContainerImpl get() {
-        if (null == container) {
-            createContainer();
-        }
+    static HelidonContainerImpl get() {
+        return accessContainer(() -> {
+            if (null == container) {
+                createContainer();
+            }
 
-        return container;
+            return container;
+        });
     }
 
-    static synchronized void reset() {
-        container = null;
+    static void reset() {
+        accessContainer(() -> {
+            container = null;
+            return null;
+        });
     }
 
     private static void createContainer() {
         // static initialization to support GraalVM native image
-        container = HelidonContainerImpl.create();
-        ContainerInstanceHolder.addListener(BuildTimeInitializer::reset);
+        accessContainer(() -> {
+            container = HelidonContainerImpl.create();
+            ContainerInstanceHolder.addListener(BuildTimeInitializer::reset);
+            return null;
+        });
+    }
+
+    private static <T> T accessContainer(Supplier<T> operation) {
+        CONTAINER_ACCESS.lock();
+        try {
+            return operation.get();
+        } finally {
+            CONTAINER_ACCESS.unlock();
+        }
     }
 }

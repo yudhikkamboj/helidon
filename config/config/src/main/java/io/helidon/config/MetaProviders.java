@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,8 @@ import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.function.Function;
 
-import io.helidon.common.serviceloader.HelidonServiceLoader;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.Weight;
 import io.helidon.config.spi.ChangeWatcher;
 import io.helidon.config.spi.ChangeWatcherProvider;
 import io.helidon.config.spi.ConfigSource;
@@ -34,8 +35,6 @@ import io.helidon.config.spi.PollingStrategy;
 import io.helidon.config.spi.PollingStrategyProvider;
 import io.helidon.config.spi.RetryPolicy;
 import io.helidon.config.spi.RetryPolicyProvider;
-
-import jakarta.annotation.Priority;
 
 /**
  * Access to Java service loaders for config sources, retry policies and polling strategies.
@@ -114,7 +113,7 @@ final class MetaProviders {
                 .filter(provider -> provider.supports(type))
                 .findFirst()
                 .map(provider -> provider.create(type, config))
-                .orElseThrow(() -> new IllegalArgumentException("Config source of type " + type + " is not supported."
+                .orElseThrow(() -> new MetaConfigException("Config source of type " + type + " is not supported."
                                                                         + " Supported types: " + SUPPORTED_CONFIG_SOURCES));
     }
 
@@ -123,7 +122,7 @@ final class MetaProviders {
                 .filter(provider -> provider.supports(type))
                 .findFirst()
                 .map(provider -> provider.createMulti(type, sourceProperties))
-                .orElseThrow(() -> new IllegalArgumentException("Config source of type " + type + " is not supported."
+                .orElseThrow(() -> new MetaConfigException("Config source of type " + type + " is not supported."
                                                                         + " Supported types: " + SUPPORTED_CONFIG_SOURCES));
     }
 
@@ -132,7 +131,7 @@ final class MetaProviders {
                 .filter(provider -> provider.supports(type))
                 .findFirst()
                 .map(provider -> provider.create(type, config))
-                .orElseThrow(() -> new IllegalArgumentException("Config source of type " + type + " is not supported."
+                .orElseThrow(() -> new MetaConfigException("Config source of type " + type + " is not supported."
                                                                         + " Supported types: " + SUPPORTED_OVERRIDE_SOURCES));
     }
 
@@ -141,7 +140,7 @@ final class MetaProviders {
                 .filter(provider -> provider.supports(type))
                 .findFirst()
                 .map(provider -> provider.create(type, config))
-                .orElseThrow(() -> new IllegalArgumentException("Polling strategy of type " + type + " is not supported."
+                .orElseThrow(() -> new MetaConfigException("Polling strategy of type " + type + " is not supported."
                                                                         + " Supported types: " + SUPPORTED_POLLING_STRATEGIES));
     }
 
@@ -150,7 +149,7 @@ final class MetaProviders {
                 .filter(provider -> provider.supports(type))
                 .findFirst()
                 .map(provider -> provider.create(type, config))
-                .orElseThrow(() -> new IllegalArgumentException("Retry policy of type " + type + " is not supported."
+                .orElseThrow(() -> new MetaConfigException("Retry policy of type " + type + " is not supported."
                                                                         + " Supported types: " + SUPPORTED_RETRY_POLICIES));
     }
 
@@ -159,11 +158,11 @@ final class MetaProviders {
                 .filter(provider -> provider.supports(type))
                 .findFirst()
                 .map(provider -> provider.create(type, config))
-                .orElseThrow(() -> new IllegalArgumentException("Change watcher of type " + type + " is not supported."
+                .orElseThrow(() -> new MetaConfigException("Change watcher of type " + type + " is not supported."
                                                                 + " Supported types: " + SUPPORTED_CHANGE_WATCHERS));
     }
 
-    @Priority(Integer.MAX_VALUE)
+    @Weight(0)
     private static final class BuiltInChangeWatchers implements ChangeWatcherProvider {
         private static final String FILE_WATCH = "file";
 
@@ -183,7 +182,7 @@ final class MetaProviders {
         }
     }
 
-    @Priority(Integer.MAX_VALUE)
+    @Weight(0)
     private static final class BuiltInPollingStrategyProvider implements PollingStrategyProvider {
         private static final String REGULAR_TYPE = "regular";
 
@@ -203,7 +202,7 @@ final class MetaProviders {
         }
     }
 
-    @Priority(Integer.MAX_VALUE)
+    @Weight(0)
     private static final class BuiltInRetryPolicyProvider implements RetryPolicyProvider {
         private static final String REPEAT_TYPE = "repeat";
 
@@ -226,7 +225,7 @@ final class MetaProviders {
         }
     }
 
-    @Priority(Integer.MAX_VALUE)
+    @Weight(0)
     private static final class BuiltinOverrideSourceProvider implements OverrideSourceProvider {
         private static final String FILE_TYPE = "file";
         private static final String CLASSPATH_TYPE = "classpath";
@@ -256,7 +255,7 @@ final class MetaProviders {
         }
     }
 
-    @Priority(Integer.MAX_VALUE)
+    @Weight(0)
     private static final class BuiltInConfigSourcesProvider implements ConfigSourceProvider {
         private static final String SYSTEM_PROPERTIES_TYPE = "system-properties";
         private static final String ENVIRONMENT_VARIABLES_TYPE = "environment-variables";

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020 Oracle and/or its affiliates.
+# Copyright (c) 2020, 2023 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 app:
   greeting: "Hello"
 
+server:
+  features-discover-services: false
+
 client:
   follow-redirects: true
   max-redirects: 8
@@ -23,12 +26,12 @@ client:
 cors-setup:
   paths:
     - path-pattern: /cors1
-      allow-origins: ["*"]
-      allow-methods: ["*"]
+      allow-origins: [ "*" ]
+      allow-methods: [ "*" ]
     - path-pattern: /cors2
-      allow-origins: ["http://foo.bar", "http://bar.foo"]
-      allow-methods: ["DELETE", "PUT"]
-      allow-headers: ["X-bar", "X-foo"]
+      allow-origins: [ "http://foo.bar", "http://bar.foo" ]
+      allow-methods: [ "DELETE", "PUT" ]
+      allow-headers: [ "X-bar", "X-foo" ]
       allow-credentials: true
       max-age: -1
 # info for /cors3 is added programmatically

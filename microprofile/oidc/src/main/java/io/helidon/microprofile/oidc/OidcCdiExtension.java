@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package io.helidon.microprofile.oidc;
 import io.helidon.config.Config;
 import io.helidon.microprofile.cdi.RuntimeStart;
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.security.providers.oidc.OidcSupport;
+import io.helidon.security.providers.oidc.OidcFeature;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Initialized;
@@ -45,7 +45,7 @@ public final class OidcCdiExtension implements Extension {
             // only configure if security is enabled
             ServerCdiExtension server = bm.getExtension(ServerCdiExtension.class);
 
-            server.serverRoutingBuilder().register(OidcSupport.create(config));
+            server.serverRoutingBuilder().addFeature(OidcFeature.create(config));
         }
     }
 }

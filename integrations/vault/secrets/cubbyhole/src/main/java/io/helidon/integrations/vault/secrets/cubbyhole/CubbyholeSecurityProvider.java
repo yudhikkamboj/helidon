@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-import io.helidon.common.reactive.Single;
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
 import io.helidon.integrations.vault.Vault;
-import io.helidon.integrations.vault.VaultOptionalResponse;
 import io.helidon.security.spi.ProviderConfig;
 import io.helidon.security.spi.SecretsProvider;
 
@@ -31,24 +29,23 @@ import io.helidon.security.spi.SecretsProvider;
  * Integration with Helidon Security.
  */
 public class CubbyholeSecurityProvider implements SecretsProvider<CubbyholeSecurityProvider.CubbyholeSecretConfig> {
-    private final CubbyholeSecretsRx secrets;
+    private final CubbyholeSecrets secrets;
 
     CubbyholeSecurityProvider(Vault vault) {
-        this.secrets = vault.secrets(CubbyholeSecretsRx.ENGINE);
+        this.secrets = vault.secrets(CubbyholeSecrets.ENGINE);
     }
 
     @Override
-    public Supplier<Single<Optional<String>>> secret(Config config) {
+    public Supplier<Optional<String>> secret(Config config) {
         return secret(CubbyholeSecretConfig.create(config));
     }
 
     @Override
-    public Supplier<Single<Optional<String>>> secret(CubbyholeSecretConfig providerConfig) {
+    public Supplier<Optional<String>> secret(CubbyholeSecretConfig providerConfig) {
         String key = providerConfig.key;
-
         return () -> secrets.get(providerConfig.request())
-                .map(VaultOptionalResponse::entity)
-                .map(it -> it.flatMap(response -> response.value(key)));
+                .entity()
+                .flatMap(response -> response.value(key));
     }
 
     /**

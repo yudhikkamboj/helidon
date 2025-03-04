@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,39 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+import io.helidon.common.features.api.Preview;
+
 /**
- * Helidon DB Client.
+ * Helidon Database Client.
  *
  * @see io.helidon.dbclient.DbClient
  */
+@Preview
+@Feature(value = "Database Client",
+         description = "Database Client API",
+         in = HelidonFlavor.SE,
+         path = "DbClient"
+)
 module io.helidon.dbclient {
-    requires java.logging;
-    requires transitive io.helidon.config;
-    requires transitive io.helidon.common;
+
+    requires java.sql;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.common.config;
     requires transitive io.helidon.common.context;
     requires transitive io.helidon.common.mapper;
-    requires transitive io.helidon.common.serviceloader;
+    requires transitive io.helidon.common;
 
     exports io.helidon.dbclient;
     exports io.helidon.dbclient.spi;
 
     uses io.helidon.dbclient.spi.DbClientProvider;
-    uses io.helidon.dbclient.spi.DbMapperProvider;
     uses io.helidon.dbclient.spi.DbClientServiceProvider;
+    uses io.helidon.dbclient.spi.DbMapperProvider;
+
+    provides io.helidon.common.mapper.spi.MapperProvider with io.helidon.dbclient.DbMapperProviderImpl;
+
 }

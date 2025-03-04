@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,66 +15,89 @@
  */
 package io.helidon.dbclient.mongodb;
 
-import java.util.concurrent.CompletableFuture;
-
-import io.helidon.common.reactive.Single;
-import io.helidon.dbclient.DbClientServiceContext;
+import io.helidon.dbclient.DbExecuteContext;
 import io.helidon.dbclient.DbStatementDml;
 import io.helidon.dbclient.DbStatementType;
-import io.helidon.dbclient.common.DbStatementContext;
 
-import com.mongodb.reactivestreams.client.MongoDatabase;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.UpdateResult;
+import org.bson.Document;
 
 /**
- * DML statement for MongoDB.
+ * MongoDB {@link DbStatementDml} implementation.
  */
-public class MongoDbStatementDml extends MongoDbStatement<DbStatementDml, Single<Long>> implements DbStatementDml {
+public class MongoDbStatementDml extends MongoDbStatement<DbStatementDml> implements DbStatementDml {
 
-    private DbStatementType dbStatementType;
-    private MongoStatement statement;
+    private static final System.Logger LOGGER = System.getLogger(MongoDbStatementDml.class.getName());
 
-    MongoDbStatementDml(MongoDatabase db, DbStatementContext statementContext) {
-        super(db, statementContext);
-        this.dbStatementType = statementContext.statementType();
+    private final DbStatementType type;
+
+    /**
+     * Create a new instance.
+     *
+     * @param db      MongoDb instance
+     * @param context context
+     */
+    MongoDbStatementDml(MongoDatabase db, DbStatementType type, DbExecuteContext context) {
+        super(db, context);
+        this.type = type;
     }
 
     @Override
-    public Single<Long> execute() {
-        statement = new MongoStatement(dbStatementType, READER_FACTORY, build());
-        switch (statement.getOperation()) {
-        case INSERT:
-            dbStatementType = DbStatementType.INSERT;
-            break;
-        case UPDATE:
-            dbStatementType = DbStatementType.UPDATE;
-            break;
-        case DELETE:
-            dbStatementType = DbStatementType.DELETE;
-            break;
-        default:
-            throw new IllegalStateException(
-                    String.format("Unexpected value for DML statement: %s", statement.getOperation()));
-        }
-        return super.execute();
+    public DbStatementType statementType() {
+        return type;
     }
 
     @Override
-    protected Single<Long> doExecute(Single<DbClientServiceContext> dbContext,
-                                     CompletableFuture<Void> statementFuture,
-                                     CompletableFuture<Long> queryFuture) {
-
-        return Single.create(MongoDbDMLExecutor.executeDml(
-                this,
-                dbStatementType,
-                statement,
-                dbContext,
-                statementFuture,
-                queryFuture));
+    public long execute() {
+        return doExecute((future, context) -> {
+            MongoStatement stmt = new MongoStatement(type, prepareStatement(context));
+            try {
+                long result = switch (type) {
+                    case INSERT -> executeInsert(stmt);
+                    case UPDATE -> executeUpdate(stmt);
+                    case DELETE -> executeDelete(stmt);
+                    default -> throw new UnsupportedOperationException(String.format(
+                            "Statement operation not yet supported: %s",
+                            type.name()));
+                };
+                future.complete(result);
+                LOGGER.log(System.Logger.Level.DEBUG, () -> String.format(
+                        "%s DML %s execution succeeded",
+                        type.name(),
+                        context().statementName()));
+                return result;
+            } catch (UnsupportedOperationException ex) {
+                throw ex;
+            } catch (Throwable throwable) {
+                LOGGER.log(System.Logger.Level.DEBUG, () -> String.format(
+                        "%s DML %s execution failed",
+                        type.name(),
+                        context().statementName()));
+                throw throwable;
+            }
+        });
     }
 
-    @Override
-    protected DbStatementType statementType() {
-        return dbStatementType;
+    private Long executeInsert(MongoStatement stmt) {
+        MongoCollection<Document> mc = db().getCollection(stmt.getCollection());
+        mc.insertOne(stmt.getValue());
+        return 1L;
     }
 
+    private Long executeUpdate(MongoStatement stmt) {
+        MongoCollection<Document> mc = db().getCollection(stmt.getCollection());
+        Document query = stmt.getQuery();
+        UpdateResult updateResult = mc.updateMany(query, stmt.getValue());
+        return updateResult.getModifiedCount();
+    }
+
+    private Long executeDelete(MongoStatement stmt) {
+        MongoCollection<Document> mc = db().getCollection(stmt.getCollection());
+        Document query = stmt.getQuery();
+        DeleteResult deleteResult = mc.deleteMany(query);
+        return deleteResult.getDeletedCount();
+    }
 }

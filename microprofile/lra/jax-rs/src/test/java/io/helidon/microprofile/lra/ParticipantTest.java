@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import io.helidon.common.reactive.Multi;
+import io.helidon.http.Status;
 import io.helidon.lra.coordinator.client.CoordinatorClient;
 import io.helidon.microprofile.config.ConfigCdiExtension;
 import io.helidon.microprofile.lra.resources.DontEnd;
@@ -32,12 +32,12 @@ import io.helidon.microprofile.lra.resources.Work;
 import io.helidon.microprofile.server.JaxRsCdiExtension;
 import io.helidon.microprofile.server.RoutingPath;
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.microprofile.tests.junit5.AddBean;
-import io.helidon.microprofile.tests.junit5.AddConfig;
-import io.helidon.microprofile.tests.junit5.AddExtension;
-import io.helidon.microprofile.tests.junit5.DisableDiscovery;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
-import io.helidon.webserver.Service;
+import io.helidon.microprofile.testing.junit5.AddBean;
+import io.helidon.microprofile.testing.junit5.AddConfig;
+import io.helidon.microprofile.testing.junit5.AddExtension;
+import io.helidon.microprofile.testing.junit5.DisableDiscovery;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
+import io.helidon.webserver.http.HttpService;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -65,7 +65,6 @@ import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_CONTEXT
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.startsWith;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @HelidonTest
 @DisableDiscovery
@@ -99,21 +98,19 @@ class ParticipantTest {
     @Produces
     @ApplicationScoped
     @RoutingPath("/lra-coordinator")
-    Service mockCoordinator() {
+    HttpService mockCoordinator() {
         return rules -> rules
                 .post("/start", (req, res) -> {
                     String lraId = URI.create("http://localhost:" + port + "/lra-coordinator/xxx-xxx-001").toASCIIString();
-                    res.status(201)
-                            .addHeader(LRA_HTTP_CONTEXT_HEADER, lraId)
+                    res.status(Status.CREATED_201)
+                            .header(LRA_HTTP_CONTEXT_HEADER, lraId)
                             .send();
                 })
                 .put("/{lraId}/close", (req, res) -> {
                     res.send();
                 })
                 .put("/{lraId}", (req, res) -> {
-                    req.content()
-                            .as(String.class)
-                            .flatMap(s -> Multi.create(Arrays.stream(s.split(","))))
+                    Arrays.stream(req.content().as(String.class).split(","))
                             .map(s -> s.split(";")[0])
                             .map(s -> s
                                     .replaceAll("^<", "")
@@ -121,10 +118,9 @@ class ParticipantTest {
                             )
                             .map(URI::create)
                             .map(URI::getPath)
-                            .onComplete(res::send)
-                            .onComplete(() -> completed.complete(null))
-                            .forEach(paths::add)
-                            .exceptionally(res::send);
+                            .forEach(paths::add);
+                    res.send();
+                    completed.complete(null);
                 });
     }
 
@@ -163,8 +159,8 @@ class ParticipantTest {
                 URI.create("http://localhost:8888"),
                 NonJaxRsResource.CONTEXT_PATH_DEFAULT,
                 DontEnd.class);
-        assertTrue(p.isLraMethod(DontEnd.class.getMethod("startDontEndLRA", URI.class)));
-        assertTrue(p.isLraMethod(DontEnd.class.getMethod("endLRA", URI.class)));
+        assertThat(p.isLraMethod(DontEnd.class.getMethod("startDontEndLRA", URI.class)), is(true));
+        assertThat(p.isLraMethod(DontEnd.class.getMethod("endLRA", URI.class)), is(true));
     }
 
     @ApplicationScoped

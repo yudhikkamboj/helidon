@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,12 +23,15 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 
 /**
  * Generic cache with eviction support.
  * Default implementation is backed by {@link java.util.concurrent.ConcurrentHashMap} and provides
- * configuration to set this map up, as can be done through {@link #builder()}, and {@link #create(io.helidon.config.Config)}.
+ * configuration to set this map up, as can be done through {@link #builder()},
+ * and {@link #create(io.helidon.common.config.Config)}.
  *
  * Cache timeouts:
  * <ul>
@@ -185,6 +188,7 @@ public interface EvictableCache<K, V> {
      * @param <K> types of keys used in the cache
      * @param <V> types of values used in the cache
      */
+    @Configured
     class Builder<K, V> implements io.helidon.common.Builder<Builder<K, V>, EvictableCache<K, V>> {
         private boolean cacheEnabled = true;
         private long cacheTimeout = CACHE_TIMEOUT_MINUTES;
@@ -219,6 +223,7 @@ public interface EvictableCache<K, V> {
          * @param timeoutUnit timeout unit
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "cache-timeout-millis", value = "3600000", type = Long.class)
         public Builder<K, V> timeout(long timeout, TimeUnit timeoutUnit) {
             this.cacheTimeout = timeout;
             this.cacheTimeoutUnit = timeoutUnit;
@@ -232,6 +237,7 @@ public interface EvictableCache<K, V> {
          * @param timeoutUnit timeout unit
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "cache-overall-timeout-millis", value = "3600000", type = Long.class)
         public Builder<K, V> overallTimeout(long timeout, TimeUnit timeoutUnit) {
             this.overallTimeout = timeout;
             this.overallTimeoutUnit = timeoutUnit;
@@ -244,6 +250,7 @@ public interface EvictableCache<K, V> {
          * @param cacheMaxSize maximal number of records to store in the cache
          * @return updated builder instance
          */
+        @ConfiguredOption("100000")
         public Builder<K, V> maxSize(long cacheMaxSize) {
             this.cacheMaxSize = cacheMaxSize;
             return this;
@@ -257,6 +264,10 @@ public interface EvictableCache<K, V> {
          * @param evictTimeUnit time unit to use for these values
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "cache-evict-delay-millis", value = "60000", type = Long.class,
+                          description = "Delay from the creation of the cache to first eviction")
+        @ConfiguredOption(key = "cache-evict-period-millis", value = "300000", type = Long.class,
+                          description = "How often to evict records")
         public Builder<K, V> evictSchedule(long evictDelay, long evictPeriod, TimeUnit evictTimeUnit) {
             this.cacheEvictDelay = evictDelay;
             this.cacheEvictPeriod = evictPeriod;
@@ -270,6 +281,7 @@ public interface EvictableCache<K, V> {
          * @param parallelismThreshold see {@link ConcurrentHashMap#forEachKey(long, Consumer)}
          * @return updated builder instance
          */
+        @ConfiguredOption("10000")
         public Builder<K, V> parallelismThreshold(long parallelismThreshold) {
             this.parallelismThreshold = parallelismThreshold;
             return this;
@@ -284,6 +296,7 @@ public interface EvictableCache<K, V> {
          *                that should stay in cache
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "evictor-class", type = Class.class)
         public Builder<K, V> evictor(BiFunction<K, V, Boolean> evictor) {
             this.evictor = evictor;
             return this;
@@ -296,6 +309,7 @@ public interface EvictableCache<K, V> {
          * @param cacheEnabled whether to enable this cache or not (true - enabled by default)
          * @return updated builder instance
          */
+        @ConfiguredOption("true")
         public Builder<K, V> cacheEnabled(boolean cacheEnabled) {
             this.cacheEnabled = cacheEnabled;
             return this;

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+    Copyright (c) 2017, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.helidon</groupId>
         <artifactId>helidon-project</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <version>4.2.0-SNAPSHOT</version>
     </parent>
     <groupId>io.helidon.webserver</groupId>
     <artifactId>helidon-webserver-project</artifactId>
@@ -32,13 +32,29 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>webserver</module>
-        <module>transport</module>
-        <module>jersey</module>
-        <module>test-support</module>
         <module>access-log</module>
-        <module>tyrus</module>
+        <module>context</module>
         <module>cors</module>
+        <module>graphql</module>
+        <module>grpc</module>
+        <module>http2</module>
+        <module>observe</module>
+        <module>security</module>
+        <module>service-common</module>
+        <module>sse</module>
         <module>static-content</module>
+        <module>testing</module>
+        <module>webserver</module>
+        <module>websocket</module>
+        <module>concurrency-limits</module>
     </modules>
+
+    <profiles>
+        <profile>
+            <id>tests</id>
+            <modules>
+                <module>tests</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>

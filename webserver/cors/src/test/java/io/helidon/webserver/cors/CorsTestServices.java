@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@ package io.helidon.webserver.cors;
 
 import java.util.List;
 
-import io.helidon.common.http.Http;
-import io.helidon.webserver.Routing;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
-import io.helidon.webserver.Service;
-
+import io.helidon.http.Status;
+import io.helidon.webserver.http.HttpRules;
+import io.helidon.webserver.http.HttpService;
+import io.helidon.webserver.http.ServerRequest;
+import io.helidon.webserver.http.ServerResponse;
 
 class CorsTestServices {
 
@@ -33,7 +32,7 @@ class CorsTestServices {
 
     static final List<CORSTestService> SERVICES = List.of(SERVICE_1, SERVICE_2, SERVICE_3, SERVICE_4);
 
-    static class CORSTestService implements Service {
+    static class CORSTestService implements HttpService {
 
         private final String path;
 
@@ -41,21 +40,19 @@ class CorsTestServices {
             this.path = path;
         }
 
+        @Override
+        public void routing(HttpRules rules) {
+            rules.delete(this::ok)
+                    .put(this::ok);
+        }
+
         String path() {
             return path;
         }
 
         void ok(ServerRequest request, ServerResponse response) {
-            response.status(Http.Status.OK_200.code());
+            response.status(Status.OK_200);
             response.send();
-        }
-
-        @Override
-        public void update(Routing.Rules rules) {
-            rules
-                    .delete(this::ok)
-                    .put(this::ok)
-            ;
         }
     }
 }

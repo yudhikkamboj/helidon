@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,17 @@
 
 package io.helidon.microprofile.grpc.client;
 
-import io.helidon.grpc.client.GrpcChannelsProvider;
-import io.helidon.microprofile.grpc.core.InProcessGrpcChannel;
+import io.helidon.grpc.api.Grpc;
 import io.helidon.microprofile.grpc.core.ModelHelper;
 
 import io.grpc.Channel;
-import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.enterprise.inject.spi.InjectionPoint;
 
 /**
  * A utility class of gRPC CDI producer stubs.
  * <p>
  * The methods in this class are not real CDI producer methods,
- * they act as templates that the {@link GrpcClientCdiExtension}
+ * they act as templates that the {@link io.helidon.microprofile.grpc.client.GrpcClientCdiExtension}
  * will use to create producers on the fly as injection points
  * are observed.
  */
@@ -39,8 +37,9 @@ class GrpcProxyProducer {
 
     /**
      * A CDI producer method that produces a client proxy for a gRPC service that
-     * will connect to the server using the channel specified via {@link GrpcChannel}
-     * annotation on the proxy interface or injection point, or the default {@link Channel}.
+     * will connect to the server using the channel specified via
+     * {@link io.helidon.grpc.api.Grpc.GrpcChannel} annotation on the proxy interface
+     * or injection point, or the default {@link io.grpc.Channel}.
      * <p>
      * This is not a real producer method but is used as a stub by the gRPC client
      * CDI extension to create real producers as injection points are discovered.
@@ -48,42 +47,23 @@ class GrpcProxyProducer {
      * @param injectionPoint the injection point where the client proxy is to be injected
      * @return a gRPC client proxy
      */
-    @GrpcProxy
-    @GrpcChannel(name = GrpcChannelsProvider.DEFAULT_CHANNEL_NAME)
+    @Grpc.GrpcProxy
+    @Grpc.GrpcChannel(GrpcChannelsProvider.DEFAULT_CHANNEL_NAME)
     static Object proxyUsingNamedChannel(InjectionPoint injectionPoint, ChannelProducer producer) {
         Class<?> type = ModelHelper.getGenericType(injectionPoint.getType());
 
         String channelName;
-        if (injectionPoint.getAnnotated().isAnnotationPresent(GrpcChannel.class)) {
-            channelName = injectionPoint.getAnnotated().getAnnotation(GrpcChannel.class).name();
+        if (injectionPoint.getAnnotated().isAnnotationPresent(Grpc.GrpcChannel.class)) {
+            channelName = injectionPoint.getAnnotated().getAnnotation(Grpc.GrpcChannel.class).value();
         } else {
-            channelName = type.isAnnotationPresent(GrpcChannel.class)
-                    ? type.getAnnotation(GrpcChannel.class).name()
+            channelName = type.isAnnotationPresent(Grpc.GrpcChannel.class)
+                    ? type.getAnnotation(Grpc.GrpcChannel.class).value()
                     : GrpcChannelsProvider.DEFAULT_CHANNEL_NAME;
         }
 
         Channel channel = producer.findChannel(channelName);
         GrpcProxyBuilder<?> builder = GrpcProxyBuilder.create(channel, type);
 
-        return builder.build();
-    }
-
-    /**
-     * A CDI producer method that produces a client proxy for a gRPC service that
-     * will connect to the server using an in-process {@link Channel}.
-     * <p>
-     * This is not a real producer method but is used as a stub by the gRPC client
-     * CDI extension to create real producers as injection points are discovered.
-     *
-     * @param injectionPoint the injection point where the client proxy is to be injected
-     * @return a gRPC client proxy
-     */
-    @GrpcProxy
-    @InProcessGrpcChannel
-    static Object proxyUsingInProcessChannel(InjectionPoint injectionPoint, BeanManager beanManager) {
-        Class<?> type = ModelHelper.getGenericType(injectionPoint.getType());
-        Channel channel = ChannelProducer.inProcessChannel(beanManager);
-        GrpcProxyBuilder<?> builder = GrpcProxyBuilder.create(channel, type);
         return builder.build();
     }
 }

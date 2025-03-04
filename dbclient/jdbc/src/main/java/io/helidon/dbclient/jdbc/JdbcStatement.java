@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,149 +15,183 @@
  */
 package io.helidon.dbclient.jdbc;
 
+import java.io.ByteArrayInputStream;
+import java.io.CharArrayReader;
+import java.lang.System.Logger.Level;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.SQLXML;
+import java.sql.Types;
 import java.util.ArrayList;
-import java.util.LinkedList;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ExecutorService;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.UUID;
 
 import io.helidon.dbclient.DbClientException;
 import io.helidon.dbclient.DbClientServiceContext;
+import io.helidon.dbclient.DbIndexedStatementParameters;
+import io.helidon.dbclient.DbNamedStatementParameters;
 import io.helidon.dbclient.DbStatement;
-import io.helidon.dbclient.common.AbstractStatement;
-import io.helidon.dbclient.common.DbStatementContext;
+import io.helidon.dbclient.DbStatementBase;
+import io.helidon.dbclient.DbStatementParameters;
 
 /**
- * Common JDBC statement builder.
+ * JDBC statement base implementation.
  *
- * @param <S> subclass of this class
- * @param <R> Statement execution result type
+ * @param <S> type of subclass
  */
-abstract class JdbcStatement<S extends DbStatement<S, R>, R> extends AbstractStatement<S, R> {
+public abstract class JdbcStatement<S extends DbStatement<S>> extends DbStatementBase<S> {
 
-    /** Local logger instance. */
-    private static final Logger LOGGER = Logger.getLogger(JdbcStatement.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(JdbcStatement.class.getName());
 
-    private final ExecutorService executorService;
-    private final String dbType;
-    private final CompletionStage<Connection> connection;
-    private final JdbcExecuteContext executeContext;
+    private final JdbcConnectionPool connectionPool;
+    private Connection connection;
 
-    JdbcStatement(JdbcExecuteContext executeContext, DbStatementContext statementContext) {
-        super(statementContext);
-
-        this.executeContext = executeContext;
-        this.dbType = executeContext.dbType();
-        this.connection = executeContext.connection();
-        this.executorService = executeContext.executorService();
+    /**
+     * Create a new instance.
+     *
+     * @param connectionPool connection pool
+     * @param context        context
+     */
+    JdbcStatement(JdbcConnectionPool connectionPool, JdbcExecuteContext context) {
+        super(context);
+        this.connectionPool = connectionPool;
     }
 
-    PreparedStatement build(Connection conn, DbClientServiceContext dbContext) {
-        LOGGER.fine(() -> String.format("Building SQL statement: %s", dbContext.statement()));
-        String statement = dbContext.statement();
-        String statementName = dbContext.statementName();
-
-        Supplier<PreparedStatement> simpleStatementSupplier = () -> prepareStatement(conn, statementName, statement);
-
-        if (dbContext.isIndexed()) {
-            return dbContext.indexedParameters()
-                    .map(params -> prepareIndexedStatement(conn, statementName, statement, params))
-                    .orElseGet(simpleStatementSupplier);
-        } else {
-            return dbContext.namedParameters()
-                    .map(params -> prepareNamedStatement(conn, statementName, statement, params))
-                    .orElseGet(simpleStatementSupplier);
-        }
-    }
-
-    @Override
-    protected String dbType() {
-        return dbType;
-    }
-
-    CompletionStage<Connection> connection() {
-        return connection;
-    }
-
-    ExecutorService executorService() {
-        return executorService;
-    }
-
-    JdbcExecuteContext executeContext() {
-        return executeContext;
-    }
-
-    private PreparedStatement prepareStatement(Connection conn, String statementName, String statement) {
+    /**
+     * Close the connection.
+     */
+    void closeConnection() {
         try {
-            return conn.prepareStatement(statement);
+            if (connection != null) {
+                connection.close();
+            }
         } catch (SQLException e) {
-            throw new DbClientException(String.format("Failed to prepare statement: %s", statementName), e);
+            LOGGER.log(Level.WARNING, String.format("Could not close connection: %s", e.getMessage()), e);
         }
     }
 
-    private PreparedStatement prepareNamedStatement(Connection connection,
-                                                    String statementName,
-                                                    String statement,
-                                                    Map<String, Object> parameters) {
+    private JdbcExecuteContext jdbcContext() {
+        return context(JdbcExecuteContext.class);
+    }
 
+    /**
+     * Create the {@link PreparedStatement}.
+     *
+     * @param serviceContext client service context
+     * @return PreparedStatement
+     */
+    protected PreparedStatement prepareStatement(DbClientServiceContext serviceContext) {
+        String stmtName = serviceContext.statementName();
+        String stmt = serviceContext.statement();
+        DbStatementParameters stmtParams = serviceContext.statementParameters();
+        LOGGER.log(Level.DEBUG, () -> String.format("Building SQL statement: %s", stmt));
+        if (stmtParams instanceof DbIndexedStatementParameters indexed) {
+            List<Object> params = indexed.parameters();
+            return prepareIndexedStatement(stmtName, stmt, params);
+        } else if (stmtParams instanceof DbNamedStatementParameters named) {
+            Map<String, Object> params = named.parameters();
+            return prepareNamedStatement(stmtName, stmt, params);
+        }
+        return prepareStatement(stmtName, stmt);
+    }
+
+    /**
+     * Create the {@link PreparedStatement}.
+     *
+     * @param stmtName statement name
+     * @param stmt     statement text
+     * @return statement
+     */
+    protected PreparedStatement prepareStatement(String stmtName, String stmt) {
+        Connection connection = connectionPool.connection();
+        try {
+            connection.setAutoCommit(true);
+        } catch (SQLException e) {
+            throw new DbClientException("Failed to set autocommit to true", e);
+        }
+        return prepareStatement(connection, stmtName, stmt);
+    }
+
+    /**
+     * Create the {@link PreparedStatement}.
+     *
+     * @param connection connection
+     * @param stmtName   statement name
+     * @param stmt       statement text
+     * @return statement
+     */
+    protected PreparedStatement prepareStatement(Connection connection, String stmtName, String stmt) {
+        try {
+            this.connection = connection;
+            return connection.prepareStatement(stmt);
+        } catch (SQLException e) {
+            throw new DbClientException(String.format("Failed to prepare statement: %s", stmtName), e);
+        }
+    }
+
+    private PreparedStatement prepareNamedStatement(String stmtName, String stmt, Map<String, Object> parameters) {
         PreparedStatement preparedStatement = null;
         try {
-            // Parameters names must be replaced with ? and names occurence order must be stored.
-            Parser parser = new Parser(statement);
-            String jdbcStatement = parser.convert();
-            LOGGER.finest(() -> String.format("Converted statement: %s", jdbcStatement));
-            preparedStatement = connection.prepareStatement(jdbcStatement);
+            // Parameters names must be replaced with ? and names occurrence order must be stored.
+            NamedStatementParser parser = new NamedStatementParser(stmt);
+            String convertedStmt = parser.convert();
+            LOGGER.log(Level.TRACE, () -> String.format("Converted statement: %s", convertedStmt));
+            preparedStatement = prepareStatement(stmtName, convertedStmt);
             List<String> namesOrder = parser.namesOrder();
             // Set parameters into prepared statement
-            int i = 1;
+            int i = 1; // JDBC set position parameter starts from 1.
             for (String name : namesOrder) {
                 if (parameters.containsKey(name)) {
                     Object value = parameters.get(name);
-                    LOGGER.finest(String.format("Mapped parameter %d: %s -> %s", i, name, value));
-                    preparedStatement.setObject(i, value);
+                    if (LOGGER.isLoggable(Level.TRACE)) {
+                        LOGGER.log(Level.TRACE, String.format("Mapped parameter %d: %s -> %s", i, name, value));
+                    }
+                    setParameter(preparedStatement, i, value);
                     i++;
                 } else {
-                    throw new DbClientException(namedStatementErrorMessage(namesOrder, parameters));
+                    if (context().missingMapParametersAsNull()) {
+                        if (LOGGER.isLoggable(Level.TRACE)) {
+                            LOGGER.log(Level.TRACE, String.format("Mapped parameter %d: %s -> null", i, name));
+                        }
+                        setParameter(preparedStatement, i, null);
+                        i++;
+                    } else {
+                        throw new DbClientException(namedStatementErrorMessage(namesOrder, parameters));
+                    }
                 }
             }
             return preparedStatement;
         } catch (SQLException e) {
             closePreparedStatement(preparedStatement);
-            throw new DbClientException("Failed to prepare statement with named parameters: " + statementName, e);
+            throw new DbClientException("Failed to prepare statement with named parameters: " + stmtName, e);
         }
     }
 
-    private PreparedStatement prepareIndexedStatement(Connection connection,
-                                                      String statementName,
-                                                      String statement,
-                                                      List<Object> parameters) {
-
+    private PreparedStatement prepareIndexedStatement(String stmtName, String stmt, List<Object> parameters) {
         PreparedStatement preparedStatement = null;
         try {
-            preparedStatement = connection.prepareStatement(statement);
+            preparedStatement = prepareStatement(stmtName, stmt);
             int i = 1; // JDBC set position parameter starts from 1.
             for (Object value : parameters) {
-                LOGGER.finest(String.format("Indexed parameter %d: %s", i, value));
-                preparedStatement.setObject(i, value);
-                // increase value for next iteration
+                if (LOGGER.isLoggable(Level.TRACE)) {
+                    LOGGER.log(Level.TRACE, String.format("Indexed parameter %d: %s", i, value));
+                }
+                setParameter(preparedStatement, i, value);
                 i++;
             }
             return preparedStatement;
         } catch (SQLException e) {
             closePreparedStatement(preparedStatement);
-            throw new DbClientException(String.format("Failed to prepare statement with indexed params: %s", statementName), e);
+            throw new DbClientException(String.format("Failed to prepare statement with indexed params: %s", stmtName), e);
         }
     }
 
-    private void closePreparedStatement(final PreparedStatement preparedStatement) {
+    private void closePreparedStatement(PreparedStatement preparedStatement) {
         if (preparedStatement != null) {
             try {
                 preparedStatement.close();
@@ -167,10 +201,10 @@ abstract class JdbcStatement<S extends DbStatement<S, R>, R> extends AbstractSta
         }
     }
 
-    private static String namedStatementErrorMessage(final List<String> namesOrder, final Map<String, Object> parameters) {
+    private static String namedStatementErrorMessage(List<String> names, Map<String, Object> parameters) {
         // Parameters in query missing in parameters Map
-        List<String> notInParams = new ArrayList<>(namesOrder.size());
-        for (String name : namesOrder) {
+        List<String> notInParams = new ArrayList<>(names.size());
+        for (String name : names) {
             if (!parameters.containsKey(name)) {
                 notInParams.add(name);
             }
@@ -189,542 +223,158 @@ abstract class JdbcStatement<S extends DbStatement<S, R>, R> extends AbstractSta
         return sb.toString();
     }
 
-    /**
-     * Mapping parser state machine.
-     *
-     * Before replacement:
-     * {@code SELECT * FROM table WHERE name = :name AND type = :type}
-     * After replacement:
-     * {@code SELECT * FROM table WHERE name = ? AND type = ?}
-     * Expected list of parameters:
-     * {@code "name", "type"}
-     */
-    static final class Parser {
-                @FunctionalInterface
-
-        private interface Action extends Consumer<Parser> {}
-
-        /**
-         * Character classes used in state machine.
-         */
-        private enum CharClass {
-            IDENTIFIER_START,   // Any character for which the method Character.isJavaIdentifierStart returns true
-                                // or '_'
-            IDENTIFIER_PART,    // Any character for which the method Character.isJavaIdentifierPart returns true
-            LF,                 // Line feed / new line (\n), terminates line alone or in CR LF sequence
-            CR,                 // Carriage return (\r), terminates line in CR LF sequence
-            APOSTROPHE,         // Single quote ('), begins string in SQL
-            STAR,               // Star (*), part of multiline comment beginning "/*" and ending "*/" sequence
-            DASH,               // Dash (-), part of single line comment beginning sequence "--"
-            SLASH,              // Slash (/), part of multiline comment beginning "/*" and ending "*/" sequence
-            COLON,              // Colon (:), begins named parameter
-            OTHER;              // Other characters
-
-            /**
-             * Returns character class corresponding to provided character.
-             *
-             * @param c character to determine its character class
-             * @return character class corresponding to provided character
-             */
-            private static CharClass charClass(char c) {
-                switch (c) {
-                    case '\r': return CR;
-                    case '\n': return LF;
-                    case '\'': return APOSTROPHE;
-                    case '*': return STAR;
-                    case '-': return DASH;
-                    case '/': return SLASH;
-                    case ':': return COLON;
-                    case '_': return IDENTIFIER_START;
-                    default:
-                        return Character.isJavaIdentifierStart(c)
-                                ? IDENTIFIER_START
-                                : (Character.isJavaIdentifierPart(c) ? IDENTIFIER_PART : OTHER);
+    // JDBC PreparedStatement parameters setting from EclipseLink
+    private void setParameter(PreparedStatement statement, int index, Object parameter) throws SQLException {
+        // Start with common types
+        if (parameter instanceof String s) {
+            // Check for stream binding of large strings.
+            if (jdbcContext().parametersConfig().useStringBinding()
+                    && (s.length() > jdbcContext().parametersConfig().stringBindingSize())) {
+                CharArrayReader reader = new CharArrayReader(s.toCharArray());
+                statement.setCharacterStream(index, reader, (s.length()));
+            } else {
+                if (jdbcContext().parametersConfig().useNString()) {
+                    statement.setNString(index, s);
+                } else {
+                    statement.setString(index, s);
                 }
             }
-
-        }
-
-        /**
-         * States used in state machine.
-         */
-        private enum State {
-            STATEMENT,            // Common statement processing
-            STRING,               // SQL string processing after 1st APOSTROPHE was recieved
-            COLON,                // Symbolic name processing after opening COLON (colon) was recieved
-            PARAMETER,            // Symbolic name processing after 1st LETTER or later LETTER
-                                  // or NUMBER of parameter name was recieved
-            MULTILN_COMMENT_BG,   // Multiline comment processing after opening slash was recieved from the "/*" sequence
-            MULTILN_COMMENT_END,  // Multiline comment processing after closing star was recieved from the "*/" sequence
-            MULTILN_COMMENT,      // Multiline comment processing of the comment itself
-            SINGLELN_COMMENT_BG,  // Single line comment processing after opening dash was recieved from the "--" sequence
-            SINGLELN_COMMENT_END, // Single line comment processing after closing CR was recieved from the CR LF sequence
-            SINGLELN_COMMENT;     // Single line comment processing of the comment itself
-
-            /** States transition table. */
-            private static final State[][] TRANSITION = {
-                // Transitions from STATEMENT state
-                {
-                    STATEMENT,           // IDENTIFIER_START: regular part of the statement, keep processing it
-                    STATEMENT,           // IDENTIFIER_PART: regular part of the statement, keep processing it
-                    STATEMENT,           // LF: regular part of the statement, keep processing it
-                    STATEMENT,           // CR: regular part of the statement, keep processing it
-                    STRING,              // APOSTROPHE: beginning of SQL string processing, switch to STRING state
-                    STATEMENT,           // STAR: regular part of the statement, keep processing it
-                    SINGLELN_COMMENT_BG, // DASH: possible starting sequence of single line comment,
-                                         //       switch to SINGLELN_COMMENT_BG state
-                    MULTILN_COMMENT_BG,  // SLASH: possible starting sequence of multi line comment,
-                                         //        switch to MULTILN_COMMENT_BG state
-                    COLON,               // COLON: possible beginning of named parameter, switch to COLON state
-                    STATEMENT            // OTHER: regular part of the statement, keep processing it
-                },
-                // Transitions from STRING state
-                {
-                    STRING,              // IDENTIFIER_START: regular part of the SQL string, keep processing it
-                    STRING,              // IDENTIFIER_PART: regular part of the SQL string, keep processing it
-                    STRING,              // LF: regular part of the SQL string, keep processing it
-                    STRING,              // CR: regular part of the SQL string, keep processing it
-                    STATEMENT,           // APOSTROPHE: end of SQL string processing, go back to STATEMENT state
-                    STRING,              // STAR: regular part of the SQL string, keep processing it
-                    STRING,              // DASH: regular part of the SQL string, keep processing it
-                    STRING,              // SLASH: regular part of the SQL string, keep processing it
-                    STRING,              // COLON: regular part of the SQL string, keep processing it
-                    STRING               // OTHER: regular part of the SQL string, keep processing it
-                },
-                // Transitions from COLON state
-                {
-                    PARAMETER,           // IDENTIFIER_START: first character of named parameter,
-                                         //                   switch to PARAMETER state
-                    STATEMENT,           // IDENTIFIER_PART: can't be first character of named parameter,
-                                         //                  go back to STATEMENT state
-                    STATEMENT,           // LF: can't be first character of named parameter, go back to STATEMENT state
-                    STATEMENT,           // CR: can't be first character of named parameter, go back to STATEMENT state
-                    STRING,              // APOSTROPHE: not a named parameter but beginning of SQL string processing,
-                                         //             switch to STRING state
-                    STATEMENT,           // STAR: can't be first character of named parameter, go back to STATEMENT state
-                    SINGLELN_COMMENT_BG, // DASH: not a named parameter but possible starting sequence of single line comment,
-                                         //       switch to SINGLELN_COMMENT_BG state
-                    MULTILN_COMMENT_BG,  // SLASH: not a named parameter but possible starting sequence of multi line comment,
-                                         //        switch to MULTILN_COMMENT_BG state
-                    COLON,               // COLON: not a named parameter but possible beginning of another named parameter,
-                                         //        retry named parameter processing
-                    STATEMENT            // OTHER: can't be first character of named parameter, go back to STATEMENT state
-                },
-                // Transitions from PARAMETER state
-                {
-                    PARAMETER,           // IDENTIFIER_START: next character of named parameter, keep processing it
-                    PARAMETER,           // IDENTIFIER_PART: next character of named parameter, keep processing it
-                    STATEMENT,           // LF: can't be next character of named parameter, go back to STATEMENT state
-                    STATEMENT,           // CR: can't be next character of named parameter, go back to STATEMENT state
-                    STRING,              // APOSTROPHE: end of named parameter and beginning of SQL string processing,
-                                         //             switch to STRING state
-                    STATEMENT,           // STAR: can't be next character of named parameter, go back to STATEMENT state
-                    SINGLELN_COMMENT_BG, // DASH: end of named parameter and possible starting sequence of single line comment,
-                                         //       switch to SINGLELN_COMMENT_BG state
-                    MULTILN_COMMENT_BG,  // SLASH: end of named parameter and possible starting sequence of multi line comment,
-                                         //        switch to MULTILN_COMMENT_BG state
-                    COLON,               // COLON: end of named parameter and possible beginning of another named parameter,
-                                         //        switch to COLON state to restart named parameter processing
-                    STATEMENT            // OTHER: can't be next character of named parameter, go back to STATEMENT state
-                },
-                // Transitions from MULTILN_COMMENT_BG state
-                {
-                    STATEMENT,           // IDENTIFIER_START: not starting sequence of multi line comment,
-                                         //                   go back to STATEMENT state
-                    STATEMENT,           // IDENTIFIER_PART: not starting sequence of multi line comment,
-                                         //                  go back to STATEMENT state
-                    STATEMENT,           // LF: not starting sequence of multi line comment, go back to STATEMENT state
-                    STATEMENT,           // CR: not starting sequence of multi line comment, go back to STATEMENT state
-                    STRING,              // APOSTROPHE: not starting sequence of multi line comment but beginning of SQL
-                                         //             string processing, switch to STRING state
-                    MULTILN_COMMENT,     // STAR: end of starting sequence of multi line comment,
-                                         //       switch to MULTILN_COMMENT state
-                    SINGLELN_COMMENT_BG, // DASH: not starting sequence of multi line comment but possible starting sequence
-                                         //       of single line comment, switch to SINGLELN_COMMENT_BG state
-                    MULTILN_COMMENT_BG,  // SLASH: not starting sequence of multi line comment but possible starting sequence
-                                         //       of next multi line comment, retry multi line comment processing
-                    COLON,               // COLON: not starting sequence of multi line comment but possible beginning
-                                         //        of named parameter, switch to COLON state
-                    STATEMENT            // OTHER: not starting sequence of multi line comment, go back to STATEMENT state
-                },
-                // Transitions from MULTILN_COMMENT_END state
-                {
-                    MULTILN_COMMENT,     // IDENTIFIER_START: not ending sequence of multi line comment,
-                                         //                   go back to MULTILN_COMMENT state
-                    MULTILN_COMMENT,     // IDENTIFIER_PART: not ending sequence of multi line comment,
-                                         //                  go back to MULTILN_COMMENT state
-                    MULTILN_COMMENT,     // LF: not ending sequence of multi line comment, go back to MULTILN_COMMENT state
-                    MULTILN_COMMENT,     // CR: not ending sequence of multi line comment, go back to MULTILN_COMMENT state
-                    MULTILN_COMMENT,     // APOSTROPHE: not ending sequence of multi line comment,
-                                         //             go back to MULTILN_COMMENT state
-                    MULTILN_COMMENT_END, // STAR: not ending sequence of multi line comment but possible ending sequence
-                                         //       of next multi line comment, retry end of multi line comment processing
-                    MULTILN_COMMENT,     // DASH: not ending sequence of multi line comment, go back to MULTILN_COMMENT state
-                    STATEMENT,           // SLASH: end of ending sequence of multi line comment,
-                                         //        switch to STATEMENT state
-                    MULTILN_COMMENT,     // COLON: not ending sequence of multi line comment, go back to MULTILN_COMMENT state
-                    MULTILN_COMMENT      // OTHER: not ending sequence of multi line comment, go back to MULTILN_COMMENT state
-                },
-                // Transitions from MULTILN_COMMENT state
-                {
-                    MULTILN_COMMENT,     // IDENTIFIER_START: regular multi line comment, keep processing it
-                    MULTILN_COMMENT,     // IDENTIFIER_PART: regular multi line comment, keep processing it
-                    MULTILN_COMMENT,     // LF: regular multi line comment, keep processing it
-                    MULTILN_COMMENT,     // CR: regular multi line comment, keep processing it
-                    MULTILN_COMMENT,     // APOSTROPHE: regular multi line comment, keep processing it
-                    MULTILN_COMMENT_END, // STAR: possible ending sequence of multi line comment,
-                                         //       switch to MULTILN_COMMENT_END state
-                    MULTILN_COMMENT,     // DASH: regular multi line comment, keep processing it
-                    MULTILN_COMMENT,     // SLASH: regular multi line comment, keep processing it
-                    MULTILN_COMMENT,     // COLON: regular multi line comment, keep processing it
-                    MULTILN_COMMENT      // OTHER: regular multi line comment, keep processing it
-                },
-                // Transitions from SINGLELN_COMMENT_BG state
-                {
-                    STATEMENT,           // IDENTIFIER_START: not starting sequence of single line comment,
-                                         //                   go back to STATEMENT state
-                    STATEMENT,           // IDENTIFIER_PART: not starting sequence of single line comment,
-                                         //                  go back to STATEMENT state
-                    STATEMENT,           // LF: not starting sequence of single line comment, go back to STATEMENT state
-                    STATEMENT,           // CR: not starting sequence of single line comment, go back to STATEMENT state
-                    STRING,              // APOSTROPHE: not starting sequence of single line comment but beginning of SQL
-                                         //             string processing, switch to STRING state
-                    STATEMENT,           // STAR: not starting sequence of single line comment, go back to STATEMENT state
-                    SINGLELN_COMMENT,    // DASH: end of starting sequence of single line comment,
-                                         //       switch to SINGLELN_COMMENT state
-                    MULTILN_COMMENT_BG,  // SLASH: not starting sequence of single line comment but possible starting sequence
-                                         //       of next multi line comment, switch to MULTILN_COMMENT_BG state
-                    COLON,               // COLON: not starting sequence of single line comment but possible beginning
-                                         //        of named parameter, switch to COLON state
-                    STATEMENT            // OTHER: not starting sequence of single line comment, go back to STATEMENT state
-                },
-                // Transitions from SINGLELN_COMMENT_END state
-                {
-                    SINGLELN_COMMENT,     // IDENTIFIER_START: not ending sequence of single line comment,
-                                          //                   go back to SINGLELN_COMMENT state
-                    SINGLELN_COMMENT,     // IDENTIFIER_PART: not ending sequence of single line comment,
-                                          //                  go back to SINGLELN_COMMENT state
-                    STATEMENT,            // LF: end of single line comment, switch to STATEMENT state
-                    SINGLELN_COMMENT_END, // CR: not ending sequence of single line comment but possible ending sequence
-                                          //     of next single line comment, retry end of single line comment processing
-                    SINGLELN_COMMENT,     // APOSTROPHE: not ending sequence of single line comment,
-                                          //             go back to SINGLELN_COMMENT state
-                    SINGLELN_COMMENT,     // STAR: not ending sequence of single line comment, go back to SINGLELN_COMMENT state
-                    SINGLELN_COMMENT,     // DASH: not ending sequence of single line comment, go back to SINGLELN_COMMENT state
-                    SINGLELN_COMMENT,     // SLASH: not ending sequence of single line comment, go back to SINGLELN_COMMENT state
-                    SINGLELN_COMMENT,     // COLON: not ending sequence of single line comment, go back to SINGLELN_COMMENT state
-                    SINGLELN_COMMENT      // OTHER: not ending sequence of single line comment, go back to SINGLELN_COMMENT state
-                },
-                // Transitions from SINGLELN_COMMENT state
-                {
-                    SINGLELN_COMMENT,     // IDENTIFIER_START: regular single line comment, keep processing it
-                    SINGLELN_COMMENT,     // IDENTIFIER_PART: regular single line comment, keep processing it
-                    STATEMENT,            // LF: end of single line comment, switch to STATEMENT state
-                    SINGLELN_COMMENT_END, // CR: possible beginning of ending sequence of multi line comment,
-                                          //     switch to SINGLELN_COMMENT_END state
-                    SINGLELN_COMMENT,     // APOSTROPHE: regular single line comment, keep processing it
-                    SINGLELN_COMMENT,     // STAR: regular single line comment, keep processing it
-                    SINGLELN_COMMENT,     // DASH: regular single line comment, keep processing it
-                    SINGLELN_COMMENT,     // SLASH: regular single line comment, keep processing it
-                    SINGLELN_COMMENT,     // COLON: regular single line comment, keep processing it
-                    SINGLELN_COMMENT      // OTHER: regular single line comment, keep processing it
+        } else if (parameter instanceof Number number) {
+            if (number instanceof Integer i) {
+                statement.setInt(index, i);
+            } else if (number instanceof Long l) {
+                statement.setLong(index, l);
+            }  else if (number instanceof BigDecimal bd) {
+                statement.setBigDecimal(index, bd);
+            } else if (number instanceof Double d) {
+                statement.setDouble(index, d);
+            } else if (number instanceof Float f) {
+                statement.setFloat(index, f);
+            } else if (number instanceof Short s) {
+                statement.setShort(index, s);
+            } else if (number instanceof Byte b) {
+                statement.setByte(index, b);
+            } else if (number instanceof BigInteger bi) {
+                // Convert to BigDecimal.
+                statement.setBigDecimal(index, new BigDecimal(bi));
+            } else {
+                statement.setObject(index, number);
+            }
+        // java.sql Date/Time
+        }  else if (parameter instanceof java.sql.Date d) {
+            statement.setDate(index, d);
+        } else if (parameter instanceof java.sql.Time t){
+            statement.setTime(index, t);
+        } else if (parameter instanceof java.sql.Timestamp ts) {
+            statement.setTimestamp(index, ts);
+        // java.time Date/Time
+        }  else if (parameter instanceof java.time.LocalDate ld) {
+            if (jdbcContext().parametersConfig().setObjectForJavaTime()) {
+                statement.setObject(index, ld);
+            } else {
+                statement.setDate(index, java.sql.Date.valueOf(ld));
+            }
+        } else if (parameter instanceof java.time.LocalDateTime ldt) {
+            if (jdbcContext().parametersConfig().setObjectForJavaTime()) {
+                statement.setObject(index, ldt);
+            } else {
+                statement.setTimestamp(index, java.sql.Timestamp.valueOf(ldt));
+            }
+        } else if (parameter instanceof java.time.OffsetDateTime odt) {
+            if (jdbcContext().parametersConfig().setObjectForJavaTime()) {
+                statement.setObject(index, odt);
+            } else {
+                statement.setTimestamp(index, java.sql.Timestamp.from((odt).toInstant()));
+            }
+        } else if (parameter instanceof java.time.LocalTime lt) {
+            if (jdbcContext().parametersConfig().setObjectForJavaTime()) {
+                statement.setObject(index, lt);
+            } else {
+                // Fallback option for old JDBC drivers may differ
+                if (jdbcContext().parametersConfig().timestampForLocalTime()) {
+                    statement.setTimestamp(index,
+                                           java.sql.Timestamp.valueOf(
+                                                   java.time.LocalDateTime.of(java.time.LocalDate.ofEpochDay(0), lt)));
+                } else {
+                    statement.setTime(index, java.sql.Time.valueOf(lt));
                 }
-            };
-        }
-
-        /**
-         * State automaton action table.
-         */
-        private static final Action[][] ACTION = {
-            // Actions performed on transitions from STATEMENT state
-            {
-                Parser::copyChar,  // IDENTIFIER_START: copy regular statement character to output
-                Parser::copyChar,  // IDENTIFIER_PART: copy regular statement character to output
-                Parser::copyChar,  // LF: copy regular statement character to output
-                Parser::copyChar,  // CR: copy regular statement character to output
-                Parser::copyChar,  // APOSTROPHE: copy SQL string character to output
-                Parser::copyChar,  // STAR: copy regular statement character to output
-                Parser::copyChar,  // DASH: copy character to output, no matter wheter it's comment or not
-                Parser::copyChar,  // SLASH: copy character to output, no matter wheter it's comment or not
-                Parser::doNothing, // COLON: delay character copying until it's obvious whether this is parameter or not
-                Parser::copyChar   // OTHER: copy regular statement character to output
-            },
-            // Actions performed on transitions from STRING state
-            {
-               Parser::copyChar, // IDENTIFIER_START: copy SQL string character to output
-               Parser::copyChar, // IDENTIFIER_PART: copy SQL string character to output
-               Parser::copyChar, // LF: copy SQL string character to output
-               Parser::copyChar, // CR: copy SQL string character to output
-               Parser::copyChar, // APOSTROPHE: copy SQL string character to output
-               Parser::copyChar, // STAR: copy SQL string character to output
-               Parser::copyChar, // DASH: copy SQL string character to output
-               Parser::copyChar, // SLASH: copy SQL string character to output
-               Parser::copyChar, // COLON: copy SQL string character to output
-               Parser::copyChar  // OTHER: copy SQL string character to output
-           },
-           // Actions performed on transitions from COLON state
-           {
-               Parser::setFirstParamChar,   // IDENTIFIER_START: set first parameter character
-               Parser::addColonAndCopyChar, // IDENTIFIER_PART: not a parameter, add delayed colon and copy current
-                                            //                  statement character to output
-               Parser::addColonAndCopyChar, // LF: not a parameter, add delayed colon and copy current statement character
-                                            //     to output
-               Parser::addColonAndCopyChar, // CR: not a parameter, add delayed colon and copy current statement character
-                                            //     to output
-               Parser::addColonAndCopyChar, // APOSTROPHE: not a parameter, add delayed colon and copy current SQL string
-                                            //             character to output
-               Parser::addColonAndCopyChar, // STAR: not a parameter, add delayed colon and copy current statement character
-                                            //       to output
-               Parser::addColonAndCopyChar, // DASH: not a parameter, add delayed colon and copy current statement character
-                                            //       to output, no matter wheter it's comment or not
-               Parser::addColonAndCopyChar, // SLASH: not a parameter, add delayed colon and copy current statement character
-                                            //        to output, no matter wheter it's comment or not
-               Parser::addColon,            // COLON: not a parameter, add delayed colon and delay current colon copying
-                                            //        until it's obvious whether this is parameter or not
-               Parser::addColonAndCopyChar  // OTHER: not a parameter, add delayed colon and copy current statement character
-                                            //        to output
-           },
-           // Actions performed on transitions from PARAMETER state
-           {
-               Parser::setNextParamChar,       // IDENTIFIER_START: set next parameter character
-               Parser::setNextParamChar,       // IDENTIFIER_PART: set next parameter character
-               Parser::finishParamAndCopyChar, // LF: finish parameter processing and copy current character as part
-                                               //     of regular statement
-               Parser::finishParamAndCopyChar, // CR: finish parameter processing and copy current character as part
-                                               //     of regular statement
-               Parser::finishParamAndCopyChar, // APOSTROPHE: finish parameter processing and copy current character as part
-                                               //             of regular statement
-               Parser::finishParamAndCopyChar, // STAR: finish parameter processing and copy current character as part
-                                               //       of regular statement
-               Parser::finishParamAndCopyChar, // DASH: finish parameter processing and copy current character as part
-                                               //       of regular statement
-               Parser::finishParamAndCopyChar, // SLASH: finish parameter processing and copy current character as part
-                                               //        of regular statement
-               Parser::finishParam,            // COLON: finish parameter processing and delay character copying until
-                                               //        it's obvious whether this is next parameter or not
-               Parser::finishParamAndCopyChar  // OTHER: finish parameter processing and copy current character as part
-                                               //        of regular statement
-           },
-           // Actions performed on transitions from MULTILN_COMMENT_BG state
-           {
-               Parser::copyChar,  // IDENTIFIER_START: copy regular statement character to output
-               Parser::copyChar,  // IDENTIFIER_PART: copy regular statement character to output
-               Parser::copyChar,  // LF: copy regular statement character to output
-               Parser::copyChar,  // CR: copy regular statement character to output
-               Parser::copyChar,  // APOSTROPHE: copy SQL string character to output
-               Parser::copyChar,  // STAR: copy multi line comment character to output
-               Parser::copyChar,  // DASH: copy character to output, no matter wheter it's comment or not
-               Parser::copyChar,  // SLASH: copy character to output, no matter wheter it's comment or not
-               Parser::doNothing, // COLON: delay character copying until it's obvious whether this is parameter or not
-               Parser::copyChar   // OTHER: copy regular statement character to output
-           },
-           // Actions performed on transitions from MULTILN_COMMENT_END state
-           {
-               Parser::copyChar, // IDENTIFIER_START: copy multi line comment character to output
-               Parser::copyChar, // IDENTIFIER_PART: copy multi line comment character to output
-               Parser::copyChar, // LF: copy multi line comment character to output
-               Parser::copyChar, // CR: copy multi line comment character to output
-               Parser::copyChar, // APOSTROPHE: copy multi line comment character to output
-               Parser::copyChar, // STAR: copy multi line comment character to output
-               Parser::copyChar, // DASH: copy multi line comment character to output
-               Parser::copyChar, // SLASH: copy multi line comment character to output
-               Parser::copyChar, // COLON: copy multi line comment character to output
-               Parser::copyChar  // OTHER: copy multi line comment character to output
-           },
-           // Actions performed on transitions from MULTILN_COMMENT state
-           {
-               Parser::copyChar, // IDENTIFIER_START: copy multi line comment character to output
-               Parser::copyChar, // IDENTIFIER_PART: copy multi line comment character to output
-               Parser::copyChar, // LF: copy multi line comment character to output
-               Parser::copyChar, // CR: copy multi line comment character to output
-               Parser::copyChar, // APOSTROPHE: copy multi line comment character to output
-               Parser::copyChar, // STAR: copy multi line comment character to output
-               Parser::copyChar, // DASH: copy multi line comment character to output
-               Parser::copyChar, // SLASH: copy multi line comment character to output
-               Parser::copyChar, // COLON: copy multi line comment character to output
-               Parser::copyChar  // OTHER: copy multi line comment character to output
-           },
-           // Actions performed on transitions from SINGLELN_COMMENT_BG state
-           {
-               Parser::copyChar,  // IDENTIFIER_START: copy regular statement character to output
-               Parser::copyChar,  // IDENTIFIER_PART: copy regular statement character to output
-               Parser::copyChar,  // LF: copy regular statement character to output
-               Parser::copyChar,  // CR: copy regular statement character to output
-               Parser::copyChar,  // APOSTROPHE: copy SQL string character to output
-               Parser::copyChar,  // STAR: copy regular statement character to output
-               Parser::copyChar,  // DASH: copy single line comment character to output
-               Parser::copyChar,  // SLASH: copy character to output, no matter wheter it's comment or not
-               Parser::doNothing, // COLON: delay character copying until it's obvious whether this is parameter or not
-               Parser::copyChar   // OTHER: copy regular statement character to output
-           },
-           // Actions performed on transitions from SINGLELN_COMMENT_END state
-           {
-               Parser::copyChar,  // IDENTIFIER_START: copy single line comment character to output
-               Parser::copyChar,  // IDENTIFIER_PART: copy single line comment character to output
-               Parser::copyChar,  // LF: copy single line comment character to output
-               Parser::copyChar,  // CR: copy single line comment character to output
-               Parser::copyChar,  // APOSTROPHE: copy single line comment character to output
-               Parser::copyChar,  // STAR: copy single line comment character to output
-               Parser::copyChar,  // DASH: copy single line comment character to output
-               Parser::copyChar,  // SLASH: copy single line comment character to output
-               Parser::copyChar,  // COLON: copy single line comment character to output
-               Parser::copyChar   // OTHER: copy single line comment character to output
-           },
-           // Actions performed on transitions from SINGLELN_COMMENT state
-           {
-               Parser::copyChar,  // IDENTIFIER_START: copy single line comment character to output
-               Parser::copyChar,  // IDENTIFIER_PART: copy single line comment character to output
-               Parser::copyChar,  // LF: copy single line comment character to output
-               Parser::copyChar,  // CR: copy single line comment character to output
-               Parser::copyChar,  // APOSTROPHE: copy single line comment character to output
-               Parser::copyChar,  // STAR: copy single line comment character to output
-               Parser::copyChar,  // DASH: copy single line comment character to output
-               Parser::copyChar,  // SLASH: copy single line comment character to output
-               Parser::copyChar,  // COLON: copy single line comment character to output
-               Parser::copyChar   // OTHER: copy single line comment character to output
-           }
-        };
-
-        /**
-         * Do nothing.
-         *
-         * @param parser parser instance
-         */
-        private static void doNothing(Parser parser) {
-        }
-
-        /**
-         * Copy character from input string to output as is.
-         *
-         * @param parser parser instance
-         */
-        private static void copyChar(Parser parser) {
-            parser.sb.append(parser.c);
-        }
-
-        /**
-         * Add previous colon character to output.
-         *
-         * @param parser parser instance
-         */
-        private static void addColon(Parser parser) {
-            parser.sb.append(':');
-        }
-
-        /**
-         * Copy previous colon and current input string character to output.
-         *
-         * @param parser parser instance
-         */
-        private static void addColonAndCopyChar(Parser parser) {
-            parser.sb.append(':');
-            parser.sb.append(parser.c);
-        }
-
-        /**
-         * Store 1st named parameter letter.
-         *
-         * @param parser parser instance
-         */
-        private static void setFirstParamChar(Parser parser) {
-            parser.nap.setLength(0);
-            parser.nap.append(parser.c);
-        }
-
-        /**
-         * Store next named parameter letter or number.
-         *
-         * @param parser parser instance
-         */
-        private static void setNextParamChar(Parser parser) {
-            parser.nap.append(parser.c);
-        }
-
-        /**
-         * Finish stored named parameter and copy current character from input string to output as is.
-         *
-         * @param parser parser instance
-         */
-        private static void finishParamAndCopyChar(Parser parser) {
-            String parName = parser.nap.toString();
-            parser.names.add(parName);
-            parser.sb.append('?');
-            parser.sb.append(parser.c);
-        }
-
-        /**
-         * Finish stored named parameter without copying current character from input string to output as is.
-         *
-         * @param parser parser instance
-         */
-        private static void finishParam(Parser parser) {
-            String parName = parser.nap.toString();
-            parser.names.add(parName);
-            parser.sb.append('?');
-        }
-
-        /**
-         * SQL statement to be parsed.
-         */
-        private final String statement;
-
-        /**
-         * Target SQL statement builder.
-         */
-        private final StringBuilder sb;
-
-        /**
-         * Temporary string storage.
-         */
-        private final StringBuilder nap;
-
-        /**
-         * Ordered list of parameter names.
-         */
-        private final List<String> names;
-
-        /**
-         * Character being currently processed.
-         */
-        private char c;
-
-        /**
-         * Character class of character being currently processed.
-         */
-        private CharClass cl;
-
-        Parser(String statement) {
-            this.sb = new StringBuilder(statement.length());
-            this.nap = new StringBuilder(32);
-            this.names = new LinkedList<>();
-            this.statement = statement;
-            this.c = '\0';
-            this.cl = null;
-
-        }
-
-        String convert() {
-            State state = State.STATEMENT;  // Initial state: common statement processing
-            int len = statement.length();
-            for (int i = 0; i < len; i++) {
-                c = statement.charAt(i);
-                cl = CharClass.charClass(c);
-                ACTION[state.ordinal()][cl.ordinal()].accept(this);
-                state = State.TRANSITION[state.ordinal()][cl.ordinal()];
             }
-            // Process end of statement
-            if (state == State.PARAMETER) {
-                String parName = nap.toString();
-                names.add(parName);
-                sb.append('?');
+        } else if (parameter instanceof java.time.OffsetTime ot) {
+            if (jdbcContext().parametersConfig().setObjectForJavaTime()) {
+                statement.setObject(index, ot);
+            } else {
+                statement.setTimestamp(index,
+                                       java.sql.Timestamp.valueOf(
+                                               java.time.LocalDateTime.of(java.time.LocalDate.ofEpochDay(0), ot.toLocalTime())));
             }
-            return sb.toString();
+        } else if (parameter instanceof Boolean b) {
+            statement.setBoolean(index, b);
+        } else if (parameter == null) {
+            // Normally null is passed as a DatabaseField so the type is included, but in some case may be passed directly.
+            statement.setNull(index, Types.NULL);
+        } else if (parameter instanceof byte[] b) {
+            if (jdbcContext().parametersConfig().useByteArrayBinding()) {
+                ByteArrayInputStream inputStream = new ByteArrayInputStream(b);
+                statement.setBinaryStream(index, inputStream, b.length);
+            } else {
+                statement.setBytes(index, b);
+            }
+        // Next process types that need conversion.
+        } else if (parameter instanceof Calendar c) {
+            statement.setTimestamp(index, timestampFromDate(c.getTime()));
+        } else if (parameter instanceof java.util.Date d) {
+            statement.setTimestamp(index, timestampFromDate(d));
+        } else if (parameter instanceof Character c) {
+            statement.setString(index, String.valueOf(c));
+        } else if (parameter instanceof char[] c) {
+            statement.setString(index, new String(c));
+        } else if (parameter instanceof Character[] c) {
+            statement.setString(index, String.valueOf(characterArrayToCharArray(c)));
+        } else if (parameter instanceof Byte[] b) {
+            statement.setBytes(index, byteArrayToByteArray(b));
+        } else if (parameter instanceof SQLXML s) {
+            statement.setSQLXML(index, s);
+        } else if (parameter instanceof UUID uuid) {
+            statement.setString(index, uuid.toString());
+        } else {
+            statement.setObject(index, parameter);
         }
+    }
 
-        List<String> namesOrder() {
-            return names;
+    private static java.sql.Timestamp timestampFromLong(long millis) {
+        java.sql.Timestamp timestamp = new java.sql.Timestamp(millis);
+
+        // Must  account for negative millis < 1970
+        // Must account for the jdk millis bug where it does not set the nanos.
+        if ((millis % 1000) > 0) {
+            timestamp.setNanos((int) (millis % 1000) * 1000000);
+        } else if ((millis % 1000) < 0) {
+            timestamp.setNanos((int) (1000000000 - (Math.abs((millis % 1000) * 1000000))));
         }
+        return timestamp;
+    }
 
+    private static java.sql.Timestamp timestampFromDate(java.util.Date date) {
+        return timestampFromLong(date.getTime());
+    }
+
+    private static char[] characterArrayToCharArray(Character[] source) {
+        char[] chars = new char[source.length];
+        for (int i = 0; i < source.length; i++) {
+            chars[i] = source[i];
+        }
+        return chars;
+    }
+
+    private static byte[] byteArrayToByteArray(Byte[] source) {
+        byte[] bytes = new byte[source.length];
+        for (int i = 0; i < source.length; i++) {
+            Byte value = source[i];
+            if (value != null) {
+                bytes[i] = value;
+            }
+        }
+        return bytes;
     }
 
 }

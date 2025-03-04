@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,15 @@
 
 package io.helidon.microprofile.metrics;
 
-import io.helidon.metrics.api.RegistryFactory;
-import io.helidon.microprofile.tests.junit5.AddBean;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.AddBean;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.metrics.Counter;
 import org.eclipse.microprofile.metrics.Metadata;
 import org.eclipse.microprofile.metrics.MetricRegistry;
-import org.eclipse.microprofile.metrics.MetricType;
 import org.eclipse.microprofile.metrics.MetricUnits;
-import org.eclipse.microprofile.metrics.annotation.RegistryType;
+import org.eclipse.microprofile.metrics.annotation.RegistryScope;
 import org.junit.jupiter.api.AfterAll;
 
 /**
@@ -42,8 +40,8 @@ public class MetricsMpServiceTest {
     }
 
     static MetricRegistry cleanUpSyntheticSimpleTimerRegistry() {
-        MetricRegistry result = RegistryFactory.getInstance().getRegistry(MetricRegistry.Type.BASE);
-        result.remove(MetricsCdiExtension.SYNTHETIC_SIMPLE_TIMER_METRIC_NAME);
+        MetricRegistry result = RegistryFactory.getInstance().getRegistry(MetricRegistry.BASE_SCOPE);
+        result.remove(MetricsCdiExtension.SYNTHETIC_TIMER_METRIC_NAME);
         return result;
     }
 
@@ -51,10 +49,10 @@ public class MetricsMpServiceTest {
     private MetricRegistry registry;
 
     @Inject
-    @RegistryType(type = MetricRegistry.Type.BASE)
+    @RegistryScope(scope = MetricRegistry.BASE_SCOPE)
     private MetricRegistry baseRegistry;
 
-    MetricRegistry syntheticSimpleTimerRegistry() {
+    MetricRegistry syntheticTimerTimerRegistry() {
         return baseRegistry;
     }
 
@@ -65,9 +63,7 @@ public class MetricsMpServiceTest {
     protected static void registerCounter(MetricRegistry registry, String name) {
         Metadata meta = Metadata.builder()
                         .withName(name)
-                        .withDisplayName(name)
                         .withDescription(name)
-                        .withType(MetricType.COUNTER)
                         .withUnit(MetricUnits.NONE)
                         .build();
         registry.counter(meta);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.logging.Logger;
 
 import io.helidon.common.Errors;
 import io.helidon.security.jwt.jwk.JwkRSA;
@@ -35,7 +35,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
  * Unit test for {@link Jwt}.
  */
 public class JwtTest {
-    private static final Logger LOGGER = Logger.getLogger(JwtTest.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(JwtTest.class.getName());
 
     @Test
     public void testBuilderBasicJwt() {
@@ -45,7 +45,7 @@ public class JwtTest {
         Jwt jwt = Jwt.builder()
                 .jwtId(id)
                 .algorithm(JwkRSA.ALG_RS256)
-                .audience(audience)
+                .addAudience(audience)
                 .build();
 
         assertThat(jwt.jwtId(), is(Optional.of(id)));
@@ -71,7 +71,7 @@ public class JwtTest {
                 .subject(subject)
                 .preferredUsername(username)
                 .algorithm(JwkRSA.ALG_RS256)
-                .audience(audience)
+                .addAudience(audience)
                 .issuer(issuer)
                 // time info
                 .issueTime(now)
@@ -87,17 +87,27 @@ public class JwtTest {
         assertThat(jwt.notBefore(), is(Optional.of(notBefore)));
 
         //and this one should be valid
-        List<Validator<Jwt>> vals = Jwt.defaultTimeValidators();
-        Jwt.addIssuerValidator(vals, issuer, true);
-        Jwt.addAudienceValidator(vals, audience, true);
+        JwtValidator jwtValidator = JwtValidator.builder()
+                .addDefaultTimeValidators()
+                .addIssuerValidator(issuer, true)
+                .addAudienceValidator(audience)
+                .build();
 
-        Errors errors = jwt.validate(vals);
+        Errors errors = jwtValidator.validate(jwt);
 
         errors.log(LOGGER);
         errors.checkValid();
 
         //another try with defaults
-        errors = jwt.validate(issuer, audience);
+        jwtValidator = JwtValidator.builder()
+                .addDefaultTimeValidators()
+                .addCriticalValidator()
+                .addUserPrincipalValidator()
+                .addIssuerValidator(issuer)
+                .addAudienceValidator(audience)
+                .build();
+
+        errors = jwtValidator.validate(jwt);
         errors.log(LOGGER);
         errors.checkValid();
     }

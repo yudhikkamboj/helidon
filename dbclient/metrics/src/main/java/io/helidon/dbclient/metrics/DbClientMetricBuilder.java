@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
  */
 package io.helidon.dbclient.metrics;
 
-import io.helidon.common.Builder;
-import io.helidon.dbclient.DbClientService;
+import io.helidon.dbclient.DbClientServiceBase;
 
 /**
- * DB Client metric builder.
+ * Database Client metric builder.
+ *
+ * @param <B> type of the builder extending this class
+ * @param <T> Type of the built {@link DbClientServiceBase} instance
  */
-public abstract class DbClientMetricBuilder extends DbClientMetricBuilderBase<DbClientMetricBuilder>
-        implements Builder<DbClientMetricBuilder, DbClientService> {
+public abstract class DbClientMetricBuilder<B extends DbClientMetricBuilder<B, T>, T extends DbClientServiceBase>
+        extends MetricBuilderBase<B, T> {
 }

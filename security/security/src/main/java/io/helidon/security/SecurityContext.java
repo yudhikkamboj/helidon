@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,16 @@
 package io.helidon.security;
 
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
-import io.opentracing.Span;
-import io.opentracing.SpanContext;
-import io.opentracing.Tracer;
-import io.opentracing.util.GlobalTracer;
+import io.helidon.tracing.SpanContext;
+import io.helidon.tracing.Tracer;
 
 /**
  * Security context to retrieve security information about current user, either injected or obtained from {@link
  * Security#contextBuilder(String)} and to handle programmatic security.
  */
-public interface SecurityContext {
+public interface SecurityContext extends io.helidon.common.security.SecurityContext<Principal> {
     /**
      * Anonymous user principal.
      * This is the user principal used when no user is authenticated (e.g. when a service is authenticated or when
@@ -129,13 +126,6 @@ public interface SecurityContext {
                          String authorizerName);
 
     /**
-     * Executor service of the security module.
-     *
-     * @return executor service to use to execute asynchronous tasks related to security
-     */
-    ExecutorService executorService();
-
-    /**
      * Check if user is in specified role if supported by global authorization provider.
      *
      * This method expects global authorization provider is in use. If you explicitly use a custom provider, use {@link
@@ -231,9 +221,10 @@ public interface SecurityContext {
     /**
      * Provides the tracer to create new spans. If you use this, we can control whether tracing is enabled or disabled
      * as part of security.
-     * If you use {@link io.opentracing.util.GlobalTracer#get()} you will get around this.
+     * If you use {@link io.helidon.tracing.Tracer#global()} you will get around this.
      *
-     * @return {@link Tracer} to build custom {@link Span Spans}. Use in combination with {@link #tracingSpan()} to
+     * @return {@link Tracer} to build custom {@link io.helidon.tracing.Span Spans}.
+     * Use in combination with {@link #tracingSpan()} to
      * create a nice tree of spans
      */
     Tracer tracer();
@@ -315,8 +306,12 @@ public interface SecurityContext {
      * for evaluation.
      *
      * @return true if authorization was checked, false otherwise
+     * @deprecated use {@link #isAuthorized()} instead
      */
-    boolean atzChecked();
+    @Deprecated(since = "4.0.0")
+    default boolean atzChecked() {
+        return isAuthorized();
+    }
 
     /**
      * Fluent API builder for {@link SecurityContext}.
@@ -324,7 +319,6 @@ public interface SecurityContext {
     class Builder implements io.helidon.common.Builder<Builder, SecurityContext> {
         private final Security security;
         private String id;
-        private Supplier<ExecutorService> executorServiceSupplier;
         private SecurityTime serverTime;
         private Tracer tracingTracer;
         private SpanContext tracingSpan;
@@ -333,7 +327,6 @@ public interface SecurityContext {
 
         Builder(Security security) {
             this.security = security;
-            this.executorServiceSupplier = security.executorService();
         }
 
         @Override
@@ -345,7 +338,7 @@ public interface SecurityContext {
                 ec = EndpointConfig.builder().build();
             }
             if (null == tracingTracer) {
-                tracingTracer = GlobalTracer.get();
+                tracingTracer = Tracer.global();
             }
             return new SecurityContextImpl(this);
         }
@@ -356,10 +349,6 @@ public interface SecurityContext {
 
         String id() {
             return id;
-        }
-
-        Supplier<ExecutorService> executorServiceSupplier() {
-            return executorServiceSupplier;
         }
 
         SecurityTime serverTime() {
@@ -394,36 +383,6 @@ public interface SecurityContext {
          */
         public Builder id(String id) {
             this.id = id;
-            return this;
-        }
-
-        /**
-         * Executor service to use for requests within this context.
-         * By default uses a custom executor service that is configured when building
-         * {@link Security} instance.
-         * <p>
-         * Use this method only if you need to override default behavior!
-         *
-         * @param executorServiceSupplier supplier of an executor service
-         * @return updated builder instance
-         */
-        public Builder executorService(Supplier<ExecutorService> executorServiceSupplier) {
-            this.executorServiceSupplier = executorServiceSupplier;
-            return this;
-        }
-
-        /**
-         * Executor service to use for requests within this context.
-         * By default uses a custom executor service that is configured when building
-         * {@link Security} instance.
-         * <p>
-         * Use this method only if you need to override default behavior!
-         *
-         * @param executorService executor service
-         * @return updated builder instance
-         */
-        public Builder executorService(ExecutorService executorService) {
-            this.executorServiceSupplier = () -> executorService;
             return this;
         }
 

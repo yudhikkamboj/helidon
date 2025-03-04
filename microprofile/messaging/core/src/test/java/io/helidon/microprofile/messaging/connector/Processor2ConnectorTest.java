@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,9 +12,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
-
 package io.helidon.microprofile.messaging.connector;
 
 import java.time.Duration;
@@ -29,16 +27,15 @@ import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
+import io.helidon.common.reactive.BufferedEmittingPublisher;
+import io.helidon.common.reactive.Multi;
+import io.helidon.microprofile.testing.AddBean;
+import io.helidon.microprofile.testing.AddConfigBlock;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Any;
 import jakarta.inject.Inject;
-
-import io.helidon.common.reactive.BufferedEmittingPublisher;
-import io.helidon.common.reactive.Multi;
-import io.helidon.microprofile.tests.junit5.AddBean;
-import io.helidon.microprofile.tests.junit5.AddConfig;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
-
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.reactive.messaging.Acknowledgment;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
@@ -56,15 +53,20 @@ import org.reactivestreams.FlowAdapters;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.fail;
 
 @HelidonTest
 @AddBean(Processor2ConnectorTest.TestConnector.class)
-@AddConfig(key = "mp.messaging.incoming.from-connector-imp.connector", value = "test-connector")
-@AddConfig(key = "mp.messaging.outgoing.to-connector-imp.connector", value = "test-connector")
-@AddConfig(key = "mp.messaging.incoming.from-connector-rs.connector", value = "test-connector")
-@AddConfig(key = "mp.messaging.outgoing.to-connector-rs.connector", value = "test-connector")
+@AddConfigBlock(value = """
+        mp.messaging:
+            incoming:
+                from-connector-imp.connector: test-connector
+                from-connector-rs.connector: test-connector
+            outgoing:
+                to-connector-imp.connector: test-connector
+                to-connector-rs.connector: test-connector
+        """, type = "yaml")
 public class Processor2ConnectorTest {
 
     static final Duration TIME_OUT = Duration.ofSeconds(5);
@@ -91,7 +93,7 @@ public class Processor2ConnectorTest {
         emitter.emit(Message.of("test2"));
         emitter.complete();
         connector.awaitComplete("to-connector-" + channelPostfix);
-        assertEquals(4, resultList.size());
+        assertThat(resultList, hasSize(4));
         assertThat(resultList.stream()
                         .map(Message::getPayload)
                         .collect(Collectors.toList()),

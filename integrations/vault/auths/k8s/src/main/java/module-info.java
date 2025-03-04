@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,27 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Vault authentication method for Kubernetes.
  */
+@Feature(value = "k8s",
+        description = "Kubernetes Authentication Method",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"HCP Vault", "Auth", "k8s"}
+)
 module io.helidon.integrations.vault.auths.k8s {
-    requires io.helidon.integrations.vault;
-    requires io.helidon.webclient;
-    requires io.helidon.faulttolerance;
-    requires io.helidon.integrations.common.rest;
+
+    requires io.helidon.http;
     requires io.helidon.integrations.vault.auths.common;
-    requires java.logging;
+    requires io.helidon.webclient;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.integrations.common.rest;
+    requires transitive io.helidon.integrations.vault;
 
     exports io.helidon.integrations.vault.auths.k8s;
 
@@ -35,4 +46,6 @@ module io.helidon.integrations.vault.auths.k8s {
 
     provides io.helidon.integrations.vault.spi.InjectionProvider
             with io.helidon.integrations.vault.auths.k8s.K8sAuthProvider;
+	
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ public final class TimestampLogEntry extends AbstractLogEntry {
      * Create a new Timestamp log entry.
      *
      * @return a new access log entry for Timestamp
-     * @see io.helidon.webserver.accesslog.AccessLogSupport.Builder#add(AccessLogEntry)
+     * @see AccessLogConfig.Builder#addEntry(AccessLogEntry)
      */
     public static TimestampLogEntry create() {
         return builder().build();
@@ -56,7 +56,7 @@ public final class TimestampLogEntry extends AbstractLogEntry {
     }
 
     /**
-     * A fluent API builder for {@link io.helidon.webserver.accesslog.HostLogEntry}.
+     * A fluent API builder for {@link HostLogEntry}.
      */
     public static final class Builder extends AbstractLogEntry.Builder<TimestampLogEntry, Builder> {
         private DateTimeFormatter formatter = DEFAULT_FORMATTER;

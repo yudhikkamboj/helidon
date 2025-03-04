@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.helidon.dbclient.metrics;
+
+import io.helidon.dbclient.DbClientServiceBase;
 
 /**
  * Utility class to obtain various types of metrics to register
@@ -22,11 +23,11 @@ package io.helidon.dbclient.metrics;
  * Metrics can be limited to a set of statement types or statement names, and also configured to
  * meter success, failure or both.
  *
- * @see io.helidon.dbclient.metrics.DbClientMetricBuilder#statementTypes(io.helidon.dbclient.DbStatementType...)
- * @see io.helidon.dbclient.metrics.DbClientMetricBuilder#statementNames(String...)
- * @see io.helidon.dbclient.metrics.DbClientMetricBuilder#statementPredicate(java.util.function.Predicate)
- * @see io.helidon.dbclient.metrics.DbClientMetricBuilder#success(boolean)
- * @see io.helidon.dbclient.metrics.DbClientMetricBuilder#errors(boolean)
+ * @see DbClientMetricBuilder#statementTypes(io.helidon.dbclient.DbStatementType...)
+ * @see DbClientMetricBuilder#statementNames(String...)
+ * @see DbClientMetricBuilder#statementPredicate(java.util.function.Predicate)
+ * @see DbClientMetricBuilder#success(boolean)
+ * @see DbClientMetricBuilder#errors(boolean)
  */
 public class DbClientMetrics {
     private DbClientMetrics() {
@@ -37,21 +38,10 @@ public class DbClientMetrics {
      * with {@link io.helidon.dbclient.DbClient.Builder#addService(java.util.function.Supplier)}.
      *
      * @return a new counter builder
-     * @see org.eclipse.microprofile.metrics.Counter
+     * @see io.helidon.metrics.api.Counter
      */
-    public static DbClientMetricBuilder counter() {
-        return DbClientCounter.builder();
-    }
-
-    /**
-     * Create a meter builder, to be registered
-     * with {@link io.helidon.dbclient.DbClient.Builder#addService(java.util.function.Supplier)}.
-     *
-     * @return a new meter builder
-     * @see org.eclipse.microprofile.metrics.Meter
-     */
-    public static DbClientMetricBuilder meter() {
-        return DbClientMeter.builder();
+    public static DbClientMetricBuilder<? extends DbClientMetricBuilder<?, ?>, ? extends DbClientServiceBase> counter() {
+        return MetricCounter.builder();
     }
 
     /**
@@ -59,9 +49,10 @@ public class DbClientMetrics {
      * with {@link io.helidon.dbclient.DbClient.Builder#addService(java.util.function.Supplier)}.
      *
      * @return a new timer builder
-     * @see org.eclipse.microprofile.metrics.Timer
+     * @see io.helidon.metrics.api.Timer
      */
-    public static DbClientMetricBuilder timer() {
-        return DbClientTimer.builder();
+    public static DbClientMetricBuilder<? extends DbClientMetricBuilder<?, ?>, ? extends DbClientServiceBase> timer() {
+        return MetricTimer.builder();
     }
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,78 +15,73 @@
  */
 package io.helidon.dbclient.mongodb;
 
+import java.lang.System.Logger.Level;
+import java.util.Spliterator;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Logger;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
-import io.helidon.common.reactive.Multi;
-import io.helidon.common.reactive.Single;
-import io.helidon.dbclient.DbClientServiceContext;
+import io.helidon.dbclient.DbClientException;
+import io.helidon.dbclient.DbExecuteContext;
 import io.helidon.dbclient.DbRow;
 import io.helidon.dbclient.DbStatementQuery;
 import io.helidon.dbclient.DbStatementType;
-import io.helidon.dbclient.common.DbStatementContext;
 
-import com.mongodb.reactivestreams.client.FindPublisher;
-import com.mongodb.reactivestreams.client.MongoCollection;
-import com.mongodb.reactivestreams.client.MongoDatabase;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
 
-/**
- * Implementation of a query for MongoDB.
- */
-class MongoDbStatementQuery extends MongoDbStatement<DbStatementQuery, Multi<DbRow>> implements DbStatementQuery {
-    private static final Logger LOGGER = Logger.getLogger(MongoDbStatementQuery.class.getName());
+import static java.util.Spliterators.spliteratorUnknownSize;
 
-    MongoDbStatementQuery(MongoDatabase db, DbStatementContext statementContext) {
-        super(db, statementContext);
+/**
+ * MongoDB {@link DbStatementQuery} implementation.
+ */
+public class MongoDbStatementQuery extends MongoDbStatement<DbStatementQuery> implements DbStatementQuery {
+
+    private static final System.Logger LOGGER = System.getLogger(MongoDbStatementQuery.class.getName());
+
+    /**
+     * Create a new instance.
+     *
+     * @param db      MongoDb instance
+     * @param context context
+     */
+    MongoDbStatementQuery(MongoDatabase db, DbExecuteContext context) {
+        super(db, context);
     }
 
     @Override
-    protected Multi<DbRow> doExecute(Single<DbClientServiceContext> dbContextFuture,
-                                     CompletableFuture<Void> statementFuture,
-                                     CompletableFuture<Long> queryFuture) {
+    public DbStatementType statementType() {
+        return DbStatementType.QUERY;
+    }
 
-        dbContextFuture.exceptionally(throwable -> {
-            statementFuture.completeExceptionally(throwable);
-            queryFuture.completeExceptionally(throwable);
-            return null;
-        });
-
-        String statement = build();
-        MongoDbStatement.MongoStatement stmt;
-
-        try {
-            stmt = queryOrCommand(statement);
-        } catch (Exception e) {
-            return Multi.error(e);
-        }
-
-        if (stmt.getOperation() != MongoDbStatement.MongoOperation.QUERY) {
-            if (stmt.getOperation() == MongoDbStatement.MongoOperation.COMMAND) {
-                return MongoDbCommandExecutor.executeCommand(this,
-                                                             dbContextFuture,
-                                                             statementFuture,
-                                                             queryFuture);
-            } else {
-                return Multi.error(new UnsupportedOperationException(
-                        String.format("Operation %s is not supported by query", stmt.getOperation().toString())));
+    @Override
+    public Stream<DbRow> execute() {
+        return doExecute((future, context) -> {
+            String preparedStmt = prepareStatement(context);
+            try {
+                MongoStatement stmt = queryOrCommand(preparedStmt);
+                return switch (stmt.getOperation()) {
+                    case QUERY -> executeQuery(stmt, future);
+                    case COMMAND -> executeCommand(stmt, future);
+                    default -> throw new UnsupportedOperationException(String.format(
+                            "Operation %s is not supported by query", stmt.getOperation().toString()));
+                };
+            } catch (Exception e) {
+                throw new DbClientException(e.getMessage(), e);
             }
-        }
-        // we reach here only for query statements
-
-        // final variable required for lambda
-        MongoDbStatement.MongoStatement usedStatement = stmt;
-        return Single.create(dbContextFuture)
-                .flatMap(it -> callStatement(usedStatement, statementFuture, queryFuture));
+        });
     }
 
     private MongoStatement queryOrCommand(String statement) {
         try {
-            return new MongoDbStatement.MongoStatement(DbStatementType.QUERY, READER_FACTORY, statement);
+            return new MongoStatement(DbStatementType.QUERY, statement);
         } catch (IllegalStateException e) {
             // maybe this is a command?
             try {
-                return new MongoDbStatement.MongoStatement(DbStatementType.COMMAND, READER_FACTORY, statement);
+                return new MongoStatement(DbStatementType.COMMAND, statement);
             } catch (IllegalStateException ignored) {
                 // we want to report the original exception
                 throw e;
@@ -94,29 +89,33 @@ class MongoDbStatementQuery extends MongoDbStatement<DbStatementQuery, Multi<DbR
         }
     }
 
-    private Multi<DbRow> callStatement(MongoDbStatement.MongoStatement mongoStmt,
-                                       CompletableFuture<Void> statementFuture,
-                                       CompletableFuture<Long> queryFuture) {
+    private Stream<DbRow> executeCommand(MongoStatement stmt, CompletableFuture<Long> future) {
+        Document command = stmt.getQuery();
+        LOGGER.log(Level.DEBUG, () -> String.format("Command: %s", command.toString()));
+        Document doc = db().runCommand(command);
+        future.complete(1L);
+        return Stream.of(new MongoDbRow(doc, context()));
+    }
 
-        final MongoCollection<Document> mc = db()
-                .getCollection(mongoStmt.getCollection());
-        final Document query = mongoStmt.getQuery();
-        final Document projection = mongoStmt.getProjection();
-        LOGGER.fine(() -> String.format(
-                "Query: %s, Projection: %s", query.toString(), (projection != null ? projection : "N/A")));
-        FindPublisher<Document> publisher = noTx()
-                ? mc.find(query)
-                : mc.find(txManager().tx(), query);
+    private Stream<DbRow> executeQuery(MongoStatement stmt, CompletableFuture<Long> future) {
+        MongoCollection<Document> mc = db().getCollection(stmt.getCollection());
+        Document query = stmt.getQuery();
+        Document projection = stmt.getProjection();
+
+        LOGGER.log(Level.DEBUG, () -> String.format(
+                "Query: %s, Projection: %s",
+                query.toString(),
+                (projection != null ? projection : "N/A")));
+
+        FindIterable<Document> finder = mc.find(query);
         if (projection != null) {
-            publisher = publisher.projection(projection);
+            finder = finder.projection(projection);
         }
 
-        return Multi.create(new MongoDbRows<>(clientContext(),
-                                            publisher,
-                                            this,
-                                            DbRow.class,
-                                            statementFuture,
-                                            queryFuture)
-                                  .publisher());
+        MongoCursor<Document> it = finder.iterator();
+        future.complete(it.hasNext() ? 1L : 0L);
+        Spliterator<Document> spliterator = spliteratorUnknownSize(it, Spliterator.ORDERED);
+        Stream<Document> stream = StreamSupport.stream(spliterator, false);
+        return stream.map(doc -> new MongoDbRow(doc, context()));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,25 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Vault's PKI Secrets Engine support.
  */
+@Feature(value = "PKI",
+        description = "PKI Secrets Engine",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"HCP Vault", "Secrets", "PKI"}
+)
 module io.helidon.integrations.vault.secrets.pki {
-    requires java.logging;
 
+    requires io.helidon.http;
     requires io.helidon.integrations.common.rest;
-    requires io.helidon.integrations.vault;
-    requires io.helidon.faulttolerance;
-    requires io.helidon.webclient;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.integrations.vault;
 
     exports io.helidon.integrations.vault.secrets.pki;
 

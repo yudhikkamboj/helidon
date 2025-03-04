@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,35 +14,40 @@
  * limitations under the License.
  */
 
-import org.glassfish.jersey.internal.spi.AutoDiscoverable;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
 /**
  * Tracing integration with jersey (JAX-RS) client.
  */
+@Feature(value = "Jersey Client",
+        description = "Tracing integration with Jersey client",
+        in = {HelidonFlavor.MP, HelidonFlavor.SE},
+        path = {"Tracing", "Integration", "JerseyClient"}
+)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.tracing.jersey.client {
-    requires java.logging;
-    requires jakarta.annotation;
 
-    requires jakarta.ws.rs;
-    requires jersey.client;
+    requires io.helidon.common.context;
+    requires io.helidon.common;
+    requires io.helidon.tracing.config;
+    requires io.helidon.tracing;
+    requires jakarta.annotation;
     requires jersey.common;
 
-    requires io.opentracing.api;
-    requires io.opentracing.util;
-
-    requires io.helidon.tracing;
-    requires io.helidon.tracing.config;
-    requires io.helidon.common;
-    requires io.helidon.common.context;
-    requires io.helidon.webclient.jaxrs;
-    requires io.helidon.common.serviceloader;
+    requires static io.helidon.common.features.api;
+    
+    requires transitive jakarta.ws.rs;
+    requires transitive jersey.client;
 
     exports io.helidon.tracing.jersey.client;
 
     // needed to propagate tracing context from server to client
-    exports io.helidon.tracing.jersey.client.internal to io.helidon.tracing.jersey,io.helidon.microprofile.tracing;
+    exports io.helidon.tracing.jersey.client.internal to io.helidon.tracing.jersey, io.helidon.microprofile.tracing;
 
     uses io.helidon.tracing.spi.TracerProvider;
 
-    provides AutoDiscoverable with io.helidon.tracing.jersey.client.ClientTracingAutoDiscoverable;
+    provides org.glassfish.jersey.internal.spi.AutoDiscoverable
+            with io.helidon.tracing.jersey.client.ClientTracingAutoDiscoverable;
+
 }

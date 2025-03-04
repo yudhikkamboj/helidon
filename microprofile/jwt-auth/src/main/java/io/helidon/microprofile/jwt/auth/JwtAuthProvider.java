@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.helidon.microprofile.jwt.auth;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringReader;
+import java.lang.System.Logger.Level;
 import java.lang.annotation.Annotation;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -31,6 +32,7 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
@@ -44,18 +46,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.helidon.common.Errors;
 import io.helidon.common.LazyValue;
+import io.helidon.common.config.Config;
 import io.helidon.common.configurable.Resource;
-import io.helidon.common.http.Http;
-import io.helidon.common.pki.KeyConfig;
-import io.helidon.config.Config;
+import io.helidon.common.pki.Keys;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
+import io.helidon.config.metadata.ConfiguredValue;
+import io.helidon.http.HeaderNames;
 import io.helidon.security.AuthenticationResponse;
 import io.helidon.security.EndpointConfig;
 import io.helidon.security.Grant;
@@ -73,6 +77,7 @@ import io.helidon.security.jwt.EncryptedJwt;
 import io.helidon.security.jwt.Jwt;
 import io.helidon.security.jwt.JwtException;
 import io.helidon.security.jwt.JwtHeaders;
+import io.helidon.security.jwt.JwtValidator;
 import io.helidon.security.jwt.SignedJwt;
 import io.helidon.security.jwt.Validator;
 import io.helidon.security.jwt.jwk.Jwk;
@@ -84,7 +89,6 @@ import io.helidon.security.providers.common.OutboundTarget;
 import io.helidon.security.providers.common.TokenCredential;
 import io.helidon.security.spi.AuthenticationProvider;
 import io.helidon.security.spi.OutboundSecurityProvider;
-import io.helidon.security.spi.SynchronousProvider;
 import io.helidon.security.util.TokenHandler;
 
 import jakarta.enterprise.inject.spi.DeploymentException;
@@ -95,20 +99,14 @@ import org.eclipse.microprofile.auth.LoginConfig;
 import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
+import static io.helidon.security.EndpointConfig.PROPERTY_OUTBOUND_ID;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * Provider that provides JWT authentication.
  */
-public class JwtAuthProvider extends SynchronousProvider implements AuthenticationProvider, OutboundSecurityProvider {
-    private static final Logger LOGGER = Logger.getLogger(JwtAuthProvider.class.getName());
+public class JwtAuthProvider implements AuthenticationProvider, OutboundSecurityProvider {
 
-    private static final JsonReaderFactory JSON = Json.createReaderFactory(Collections.emptyMap());
-
-    /**
-     * Configure this for outbound requests to override user to use.
-     */
-    public static final String EP_PROPERTY_OUTBOUND_USER = "io.helidon.security.outbound.user";
     /**
      * Configuration key for expected issuer of incoming tokens. Used for validation of JWT.
      */
@@ -117,18 +115,23 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
      * Configuration key for expected audiences of incoming tokens. Used for validation of JWT.
      */
     public static final String CONFIG_EXPECTED_AUDIENCES = "mp.jwt.verify.audiences";
+
+    private static final String CONFIG_EXPECTED_MAX_TOKEN_AGE = "mp.jwt.verify.token.age";
+    private static final String CONFIG_CLOCK_SKEW = "mp.jwt.verify.clock.skew";
     /**
      * Configuration of Cookie property name which contains JWT token.
      *
-     * This will be ignored unless {@link #CONFIG_JWT_HEADER} is set to {@link Http.Header#COOKIE}.
+     * This will be ignored unless {@link #CONFIG_JWT_HEADER} is set to {@link io.helidon.http.HeaderNames#COOKIE}.
      */
     private static final String CONFIG_COOKIE_PROPERTY_NAME = "mp.jwt.token.cookie";
     /**
      * Configuration of the header where the JWT token is set.
      *
-     * Default value is {@link Http.Header#AUTHORIZATION}.
+     * Default value is {@link io.helidon.http.HeaderNames#AUTHORIZATION}.
      */
     private static final String CONFIG_JWT_HEADER = "mp.jwt.token.header";
+    private static final System.Logger LOGGER = System.getLogger(JwtAuthProvider.class.getName());
+    private static final JsonReaderFactory JSON = Json.createReaderFactory(Collections.emptyMap());
 
     private final boolean optional;
     private final boolean authenticate;
@@ -146,14 +149,18 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
     private final LazyValue<Jwk> defaultJwk;
     private final LazyValue<Jwk> defaultDecryptionJwk;
     private final Map<OutboundTarget, JwtOutboundTarget> targetToJwtConfig = new IdentityHashMap<>();
+    private final ReentrantLock targetToJwtConfigLock = new ReentrantLock();
     private final String expectedIssuer;
     private final String cookiePrefix;
+    private final String decryptionKeyAlgorithm;
     private final boolean useCookie;
+    private final Duration expectedMaxTokenAge;
+    private final Duration clockSkew;
 
     private JwtAuthProvider(Builder builder) {
         this.optional = builder.optional;
         this.authenticate = builder.authenticate;
-        this.propagate = builder.propagate;
+        this.propagate = builder.propagate && builder.outboundConfig.targets().size() > 0;
         this.allowImpersonation = builder.allowImpersonation;
         this.subjectType = builder.subjectType;
         this.atnTokenHandler = builder.atnTokenHandler;
@@ -168,6 +175,9 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         this.useCookie = builder.useCookie;
         this.decryptionKeys = builder.decryptionKeys;
         this.defaultDecryptionJwk = builder.defaultDecryptionJwk;
+        this.decryptionKeyAlgorithm = builder.decryptionKeyAlgorithm;
+        this.expectedMaxTokenAge = builder.expectedMaxTokenAge;
+        this.clockSkew = builder.clockSkew;
 
         if (null == atnTokenHandler) {
             defaultTokenHandler = TokenHandler.builder()
@@ -204,7 +214,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
     }
 
     @Override
-    protected AuthenticationResponse syncAuthenticate(ProviderRequest providerRequest) {
+    public AuthenticationResponse authenticate(ProviderRequest providerRequest) {
         if (!authenticate) {
             return AuthenticationResponse.abstain();
         }
@@ -247,19 +257,26 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                     SignedJwt signedJwt;
                     try {
                         headers = JwtHeaders.parseToken(token);
-                        if (headers.encryption().isPresent()) {
+                        if (headers.encryption().isPresent() || decryptionKeys.get() != null) {
                             EncryptedJwt encryptedJwt = EncryptedJwt.parseToken(headers, token);
                             if (!headers.contentType().map("JWT"::equals).orElse(false)) {
                                 throw new JwtException("Header \"cty\" (content type) must be set to \"JWT\" "
                                                                + "for encrypted tokens");
                             }
-                            signedJwt = encryptedJwt.decrypt(decryptionKeys.get(), defaultDecryptionJwk.get());
+                            List<Validator<EncryptedJwt>> validators = new LinkedList<>();
+                            EncryptedJwt.addKekValidator(validators, decryptionKeyAlgorithm, true);
+                            Errors errors = encryptedJwt.validate(validators);
+                            if (errors.isValid()) {
+                                signedJwt = encryptedJwt.decrypt(decryptionKeys.get(), defaultDecryptionJwk.get());
+                            } else {
+                                return AuthenticationResponse.failed(errors.toString());
+                            }
                         } else {
                             signedJwt = SignedJwt.parseToken(token);
                         }
                     } catch (Exception e) {
-                        if (LOGGER.isLoggable(Level.FINEST)) {
-                            LOGGER.log(Level.FINEST, "Failed to parse token String into JWT", e);
+                        if (LOGGER.isLoggable(Level.TRACE)) {
+                            LOGGER.log(Level.TRACE, "Failed to parse token String into JWT", e);
                         }
                         //invalid token
                         return AuthenticationResponse.failed("Invalid token", e);
@@ -267,21 +284,27 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                     Errors errors = signedJwt.verifySignature(verifyKeys.get(), defaultJwk.get());
                     if (errors.isValid()) {
                         Jwt jwt = signedJwt.getJwt();
-
-                        List<Validator<Jwt>> validators = new LinkedList<>();
+                        JwtValidator.Builder valBuilder = JwtValidator.builder();
                         if (expectedIssuer != null) {
                             // validate issuer
-                            Jwt.addIssuerValidator(validators, expectedIssuer, true);
+                            valBuilder.addIssuerValidator(expectedIssuer);
                         }
-                        if (expectedAudiences.size() > 0) {
+                        if (!expectedAudiences.isEmpty()) {
                             // validate audience(s)
-                            Jwt.addAudienceValidator(validators, expectedAudiences, true);
+                            valBuilder.addAudienceValidator(expectedAudiences);
                         }
                         // validate user principal is present
-                        Jwt.addUserPrincipalValidator(validators);
-                        validators.add(Jwt.ExpirationValidator.create(true));
-
-                        Errors validate = jwt.validate(validators);
+                        valBuilder.addUserPrincipalValidator()
+                                .addExpirationValidator(builder -> builder.now(Instant.now())
+                                        .allowedTimeSkew(clockSkew)
+                                        .mandatory(true));
+                        if (expectedMaxTokenAge != null) {
+                            valBuilder.addMaxTokenAgeValidator(builder -> builder.expectedMaxTokenAge(expectedMaxTokenAge)
+                                    .allowedTimeSkew(clockSkew)
+                                    .mandatory(true));
+                        }
+                        JwtValidator jwtValidator = valBuilder.build();
+                        Errors validate = jwtValidator.validate(jwt);
 
                         if (validate.isValid()) {
                             return AuthenticationResponse.success(buildSubject(jwt, signedJwt));
@@ -295,7 +318,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
     }
 
     private Optional<String> findCookie(Map<String, List<String>> headers) {
-        List<String> cookies = headers.get(Http.Header.COOKIE);
+        List<String> cookies = headers.get(HeaderNames.COOKIE.defaultCase());
         if ((null == cookies) || cookies.isEmpty()) {
             return Optional.empty();
         }
@@ -351,15 +374,16 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
     public boolean isOutboundSupported(ProviderRequest providerRequest,
                                        SecurityEnvironment outboundEnv,
                                        EndpointConfig outboundConfig) {
-        return propagate;
+        // only propagate if we have an actual target configured
+        return propagate && this.outboundConfig.findTarget(outboundEnv).isPresent();
     }
 
     @Override
-    public OutboundSecurityResponse syncOutbound(ProviderRequest providerRequest,
-                                                 SecurityEnvironment outboundEnv,
-                                                 EndpointConfig outboundEndpointConfig) {
+    public OutboundSecurityResponse outboundSecurity(ProviderRequest providerRequest,
+                                                     SecurityEnvironment outboundEnv,
+                                                     EndpointConfig outboundEndpointConfig) {
 
-        Optional<Object> maybeUsername = outboundEndpointConfig.abacAttribute(EP_PROPERTY_OUTBOUND_USER);
+        Optional<Object> maybeUsername = outboundEndpointConfig.abacAttribute(PROPERTY_OUTBOUND_ID);
         return maybeUsername
                 .map(String::valueOf)
                 .flatMap(username -> {
@@ -375,7 +399,13 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                     Optional<OutboundTarget> maybeTarget = outboundConfig.findTarget(outboundEnv);
 
                     return maybeTarget.flatMap(target -> {
-                        JwtOutboundTarget jwtOutboundTarget = targetToJwtConfig.computeIfAbsent(target, this::toOutboundTarget);
+                        JwtOutboundTarget jwtOutboundTarget;
+                        try {
+                            targetToJwtConfigLock.lock();
+                            jwtOutboundTarget = targetToJwtConfig.computeIfAbsent(target, this::toOutboundTarget);
+                        } finally {
+                            targetToJwtConfigLock.unlock();
+                        }
 
                         if (null == jwtOutboundTarget.jwkKid) {
                             return Optional.of(OutboundSecurityResponse.builder()
@@ -399,8 +429,13 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                         Optional<OutboundTarget> maybeTarget = outboundConfig.findTarget(outboundEnv);
 
                         return maybeTarget.flatMap(target -> {
-                            JwtOutboundTarget jwtOutboundTarget = targetToJwtConfig
-                                    .computeIfAbsent(target, this::toOutboundTarget);
+                            JwtOutboundTarget jwtOutboundTarget;
+                            try {
+                                targetToJwtConfigLock.lock();
+                                jwtOutboundTarget = targetToJwtConfig.computeIfAbsent(target, this::toOutboundTarget);
+                            } finally {
+                                targetToJwtConfigLock.unlock();
+                            }
 
                             if (null == jwtOutboundTarget.jwkKid) {
                                 // just propagate existing token
@@ -576,10 +611,15 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
     /**
      * Fluent API builder for {@link JwtAuthProvider}.
      */
+    @Configured(description = "MP-JWT Auth configuration is defined by the spec (options prefixed with `mp.jwt.`), "
+            + "and we add a few configuration options for the security provider (options prefixed with "
+            + "`security.providers.mp-jwt-auth.`)")
     public static class Builder implements io.helidon.common.Builder<Builder, JwtAuthProvider> {
+        private static final String HELIDON_CONFIG_PREFIX = "security.providers.mp-jwt-auth.";
         private static final String CONFIG_PUBLIC_KEY = "mp.jwt.verify.publickey";
         private static final String CONFIG_PUBLIC_KEY_PATH = "mp.jwt.verify.publickey.location";
         private static final String CONFIG_JWT_DECRYPT_KEY_LOCATION = "mp.jwt.decrypt.key.location";
+        private static final String CONFIG_JWT_DECRYPT_KEY_ALGORITHM = "mp.jwt.decrypt.key.algorithm";
         private static final String JSON_START_MARK = "{";
         private static final Pattern PUBLIC_KEY_PATTERN = Pattern.compile(
                 "-+BEGIN\\s+.*PUBLIC\\s+KEY[^-]*-+(?:\\s|\\r|\\n)+" // Header
@@ -604,7 +644,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                 .tokenHeader("Authorization")
                 .tokenPrefix("bearer ")
                 .build();
-        private OutboundConfig outboundConfig;
+        private OutboundConfig outboundConfig = OutboundConfig.builder().build();
         private LazyValue<JwkKeys> verifyKeys;
         private LazyValue<JwkKeys> decryptionKeys;
         private LazyValue<Jwk> defaultJwk;
@@ -616,8 +656,11 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         private String publicKey;
         private String cookieProperty = "Bearer";
         private String decryptKeyLocation;
+        private String decryptionKeyAlgorithm;
         private boolean useCookie = false;
         private boolean loadOnStartup = false;
+        private Duration expectedMaxTokenAge = null;
+        private Duration clockSkew = Duration.ofSeconds(5);
 
         private Builder() {
         }
@@ -726,8 +769,8 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         }
 
         private JwkKeys loadPlainPrivateKey(String stringContent) {
-            PrivateKey privateKey = KeyConfig.pemBuilder()
-                    .key(Resource.create("private key from PKCS8", stringContent))
+            PrivateKey privateKey = Keys.builder()
+                    .pem(pem -> pem.key(Resource.create("private key from PKCS8", stringContent)))
                     .build()
                     .privateKey()
                     .orElseThrow(() -> new DeploymentException(
@@ -764,7 +807,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
 
         private JwkKeys createJwkKeys(String publicKeyPath, String publicKey, LazyValue<Jwk> defaultJwk) {
             if ((null == publicKeyPath) && (null == publicKey) && (null == defaultJwk)) {
-                LOGGER.severe("Either \""
+                LOGGER.log(Level.ERROR, "Either \""
                                       + CONFIG_PUBLIC_KEY
                                       + "\", or \""
                                       + CONFIG_PUBLIC_KEY_PATH
@@ -811,7 +854,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                     return Optional.of(path);
                 }
             } catch (InvalidPathException e) {
-                LOGGER.log(Level.FINEST, "Could not locate path: " + uri, e);
+                LOGGER.log(Level.TRACE, "Could not locate path: " + uri, e);
             }
 
             return Optional.empty();
@@ -836,7 +879,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                         url = new URL(uri);
                     } catch (MalformedURLException ignored2) {
                         //ignored not and valid URL
-                        LOGGER.finest(() -> "Configuration of public key(s) is not a valid URL: " + uri);
+                        LOGGER.log(Level.TRACE, () -> "Configuration of public key(s) is not a valid URL: " + uri);
                         return null;
                     }
                     is = url.openStream();
@@ -867,8 +910,8 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         }
 
         private JwkKeys loadPlainPublicKey(String stringContent) {
-            PublicKey publicKey = KeyConfig.pemBuilder()
-                    .publicKey(Resource.create("public key from PKCS8", stringContent))
+            PublicKey publicKey = Keys.builder()
+                    .pem(pem -> pem.publicKey(Resource.create("public key from PKCS8", stringContent)))
                     .build()
                     .publicKey()
                     .orElseThrow(() -> new DeploymentException(
@@ -909,6 +952,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param propagate whether to propagate identity (true) or not (false)
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "propagate", value = "true")
         public Builder propagate(boolean propagate) {
             this.propagate = propagate;
             return this;
@@ -920,6 +964,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param authenticate whether to authenticate (true) or not (false)
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "authenticate", value = "true")
         public Builder authenticate(boolean authenticate) {
             this.authenticate = authenticate;
             return this;
@@ -927,12 +972,14 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
 
         /**
          * Whether to allow impersonation by explicitly overriding
-         * username from outbound requests using {@link #EP_PROPERTY_OUTBOUND_USER} property.
+         * username from outbound requests using {@link io.helidon.security.EndpointConfig#PROPERTY_OUTBOUND_ID}
+         * property.
          * By default this is not allowed and identity can only be propagated.
          *
          * @param allowImpersonation set to true to allow impersonation
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "allow-impersonation", value = "false")
         public Builder allowImpersonation(boolean allowImpersonation) {
             this.allowImpersonation = allowImpersonation;
             return this;
@@ -944,6 +991,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param subjectType type of principal
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "principal-type", value = "USER")
         public Builder subjectType(SubjectType subjectType) {
             this.subjectType = subjectType;
 
@@ -960,10 +1008,12 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
 
         /**
          * Token handler to extract username from request.
+         * Uses {@code Authorization} header with {@code bearer } prefix by default.
          *
          * @param tokenHandler token handler instance
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "atn-token.handler")
         public Builder atnTokenHandler(TokenHandler tokenHandler) {
             this.atnTokenHandler = tokenHandler;
 
@@ -978,6 +1028,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param optional whether authentication is optional (true) or required (false)
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "optional", value = "false")
         public Builder optional(boolean optional) {
             this.optional = optional;
             return this;
@@ -990,6 +1041,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          *               to add our configuration.
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "sign-token")
         public Builder outboundConfig(OutboundConfig config) {
             this.outboundConfig = config;
             return this;
@@ -1034,6 +1086,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param publicKey String representation
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_PUBLIC_KEY)
         public Builder publicKey(String publicKey) {
             // from MP specification - if defined, get rid of publicKeyPath from Helidon Config,
             // as we must fail if both are defined using MP configuration options
@@ -1044,10 +1097,13 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
 
         /**
          * Path to public key.
+         * The value may be a relative path or a URL.
          *
          * @param publicKeyPath Public key path
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_PUBLIC_KEY_PATH)
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "atn-token.verify-key")
         public Builder publicKeyPath(String publicKeyPath) {
             this.publicKeyPath = publicKeyPath;
             return this;
@@ -1070,6 +1126,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param defaultKeyId Default JWT key ID
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "atn-token.default-key-id")
         public Builder defaultKeyId(String defaultKeyId) {
             this.defaultKeyId = defaultKeyId;
             return this;
@@ -1081,19 +1138,22 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param config configuration to load from
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "atn-token.jwk.resource",
+                          type = Resource.class,
+                          description = "JWK resource for authenticating the request")
         public Builder config(Config config) {
             config.get("optional").asBoolean().ifPresent(this::optional);
             config.get("authenticate").asBoolean().ifPresent(this::authenticate);
             config.get("propagate").asBoolean().ifPresent(this::propagate);
             config.get("allow-impersonation").asBoolean().ifPresent(this::allowImpersonation);
             config.get("principal-type").asString().as(SubjectType::valueOf).ifPresent(this::subjectType);
-            config.get("atn-token.handler").as(TokenHandler::create).ifPresent(this::atnTokenHandler);
-            config.get("atn-token").ifExists(this::verifyKeys);
+            config.get("atn-token.handler").map(TokenHandler::create).ifPresent(this::atnTokenHandler);
+            config.get("atn-token").asNode().ifPresent(this::verifyKeys);
             config.get("atn-token.jwt-audience").asString().ifPresent(this::expectedAudience);
             config.get("atn-token.default-key-id").asString().ifPresent(this::defaultKeyId);
             config.get("atn-token.verify-key").asString().ifPresent(this::publicKeyPath);
-            config.get("sign-token").ifExists(outbound -> outboundConfig(OutboundConfig.create(outbound)));
-            config.get("sign-token").ifExists(this::outbound);
+            config.get("sign-token").asNode().ifPresent(outbound -> outboundConfig(OutboundConfig.create(outbound)));
+            config.get("sign-token").asNode().ifPresent(this::outbound);
             config.get("load-on-startup").asBoolean().ifPresent(this::loadOnStartup);
 
             org.eclipse.microprofile.config.Config mpConfig = ConfigProviderResolver.instance().getConfig();
@@ -1102,9 +1162,12 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
             mpConfig.getOptionalValue(CONFIG_PUBLIC_KEY_PATH, String.class).ifPresent(this::publicKeyPath);
             mpConfig.getOptionalValue(CONFIG_EXPECTED_ISSUER, String.class).ifPresent(this::expectedIssuer);
             mpConfig.getOptionalValue(CONFIG_EXPECTED_AUDIENCES, String[].class).map(List::of).ifPresent(this::expectedAudiences);
+            mpConfig.getOptionalValue(CONFIG_EXPECTED_MAX_TOKEN_AGE, int.class).ifPresent(this::expectedMaxTokenAge);
             mpConfig.getOptionalValue(CONFIG_COOKIE_PROPERTY_NAME, String.class).ifPresent(this::cookieProperty);
             mpConfig.getOptionalValue(CONFIG_JWT_HEADER, String.class).ifPresent(this::jwtHeader);
             mpConfig.getOptionalValue(CONFIG_JWT_DECRYPT_KEY_LOCATION, String.class).ifPresent(this::decryptKeyLocation);
+            mpConfig.getOptionalValue(CONFIG_JWT_DECRYPT_KEY_ALGORITHM, String.class).ifPresent(this::decryptKeyAlgorithm);
+            mpConfig.getOptionalValue(CONFIG_CLOCK_SKEW, int.class).ifPresent(this::clockSkew);
 
             if (null == publicKey && null == publicKeyPath) {
                 // this is a fix for incomplete TCK tests
@@ -1112,7 +1175,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
                 String key = "helidon.mp.jwt.verify.publickey.location";
                 mpConfig.getOptionalValue(key, String.class).ifPresent(it -> {
                     publicKeyPath(it);
-                    LOGGER.warning("You have configured public key for JWT-Auth provider using a property"
+                    LOGGER.log(Level.WARNING, "You have configured public key for JWT-Auth provider using a property"
                                            + " reserved for TCK tests (" + key + "). Please use "
                                            + CONFIG_PUBLIC_KEY_PATH + " instead.");
                 });
@@ -1122,11 +1185,14 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         }
 
         /**
+         * Name of the header expected to contain the token.
+         *
          * @param header header name which should be used
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_JWT_HEADER, value = "Authorization")
         public Builder jwtHeader(String header) {
-            if (Http.Header.COOKIE.equals(header)) {
+            if (HeaderNames.COOKIE.defaultCase().equalsIgnoreCase(header)) {
                 useCookie = true;
             } else {
                 useCookie = false;
@@ -1144,6 +1210,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param cookieProperty cookie property name
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_COOKIE_PROPERTY_NAME, value = "Bearer")
         public Builder cookieProperty(String cookieProperty) {
             this.cookieProperty = cookieProperty;
             return this;
@@ -1155,6 +1222,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param issuer name of issuer
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_EXPECTED_ISSUER)
         public Builder expectedIssuer(String issuer) {
             this.expectedIssuer = issuer;
             return this;
@@ -1168,6 +1236,7 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @deprecated use {@link #addExpectedAudience(String)} instead
          */
         @Deprecated(forRemoval = true, since = "2.4.0")
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "atn-token.jwt-audience")
         public Builder expectedAudience(String audience) {
             return addExpectedAudience(audience);
         }
@@ -1184,11 +1253,14 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         }
 
         /**
-         * Replace expected audiences with the content of the provided collection.
+         * Expected audiences of incoming tokens.
          *
          * @param audiences expected audiences to use
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_EXPECTED_AUDIENCES,
+                          type = String.class,
+                          kind = ConfiguredOption.Kind.LIST)
         public Builder expectedAudiences(Collection<String> audiences) {
             this.expectedAudiences.clear();
             this.expectedAudiences.addAll(audiences);
@@ -1196,13 +1268,43 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
         }
 
         /**
-         * Private key to decryption of encrypted claims.
+         * Maximal expected token age in seconds. If this value is set, {@code iat} claim needs to be present in the JWT.
+         *
+         * @param expectedMaxTokenAge expected maximal token age in seconds
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = CONFIG_EXPECTED_MAX_TOKEN_AGE)
+        public Builder expectedMaxTokenAge(int expectedMaxTokenAge) {
+            this.expectedMaxTokenAge = Duration.ofSeconds(expectedMaxTokenAge);
+            return this;
+        }
+
+        /**
+         * Private key for decryption of encrypted claims.
+         * The value may be a relative path or a URL.
          *
          * @param decryptKeyLocation private key location
          * @return updated builder instance
          */
+        @ConfiguredOption(key = CONFIG_JWT_DECRYPT_KEY_LOCATION)
         public Builder decryptKeyLocation(String decryptKeyLocation) {
             this.decryptKeyLocation = decryptKeyLocation;
+            return this;
+        }
+
+        /**
+         * Expected key management algorithm supported by the MP JWT endpoint.
+         * Supported algorithms are either {@code RSA-OAEP} or {@code RSA-OAEP-256}.
+         * If no algorithm is set, both algorithms must be accepted.
+         *
+         * @param decryptionKeyAlgorithm expected decryption key algorithm
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = CONFIG_JWT_DECRYPT_KEY_ALGORITHM,
+                          allowedValues = {@ConfiguredValue(value = "RSA-OAEP", description = "RSA-OAEP Algorithm"),
+                                  @ConfiguredValue(value = "RSA-OAEP-256", description = "RSA-OAEP-256 Algorithm")})
+        public Builder decryptKeyAlgorithm(String decryptionKeyAlgorithm) {
+            this.decryptionKeyAlgorithm = decryptionKeyAlgorithm;
             return this;
         }
 
@@ -1213,29 +1315,33 @@ public class JwtAuthProvider extends SynchronousProvider implements Authenticati
          * @param loadOnStartup load verification keys on server startup
          * @return updated builder instance
          */
+        @ConfiguredOption(key = HELIDON_CONFIG_PREFIX + "load-on-startup", value = "false")
         public Builder loadOnStartup(boolean loadOnStartup) {
             this.loadOnStartup = loadOnStartup;
             return this;
         }
 
-        private void verifyKeys(Config config) {
-            config.get("jwk.resource").as(Resource::create).ifPresent(this::verifyJwk);
+        /**
+         * Clock skew to be accounted for in token expiration and max age validations in seconds.
+         *
+         * @param clockSkew clock skew
+         * @return updated builder instance
+         */
+        @ConfiguredOption(key = CONFIG_CLOCK_SKEW, value = "5")
+        public Builder clockSkew(int clockSkew) {
+            this.clockSkew = Duration.ofSeconds(clockSkew);
+            return this;
+        }
 
-            // backward compatibility
-            Resource.create(config, "jwk")
-                    .ifPresent(this::verifyJwk);
+        private void verifyKeys(Config config) {
+            config.get("jwk.resource").map(Resource::create).ifPresent(this::verifyJwk);
         }
 
         private void outbound(Config config) {
             config.get("jwt-issuer").asString().ifPresent(this::issuer);
 
             // jwk is optional, we may be propagating existing token
-            config.get("jwk.resource").as(Resource::create).ifPresent(this::signJwk);
-
-            // backward compatibility
-            Resource.create(config, "jwk")
-                    .ifPresent(this::signJwk);
-
+            config.get("jwk.resource").map(Resource::create).ifPresent(this::signJwk);
         }
     }
 

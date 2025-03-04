@@ -1,0 +1,337 @@
+///////////////////////////////////////////////////////////////////////////////
+
+    Copyright (c) 2021, 2025 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+///////////////////////////////////////////////////////////////////////////////
+
+// tag::overview[]
+
+ifndef::rootdir[:rootdir: {docdir}/../..]
+ifndef::flavor-lc[:flavor-lc: se]
+:description: Helidon metrics
+:keywords: helidon, metrics
+:writing-code-content: code which explicitly invokes the metrics API to register {metrics}, retrieve previously-registered {metrics}, and update {metric} values.
+ifdef::se-flavor[:prom-output-scope-prefix: ]
+ifdef::mp-flavor[:prom-output-scope-prefix: mp_]
+
+* a unified way for
+ifdef::mp-flavor[MicroProfile]
+ifdef::se-flavor[Helidon]
+servers to export monitoring data--telemetry--to management agents, and
+* a unified Java API which all application programmers can use to register and update {metrics} to expose telemetry data from their services.
+ifdef::mp-flavor[]
+* support for metrics-related annotations.
+
+Learn more about the https://github.com/eclipse/microprofile-metrics/releases/tag/{version-lib-microprofile-metrics-api}[MicroProfile Metrics specification].
+endif::[]
+
+Metrics is one of the Helidon observability features.
+
+// @Deprecated(forRemoval = true) Remove the following note starting in Helidon 5.
+[NOTE]
+.Recommended Configuration Setting
+====
+Beginning with Helidon 4.1, strongly consider assigning the config setting
+[source,properties]
+----
+metrics.gc-time-type = gauge
+----
+ifdef::mp-flavor[]
+so your service complies with the MicroProfile Metrics 5.1 specification.
+endif::mp-flavor[]
+See the <<controlling-gc-time,longer discussion below>> in the  Configuration section.
+====
+
+// end::overview[]
+
+// tag::usage-body[]
+=== Instrumenting Your Service
+
+You add {metrics} to your service
+ifdef::se-flavor[]
+by writing {writing-code-content}
+endif::[]
+ifdef::mp-flavor[]
+in these ways:
+
+* Annotate bean methods--typically your REST resource endpoint methods (the Java code that receives incoming REST requests); Helidon automatically registers these {metrics} and updates them when the annotated methods are invoked via CDI.
+* Write {writing-code-content}
+* Configure some simple `REST.request` {metrics} which Helidon automatically registers and updates for all REST resource endpoints.
+endif::[]
+
+Later sections of this document describe how to do
+ifdef::mp-flavor[each of these.]
+ifdef::se-flavor[this.]
+
+// tag::meter-types-summary[]
+=== {metric_uc} Types
+
+Helidon supports meters
+ifdef::se-flavor[inspired by link:{micrometer-url}[Micrometer]]
+ifdef::mp-flavor[described by the link:{microprofile-metrics-spec-url}[MicroProfile Metrics] spec]
+and summarized in the following table:
+
+.Types of {metrics_uc}
+[cols="3,8,2"]
+|====
+| {metric_uc} Type | Description |
+ifdef::se-flavor[Micrometer reference]
+ifdef::mp-flavor[Related MicroProfile annotation]
+
+|
+ifdef::se-flavor[link:{metrics-javadoc-base-url}/io/helidon/metrics/api/Counter.html[`Counter`]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-metric-url}/Counter.html[`Counter`]]
+| Monotonically-increasing `long` value. |
+ifdef::se-flavor[link:{micrometer-api-url}/counters.html[Counters]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-annotation-url}/Counted.html[`@Counted`]]
+
+|
+ifdef::se-flavor[link:{metrics-javadoc-base-url}/io/helidon/metrics/api/DistributionSummary.html[`DistributionSummary`]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-metric-url}/Histogram.html[`Histogram`]]
+
+| Summary of samples each with a `long` value. Reports aggregate information over all samples (count, total, mean, max) as well as the distribution of sample values using percentiles and bucket counts. |
+ifdef::se-flavor[link:{micrometer-api-url}/distribution-summaries.html[Distribution summaries]]
+ifdef::mp-flavor[(none)]
+
+|
+ifdef::se-flavor[link:{metrics-javadoc-base-url}/io/helidon/metrics/api/Timer.html[`Timer`]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-metric-url}/Timer.html[`Timer`]]
+| Accumulation of short-duration (typically under a minute) intervals. Typically updated using a Java  link:{jdk-javadoc-url}/java.base/java/time/Duration.html[`Duration`] or by recording the time taken by a method invocation or lambda. Reports the count, total time, max, and mean; provides a
+ifdef::se-flavor[distribution summary]
+ifdef::mp-flavor[histogram]
+of the samples. |
+ifdef::se-flavor[link:{micrometer-api-url}/timers.html[Timers]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-annotation-url}/Timed.html[`@Timed`]]
+
+|
+ifdef::se-flavor[link:{metrics-javadoc-base-url}/io/helidon/metrics/api/Gauge.html[`Gauge<? extends Number>`]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-metric-url}/Gauge.html[`Gauge<? extends Number>`]]
+| View of a value that is assignment-compatible with a subtype of Java link:{jdk-javadoc-url}/java.base/java.lang.Number.html[`Number`]. The underlying value is updated by code elsewhere in the system, not by invoking methods on the gauge itself. |
+ifdef::se-flavor[link:{micrometer-api-url}/gauges.html[Gauges]]
+ifdef::mp-flavor[link:{microprofile-metrics-javadoc-annotation-url}/Gauge.html[`@Gauge`]]
+|====
+
+// end::meter-types-summary[]
+
+=== Categorizing Types of {Metrics_uc}
+Helidon distinguishes among _scopes_, or categories, of
+ifdef::se-flavor[{metrics}.]
+ifdef::mp-flavor[{metrics} as described in the link:{microprofile-metrics-spec-url}[MP metrics specification].]
+
+Helidon includes {metrics} in the built-in scopes described below.
+Applications often register their own {metrics} in the `application` scope but can create their own scopes and register {metrics} within them.
+
+.Built-in {metric} scopes
+[cols="2,8"]
+|====
+| Built-in Scope | Typical Usage
+
+| `base`
+| OS or Java runtime measurements (available heap, disk space, etc.).
+ifdef::mp-flavor[Mandated by the MP metrics specification]
+| `vendor`
+| Implemented by vendors, including the `REST.request` metrics and other key performance indicator measurements (described in later sections).
+| `application`
+| Declared via annotations or programmatically registered by your service code.
+|====
+
+ifdef::mp-flavor[When you add metrics annotations to your service code, Helidon registers the resulting metrics in the  `application` scope.]
+ifdef::se-flavor[]
+When an application creates a new {meter} it can specify which scope the {meter} belongs to. If the application does not specify a scope for a new {meter}, the default scope is `application`.
+endif::se-flavor[]
+
+// end::usage-body[]
+
+// tag::usage-retrieving[]
+=== Retrieving Metrics Reports from your Service
+When you add the
+ifdef::mp-flavor[metrics dependency]
+ifdef::se-flavor[`helidon-webserver-observe-metrics` dependency]
+to your project, Helidon automatically provides a built-in REST endpoint `{metrics-endpoint}` which responds with a report of the registered {metrics} and their values.
+
+Clients can request a particular output format.
+
+.Formats for `{metrics-endpoint}` output
+[%autowidth]
+|====
+| Format | Requested by
+
+| OpenMetrics (Prometheus) | default (`text/plain`)
+| JSON | Header `Accept: application/json`
+|====
+
+Clients can also limit the report by specifying the scope as a query parameter in the request URL:
+
+* `{metrics-endpoint}?scope=base`
+* `{metrics-endpoint}?scope=vendor`
+* `{metrics-endpoint}?scope=application`
+
+Further, clients can narrow down to a specific metric name by adding the name as another query parameter, such as `{metrics-endpoint}?scope=application&name=myCount`.
+
+[source,bash,subs="attributes+"]
+.Example Reporting: Prometheus format
+----
+curl -s -H 'Accept: text/plain' -X GET http://localhost:8080{metrics-endpoint}
+----
+
+[source,text,subs="attributes+"]
+----
+# HELP classloader_loadedClasses_count Displays the number of classes that are currently loaded in the Java virtual machine.
+# TYPE classloader_loadedClasses_count gauge
+classloader_loadedClasses_count{{prom-output-scope-prefix}scope="base",} 5297.0
+----
+See the summary of the <<OpenMetrics and Prometheus Format, OpenMetrics and Prometheus Format>> for more information.
+
+[source,bash,subs="attributes+"]
+.Example Reporting: JSON format
+----
+curl -s -H 'Accept: application/json' -X GET http://localhost:8080{metrics-endpoint}
+----
+
+[source,json]
+.JSON response:
+----
+{
+   "base" : {
+      "memory.maxHeap" : 3817865216,
+      "memory.committedHeap" : 335544320
+    }
+}
+----
+
+In addition to your application {metrics}, the reports contain other
+{metrics} of interest such as system and VM information.
+
+==== OpenMetrics and Prometheus Format
+The link:{openmetrics-format-doc-url}[OpenMetrics format] and the link:{prometheus-exposition-format-doc-url}[Prometheus exposition format] are very similar in most important respects but are not identical. This brief summary treats them as the same.
+
+The OpenMetrics/Prometheus format represents each {metric} using three lines of output as summarized in the following table.
+
+.OpenMetrics/Prometheus format
+[cols="1,6,6"]
+|====
+| Line prefix | Purpose | Format
+
+| `# TYPE` | Displays the scope, name, and type of the {metric} | `TYPE <scope>:<output-name> <{metric}-type>`
+| `# HELP` | Displays the scope, name, and description of the {metric} | `HELP <scope>:<output-name> <registered description>`
+| (none) | Displays the scope, {metric} ID, and current value of the {metric} | `<scope>:<output-name> <current value>`
+|====
+The OpenMetrics/Prometheus output converts {metric} IDs in these ways:
+
+* Names in camel case are converted to "snake case" and dots are converted to underscores.
+* Names include any units specified for the {metric}.
+* For percentiles, the ID includes a tag identifying which percentile the line of output describes.
+
+As the earlier example output showed, for a {metric} with multiple values, such as a timer or a
+ifdef::se-flavor[distribution summary,]
+ifdef::mp-flavor[histogram,]
+(with, among others, `max`, `mean`, and `count`), the OpenMetrics/Prometheus output reports a "metric family" which includes a separate family member {metric} for each of the multiple values. The name for each member in the family is derived from the registered name for the {metric} plus a suffix indicating which one of the {metric}'s multiple values the line refers to.
+
+The following table summarizes the naming for each {metric} type.
+
+.OpenMetrics/Prometheus {metric_uc} Naming
+|====
+| {metric_uc} Type | Example registered name | {metric_uc} family member | Name Suffix | Example displayed name
+
+.1+| `Counter` | `requests.count` | count | `_total`  | `requests_count_total`
+
+.4+|
+ifdef::se-flavor[`DistributionSummary`]
+ifdef::mp-flavor[`Histogram`]
+.4+| `nameLengths`
+| count | `_count` | `nameLengths_count`
+| sum | `_sum` | `nameLengths_sum`
+| max | `_max` | `nameLengths_max`
+| percentile | none | `nameLengths{{prom-output-scope-prefix}scope="base",quantile="0.5",}`
+
+.1+| `Gauge` | `classloader.loadedClasses.count` | value | none | `classloader_loadedClasses_count`
+
+.4+| `Timer` ^1^
+.4+| `vthreads.recentPinned`
+| count | `_count` | `vthreads_recentPinned_seconds_count`
+| sum | `_sum` | `vthreads_recentPinned_seconds_sum`
+| max | `_max` | `vthreads_recentPinned_seconds_max`
+| percentile | none | `vthreads_recentPinned_seconds{{prom-output-scope-prefix}scope="base",quantile="0.5",}`
+|====
+^1^ The OpenMetrics/Prometheus output format reports a timer as a `summary` with units of `seconds`.
+
+// end::usage-retrieving[]
+
+// tag::metric-registry-api[]
+=== The `MetricRegistry` API
+To register or look up {metrics} programmatically, your service code uses the link:{microprofile-metrics-javadoc-url}/org/eclipse/microprofile/metrics/MetricRegistry.html[`MetricRegistry`] instance for the scope of interest: `base`, `vendor`, `application`, or a custom scope.
+
+ifdef::mp-flavor[]
+Either of the following techniques gets a `MetricRegistry` reference.
+Remember that injection works only if the class is a bean so CDI can inject into it.
+
+* `@Inject MetricRegistry`, optionally using link:{microprofile-metrics-javadoc-annotation-url}/RegistryScope.html[`@RegistryScope`] to indicate the registry scope.
++
+--
+[source,java]
+.Injecting the default `MetricRegistry` (for the application scope)
+----
+include::{sourcedir}/includes/metrics/MetricsSharedSnippets.java[tag=snippet_1, indent=0]
+----
+
+[source,java]
+.Injecting a non-default `MetricRegistry`
+----
+include::{sourcedir}/includes/metrics/MetricsSharedSnippets.java[tag=snippet_2, indent=0]
+----
+--
+* Get a Helidon link:{metrics-mp-javadoc-base-url}/io/helidon/microprofile/metrics/RegistryFactory.html[`RegistryFactory`] instance and invoke its `getRegistry` method.
++
+--
+Obtain the `RegistryFactory` using either of the following techniques:
+
+** `@Inject RegistryFactory`.
++
+[source,java]
+.Getting the `RegistryFactory` using injection
+----
+include::{sourcedir}/includes/metrics/MetricsSharedSnippets.java[tag=snippet_3, indent=0]
+----
++
+** Invoke the static `getInstance()` method on the `RegistryFactory` class.
++
+[source,java]
+.Getting the `RegistryFactory` programmatically
+----
+include::{sourcedir}/includes/metrics/MetricsSharedSnippets.java[tag=snippet_4, indent=0]
+----
+--
+endif::[]
+
+Once it has a reference to a `MetricRegistry` your code can use the reference to register new metrics, look up previously-registered metrics, and remove metrics.
+// end::metric-registry-api[]
+
+// tag::example-apps[]
+Helidon {flavor-uc} includes several pre-written example applications illustrating aspects of metrics:
+
+* link:{helidon-github-examples-url}/metrics/filtering/{flavor-lc}[Enabling/disabling {metrics}] using
+ifdef::se-flavor[`MetricsObserver` and `MetricsConfig`]
+ifdef::mp-flavor[configuration]
+ifdef::se-flavor[]
+* link:{helidon-github-examples-url}/metrics/kpi[Controlling key performance indicator metrics] using configuration and `KeyPerformanceIndicatorMetricsSettings`.
+endif::[]
+
+// end::example-apps[]
+
+// tag::format-refcs-no-heading[]
+link:{openmetrics-format-doc-url}[OpenMetrics format]
+
+link:{prometheus-exposition-format-doc-url}[Prometheus exposition format]
+// end::format-refcs-no-heading[]

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,13 @@
  */
 package io.helidon.microprofile.metrics;
 
-import io.helidon.common.http.Http;
+import io.helidon.http.Status;
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.microprofile.tests.junit5.AddConfig;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.AddConfig;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
 import jakarta.inject.Inject;
+import jakarta.json.JsonNumber;
 import jakarta.json.JsonObject;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.client.Invocation;
@@ -34,15 +35,17 @@ import org.junit.jupiter.api.TestMethodOrder;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 
-@HelidonTest()
+@HelidonTest
 // Set up the metrics endpoint on its own socket
 @AddConfig(key = "server.sockets.0.name", value = "metrics")
 // No port setting, so use any available one
 @AddConfig(key = "server.sockets.0.bind-address", value = "0.0.0.0")
-@AddConfig(key = "metrics.routing", value = "metrics")
+@AddConfig(key = "server.features.observe.sockets", value = "metrics")
 @AddConfig(key = "metrics.key-performance-indicators.extended", value = "true")
+@AddConfig(key = "metrics.permit-all", value = "true")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class TestMetricsOnOwnSocket {
 
@@ -84,7 +87,7 @@ public class TestMetricsOnOwnSocket {
                 .request(MediaType.TEXT_PLAIN_TYPE)
                 .get()) {
 
-            assertThat("Response code getting greeting", r.getStatus(), is(Http.Status.OK_200.code()));
+            assertThat("Response code getting greeting", r.getStatus(), is(Status.OK_200.code()));
         }
     }
 
@@ -98,14 +101,16 @@ public class TestMetricsOnOwnSocket {
 
     private int getRequestsLoadCount(String descr) {
         try (Response r = metricsInvocation().invoke()) {
-            assertThat(descr + " metrics sampling response", r.getStatus(), is(Http.Status.OK_200.code()));
+            assertThat(descr + " metrics sampling response", r.getStatus(), is(Status.OK_200.code()));
 
             JsonObject metrics = r.readEntity(JsonObject.class);
             assertThat("Check for requests.load", metrics.containsKey("requests.load"), is(true));
-            JsonObject load = metrics.getJsonObject("requests.load");
-            assertThat("JSON requests.load contains count", load.containsKey("count"), is(true));
+            // In Helidon 4, requests.load changed from a meter to a counter (backends can do the time-series analysis), so
+            // just fetch it as a number.
+            assertThat("Load count type", metrics.get("requests.load"), is(instanceOf(JsonNumber.class)));
+            JsonNumber load = metrics.getJsonNumber("requests.load");
 
-            return load.getInt("count");
+            return load.intValue();
         }
     }
 }

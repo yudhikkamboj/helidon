@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.security.providers.httpauth;
 
+import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
@@ -24,12 +25,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import io.helidon.common.serviceloader.HelidonServiceLoader;
-import io.helidon.config.Config;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.config.Config;
 import io.helidon.config.metadata.Configured;
 import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.security.AuthenticationResponse;
@@ -49,29 +49,18 @@ import io.helidon.security.providers.httpauth.spi.UserStoreService;
 import io.helidon.security.spi.AuthenticationProvider;
 import io.helidon.security.spi.OutboundSecurityProvider;
 import io.helidon.security.spi.SecurityProvider;
-import io.helidon.security.spi.SynchronousProvider;
 import io.helidon.security.util.TokenHandler;
 
 /**
  * Http authentication security provider.
  * Provides support for username and password authentication, with support for roles list.
  */
-public class HttpBasicAuthProvider extends SynchronousProvider implements AuthenticationProvider, OutboundSecurityProvider {
-    /**
-     * Configure this for outbound requests to override user to use.
-     */
-    public static final String EP_PROPERTY_OUTBOUND_USER = "io.helidon.security.outbound.user";
-
-    /**
-     * Configure this for outbound requests to override password to use.
-     */
-    public static final String EP_PROPERTY_OUTBOUND_PASSWORD = "io.helidon.security.outbound.password";
-
+public class HttpBasicAuthProvider implements AuthenticationProvider, OutboundSecurityProvider {
     static final String HEADER_AUTHENTICATION_REQUIRED = "WWW-Authenticate";
     static final String HEADER_AUTHENTICATION = "authorization";
     static final String BASIC_PREFIX = "basic ";
 
-    private static final Logger LOGGER = Logger.getLogger(HttpBasicAuthProvider.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(HttpBasicAuthProvider.class.getName());
     static final Pattern CREDENTIAL_PATTERN = Pattern.compile("(.*?):(.*)");
 
     private final List<SecureUserStore> userStores;
@@ -92,7 +81,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
 
     /**
      * Get a builder instance to construct a new security provider.
-     * Alternative approach is {@link #create(Config)} (or {@link HttpBasicAuthProvider#create(Config)}).
+     * Alternative approach is {@link #create(io.helidon.common.config.Config)} (or {@link HttpBasicAuthProvider#create(Config)}).
      *
      * @return builder to fluently construct Basic security provider
      */
@@ -130,7 +119,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
                                        EndpointConfig outboundEp) {
 
         // explicitly overridden username and/or password
-        if (outboundEp.abacAttributeNames().contains(EP_PROPERTY_OUTBOUND_USER)) {
+        if (outboundEp.abacAttributeNames().contains(EndpointConfig.PROPERTY_OUTBOUND_ID)) {
             return true;
         }
 
@@ -138,12 +127,12 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
     }
 
     @Override
-    protected OutboundSecurityResponse syncOutbound(ProviderRequest providerRequest,
-                                                    SecurityEnvironment outboundEnv,
-                                                    EndpointConfig outboundEp) {
+    public OutboundSecurityResponse outboundSecurity(ProviderRequest providerRequest,
+                                                     SecurityEnvironment outboundEnv,
+                                                     EndpointConfig outboundEp) {
 
         // explicit username in request properties
-        Optional<Object> maybeUsername = outboundEp.abacAttribute(EP_PROPERTY_OUTBOUND_USER);
+        Optional<Object> maybeUsername = outboundEp.abacAttribute(EndpointConfig.PROPERTY_OUTBOUND_ID);
         if (maybeUsername.isPresent()) {
             String username = maybeUsername.get().toString();
             char[] password = passwordFromEndpoint(outboundEp);
@@ -183,7 +172,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
                         .flatMap(this::credentialsFromSubject);
             }
 
-            Optional<char[]> overridePassword = outboundEp.abacAttribute(EP_PROPERTY_OUTBOUND_PASSWORD)
+            Optional<char[]> overridePassword = outboundEp.abacAttribute(EndpointConfig.PROPERTY_OUTBOUND_SECRET)
                     .map(String::valueOf)
                     .map(String::toCharArray);
 
@@ -202,14 +191,14 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
     }
 
     private char[] passwordFromEndpoint(EndpointConfig outboundEp) {
-        return outboundEp.abacAttribute(EP_PROPERTY_OUTBOUND_PASSWORD)
+        return outboundEp.abacAttribute(EndpointConfig.PROPERTY_OUTBOUND_SECRET)
                 .map(String::valueOf)
                 .map(String::toCharArray)
                 .orElse(HttpBasicOutboundConfig.EMPTY_PASSWORD);
     }
 
     @Override
-    protected AuthenticationResponse syncAuthenticate(ProviderRequest providerRequest) {
+    public AuthenticationResponse authenticate(ProviderRequest providerRequest) {
         Map<String, List<String>> headers = providerRequest.env().headers();
         List<String> authorizationHeader = headers.get(HEADER_AUTHENTICATION);
 
@@ -238,7 +227,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
 
         Matcher matcher = CREDENTIAL_PATTERN.matcher(usernameAndPassword);
         if (!matcher.matches()) {
-            LOGGER.finest(() -> "Basic authentication header with invalid content: " + usernameAndPassword);
+            LOGGER.log(Level.TRACE, () -> "Basic authentication header with invalid content: " + usernameAndPassword);
             return failOrAbstain("Basic authentication header with invalid content");
         }
 
@@ -349,7 +338,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
 
                         @Override
                         public SecureUserStore create(Config config) {
-                            return usersConfig.as(ConfigUserStore::create)
+                            return usersConfig.map(ConfigUserStore::create)
                                     .orElseThrow(() -> new HttpAuthException(
                                             "No users configured! Key \"users\" must be in configuration"));
                         }
@@ -363,7 +352,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
                         addUserStore(userStoreService.create(config.get(userStoreService.configKey())));
                     });
 
-            config.get("outbound").asList(OutboundTarget::create)
+            config.get("outbound").mapList(OutboundTarget::create)
                     .ifPresent(it -> it.forEach(outboundBuilder::addTarget));
 
             return this;
@@ -451,6 +440,7 @@ public class HttpBasicAuthProvider extends SynchronousProvider implements Authen
          * @param target outbound target
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "outbound", kind = ConfiguredOption.Kind.LIST)
         public Builder addOutboundTarget(OutboundTarget target) {
             this.outboundBuilder.addTarget(target);
             return this;

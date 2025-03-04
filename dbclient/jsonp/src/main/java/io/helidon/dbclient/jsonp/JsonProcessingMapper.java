@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ public final class JsonProcessingMapper implements DbMapper<JsonObject> {
     }
 
     /**
-     * Create a new mapper that can map {@link jakarta.json.JsonObject} to DB parameters and {@link io.helidon.dbclient.DbRow}
+     * Create a new mapper that can map {@link jakarta.json.JsonObject} to DB parameters and {@link DbRow}
      * to a {@link jakarta.json.JsonObject}.
      *
      * @return a new mapper
@@ -86,7 +86,7 @@ public final class JsonProcessingMapper implements DbMapper<JsonObject> {
     @Override
     public JsonObject read(DbRow row) {
         JsonObjectBuilder objectBuilder = JSON.createObjectBuilder();
-        row.forEach(dbCol -> toJson(objectBuilder, dbCol.name(), dbCol.javaType(), dbCol.value()));
+        row.forEach(dbCol -> toJson(objectBuilder, dbCol.name(), dbCol.javaType(), dbCol.get()));
         return objectBuilder.build();
     }
 

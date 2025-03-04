@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,122 +15,115 @@
  */
 package io.helidon.webserver.cors;
 
-import java.util.List;
-import java.util.concurrent.ExecutionException;
-
-import io.helidon.common.http.Headers;
-import io.helidon.webclient.WebClient;
-import io.helidon.webclient.WebClientRequestBuilder;
-import io.helidon.webclient.WebClientResponse;
-import io.helidon.webclient.WebClientResponseHeaders;
-import io.helidon.webserver.Routing;
+import io.helidon.http.HeaderNames;
+import io.helidon.http.Headers;
+import io.helidon.http.Status;
+import io.helidon.webclient.api.HttpClientResponse;
+import io.helidon.webclient.api.WebClient;
 import io.helidon.webserver.WebServer;
+import io.helidon.webserver.http.HttpRules;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.common.testing.http.junit5.HttpHeaderMatcher.hasHeader;
+import static io.helidon.common.testing.http.junit5.HttpHeaderMatcher.noHeader;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 
 /**
  * Make sure the default CorsSupport behavior is correct (basically, wildcarded sharing).
  */
-public class TestDefaultCorsSupport {
+class TestDefaultCorsSupport {
 
-    @Test
-    void testGetWithoutCors() throws ExecutionException, InterruptedException {
-        WebServer server = null;
-        WebClient client;
-        try {
-            server = WebServer.create(prepRouting(false)).start().toCompletableFuture().get();
-            client = WebClient.builder()
-                    .baseUri("http://localhost:" + server.port())
-                    .get();
-
-            WebClientResponse response = client.get()
-                    .path("/greet")
-                    .submit()
-                    .toCompletableFuture()
-                    .get();
-
-            String greeting= response.content().as(String.class).toCompletableFuture().get();
-            assertThat(greeting, is("Hello World!"));
-        } finally {
-            if (server != null) {
-                server.shutdown();
-            }
-        }
-    }
-
-    @Test
-    void testOptionsWithCors() throws ExecutionException, InterruptedException {
-        WebServer server = null;
-        WebClient client;
-        try {
-            server = WebServer.create(prepRouting(true)).start().toCompletableFuture().get();
-            client = WebClient.builder()
-                    .baseUri("http://localhost:" + server.port())
-                    .get();
-
-            WebClientRequestBuilder reqBuilder = client.options()
-                    .path("/greet");
-
-            Headers h = reqBuilder.headers();
-            h.add("Origin", "http://foo.com");
-            h.add("Host", "bar.com");
-            WebClientResponse response = reqBuilder
-                    .submit()
-                    .toCompletableFuture()
-                    .get();
-
-            WebClientResponseHeaders headers = response.headers();
-            List<String> allowOrigins = headers.values(CrossOriginConfig.ACCESS_CONTROL_ALLOW_ORIGIN);
-            assertThat(allowOrigins, contains("*"));
-        } finally {
-            if (server != null) {
-                server.shutdown();
-            }
-        }
-    }
-
-    @Test
-    void testOptionsWithoutCors() throws ExecutionException, InterruptedException {
-        WebServer server = null;
-        WebClient client;
-        try {
-            server = WebServer.create(prepRouting(false)).start().toCompletableFuture().get();
-            client = WebClient.builder()
-                    .baseUri("http://localhost:" + server.port())
-                    .get();
-
-            WebClientRequestBuilder reqBuilder = client.options()
-                    .path("/greet");
-
-            Headers h = reqBuilder.headers();
-            h.add("Origin", "http://foo.com");
-            h.add("Host", "bar.com");
-            WebClientResponse response = reqBuilder
-                    .submit()
-                    .toCompletableFuture()
-                    .get();
-
-            WebClientResponseHeaders headers = response.headers();
-            List<String> allowOrigins = headers.values(CrossOriginConfig.ACCESS_CONTROL_ALLOW_ORIGIN);
-            assertThat(allowOrigins.size(), is(0));
-        } finally {
-            if (server != null) {
-                server.shutdown();
-            }
-        }
-    }
-
-    static Routing.Builder prepRouting(boolean withCors) {
-        Routing.Builder builder = Routing.builder();
+    static void prepRouting(HttpRules rules, boolean withCors) {
         if (withCors) {
-            builder.any(CorsSupport.create()); // Here is where we insert the default CorsSupport.
+            rules.any(CorsSupport.create()); // Here is where we insert the default CorsSupport.
         }
-        return builder
-                .get("/greet", (req, res) -> res.send("Hello World!"))
-                .options("/greet", (req, res) -> res.status(200).send());
+
+        rules.get("/greet", (req, res) -> res.send("Hello World!"))
+                .options("/greet", (req, res) -> res.status(Status.OK_200).send());
+    }
+
+    @Test
+    void testGetWithoutCors() {
+        WebServer server = null;
+        WebClient client;
+        try {
+            server = WebServer.builder()
+                    .routing(it -> prepRouting(it, false))
+                    .build()
+                    .start();
+            client = WebClient.builder()
+                    .baseUri("http://localhost:" + server.port())
+                    .build();
+
+            try (HttpClientResponse response = client.get("/greet")
+                    .request()) {
+
+                String greeting = response.as(String.class);
+                assertThat(greeting, is("Hello World!"));
+            }
+        } finally {
+            if (server != null) {
+                server.stop();
+            }
+        }
+    }
+
+    @Test
+    void testOptionsWithCors() {
+        WebServer server = null;
+        WebClient client;
+        try {
+            server = WebServer.builder()
+                    .routing(it -> prepRouting(it, true))
+                    .build()
+                    .start();
+            client = WebClient.builder()
+                    .baseUri("http://localhost:" + server.port())
+                    .build();
+
+            try (HttpClientResponse response = client.get("/greet")
+                    .header(HeaderNames.ORIGIN, "http://foo.com")
+                    .header(HeaderNames.HOST, "bar.com")
+                    .request()) {
+
+                Headers headers = response.headers();
+                assertThat(headers, hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "*"));
+            }
+        } finally {
+            if (server != null) {
+                server.stop();
+            }
+        }
+    }
+
+    @Test
+    void testOptionsWithoutCors() {
+        WebServer server = null;
+        WebClient client;
+        try {
+            server = WebServer.builder()
+                    .featuresDiscoverServices(false)
+                    .routing(it -> prepRouting(it, false))
+                    .build()
+                    .start();
+            client = WebClient.builder()
+                    .baseUri("http://localhost:" + server.port())
+                    .build();
+
+            try (HttpClientResponse response = client.get("/greet")
+                    .header(HeaderNames.ORIGIN, "http://foo.com")
+                    .header(HeaderNames.HOST, "bar.com")
+                    .request()) {
+
+                assertThat(response.headers(), noHeader(ACCESS_CONTROL_ALLOW_ORIGIN));
+            }
+        } finally {
+            if (server != null) {
+                server.stop();
+            }
+        }
     }
 }

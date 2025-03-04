@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Aot;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Provides classes and interfaces for working with <a
  * href="https://www.eclipse.org/eclipselink/#jpa"
@@ -21,18 +25,30 @@
  *
  * @see io.helidon.integrations.cdi.eclipselink.CDISEPlatform
  */
+@Feature(value = "EclipseLink",
+        description = "EclipseLink support for Helidon MP",
+        in = HelidonFlavor.MP,
+        path = {"JPA", "EclipseLink"}
+)
+@Aot(false)
+@SuppressWarnings("deprecation")
 module io.helidon.integrations.cdi.eclipselink {
-    requires java.management;
 
-    requires jakarta.transaction;
+    requires io.helidon.integrations.jdbc;
     requires jakarta.cdi;
     requires jakarta.inject;
+    requires jakarta.transaction;
+    requires java.management;
     requires java.sql;
-    requires org.eclipse.persistence.jpa;
-    requires org.eclipse.persistence.core;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive org.eclipse.persistence.core;
+    requires transitive org.eclipse.persistence.jpa;
 
     exports io.helidon.integrations.cdi.eclipselink;
 
     provides jakarta.enterprise.inject.spi.Extension
             with io.helidon.integrations.cdi.eclipselink.CDISEPlatformExtension;
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,32 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Opentracing support for helidon, with an abstraction API and SPI for tracing collectors.
+ *
  * @see io.helidon.tracing.spi.TracerProvider
  * @see io.helidon.tracing.TracerBuilder
  */
+@Feature(value = "Tracing",
+        description = "Tracing support",
+        in = HelidonFlavor.SE
+)
 module io.helidon.tracing {
+
     requires io.helidon.common;
-    requires io.helidon.common.serviceloader;
-    requires io.helidon.config;
-    requires transitive io.opentracing.api;
-    requires io.opentracing.noop;
-    requires io.opentracing.util;
+
+    requires static io.helidon.common.features.api;
     requires static io.helidon.config.metadata;
+
+    requires transitive io.helidon.common.config;
 
     exports io.helidon.tracing;
     exports io.helidon.tracing.spi;
 
     uses io.helidon.tracing.spi.TracerProvider;
+    uses io.helidon.tracing.SpanListener;
+
 }

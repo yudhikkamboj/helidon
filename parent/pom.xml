@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2019, 2022 Oracle and/or its affiliates.
+    Copyright (c) 2019, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@
 -->
 
 <project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
-        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.helidon</groupId>
     <artifactId>helidon-parent</artifactId>
-    <version>3.0.0-SNAPSHOT</version>
+    <version>4.2.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Helidon Parent</name>
@@ -32,7 +32,7 @@
 
     <organization>
         <name>Oracle Corporation</name>
-        <url>http://www.oracle.com/</url>
+        <url>https://www.oracle.com/</url>
     </organization>
 
     <inceptionYear>2018</inceptionYear>
@@ -50,19 +50,6 @@
         <tag>HEAD</tag>
         <url>https://github.com/oracle/helidon</url>
     </scm>
-
-    <distributionManagement>
-        <snapshotRepository>
-            <id>ossrh-snapshots</id>
-            <name>Helidon Snapshot Repository</name>
-            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-        </snapshotRepository>
-        <repository>
-            <id>ossrh</id>
-            <name>Helidon Release Repository</name>
-            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-        </repository>
-    </distributionManagement>
 
     <developers>
         <developer>
@@ -115,15 +102,38 @@
             <email>david.k.kral@oracle.com</email>
             <organization>Oracle Corporation</organization>
         </developer>
+        <developer>
+            <name>Daniel Kec</name>
+            <email>daniel.kec@oracle.com</email>
+            <organization>Oracle Corporation</organization>
+        </developer>
+        <developer>
+            <name>Arjav Desai</name>
+            <email>arjav.desai@oracle.com</email>
+            <organization>Oracle Corporation</organization>
+        </developer>
+        <developer>
+            <name>Keith Lustria</name>
+            <email>keith.lustria@oracle.com</email>
+            <organization>Oracle Corporation</organization>
+        </developer>
+        <developer>
+            <name>Dmitry Aleksandrov</name>
+            <email>dmitry.aleksandrov@oracle.com</email>
+            <organization>Oracle Corporation</organization>
+        </developer>
+        <developer>
+            <name>Jeff Trent</name>
+            <email>jeff.trent@oracle.com</email>
+            <organization>Oracle Corporation</organization>
+        </developer>
     </developers>
 
     <properties>
-        <version.plugin.clean>3.1.0</version.plugin.clean>
-        <version.plugin.deploy>2.8.2</version.plugin.deploy>
+        <version.plugin.clean>3.2.0</version.plugin.clean>
+        <version.plugin.deploy>3.1.1</version.plugin.deploy>
         <version.plugin.gpg>1.6</version.plugin.gpg>
-        <version.plugin.install>3.0.0-M1</version.plugin.install>
-        <version.plugin.nexus-staging>1.6.7</version.plugin.nexus-staging>
-        <version.plugin.site>3.8.2</version.plugin.site>
+        <version.plugin.install>3.1.1</version.plugin.install>
         <version.plugin.versions>2.7</version.plugin.versions>
     </properties>
 
@@ -151,62 +161,24 @@
                     <version>${version.plugin.gpg}</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-site-plugin</artifactId>
-                    <version>${version.plugin.site}</version>
-                    <configuration>
-                        <skip>true</skip>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <id>site-jar</id>
-                            <goals>
-                                <goal>jar</goal>
-                            </goals>
-                            <phase>site</phase>
-                            <configuration>
-                                <archiveExcludes>
-                                    <exclude>.asciidoctor/**</exclude>
-                                </archiveExcludes>
-                            </configuration>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                    <groupId>org.sonatype.plugins</groupId>
-                    <artifactId>nexus-staging-maven-plugin</artifactId>
-                    <version>${version.plugin.nexus-staging}</version>
-                    <configuration>
-                        <serverId>ossrh</serverId>
-                        <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                        <autoReleaseAfterClose>false</autoReleaseAfterClose>
-                        <skipStagingRepositoryClose>true</skipStagingRepositoryClose>
-                        <skipNexusStagingDeployMojo>${maven.deploy.skip}</skipNexusStagingDeployMojo>
-                    </configuration>
-                </plugin>
-                <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>versions-maven-plugin</artifactId>
                     <version>${version.plugin.versions}</version>
                 </plugin>
+                <plugin>
+                    <groupId>io.helidon.build-tools</groupId>
+                    <artifactId>helidon-build-cache-maven-plugin</artifactId>
+                    <version>4.0.16</version>
+                </plugin>
             </plugins>
         </pluginManagement>
     </build>
-
-    <reporting>
-        <excludeDefaults>true</excludeDefaults>
-    </reporting>
 
     <profiles>
         <profile>
             <id>release</id>
             <build>
                 <plugins>
-                    <plugin>
-                        <groupId>org.sonatype.plugins</groupId>
-                        <artifactId>nexus-staging-maven-plugin</artifactId>
-                        <extensions>true</extensions>
-                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
@@ -217,6 +189,9 @@
                                 <goals>
                                     <goal>sign</goal>
                                 </goals>
+                                <configuration>
+                                    <keyname>helidon</keyname>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>
@@ -224,7 +199,7 @@
             </build>
         </profile>
         <profile>
-            <id>staging</id>
+            <id>ossrh-staging</id>
             <repositories>
                 <repository>
                     <id>ossrh-staging</id>

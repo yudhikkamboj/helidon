@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,10 +36,9 @@ import io.grpc.stub.StreamObserver;
 import static io.helidon.grpc.core.ResponseHelper.stream;
 
 /**
- * A supplier of {@link io.helidon.grpc.core.MethodHandler}s for server streaming gRPC methods.
+ * A supplier of {@link MethodHandler}s for server streaming gRPC methods.
  */
-public class ServerStreamingMethodHandlerSupplier
-        extends AbstractMethodHandlerSupplier {
+public class ServerStreamingMethodHandlerSupplier extends AbstractMethodHandlerSupplier {
 
     /**
      * Create a supplier of handlers for server streaming methods.
@@ -55,7 +54,7 @@ public class ServerStreamingMethodHandlerSupplier
     }
 
     @Override
-    public <ReqT, RespT> MethodHandler<ReqT, RespT> get(String methodName, AnnotatedMethod method, Supplier<?> instance) {
+    public <ReqT, RespT> MethodHandler<ReqT, RespT> get(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
         if (!isRequiredMethodType(method)) {
             throw new IllegalArgumentException("Method not annotated as a server streaming method: " + method);
         }
@@ -65,16 +64,16 @@ public class ServerStreamingMethodHandlerSupplier
 
         switch (type) {
         case serverStreaming:
-            handler = new ServerStreaming<>(methodName, method, instance);
+            handler = new ServerStreaming<>(methodName, method, instanceSupplier);
             break;
         case serverStreamingNoRequest:
-            handler = new ServerStreamingNoRequest<>(methodName, method, instance);
+            handler = new ServerStreamingNoRequest<>(methodName, method, instanceSupplier);
             break;
         case streamResponse:
-            handler = new StreamResponse<>(methodName, method, instance);
+            handler = new StreamResponse<>(methodName, method, instanceSupplier);
             break;
         case streamResponseNoRequest:
-            handler = new StreamResponseNoRequest<>(methodName, method, instance);
+            handler = new StreamResponseNoRequest<>(methodName, method, instanceSupplier);
             break;
         case unknown:
         default:
@@ -182,8 +181,8 @@ public class ServerStreamingMethodHandlerSupplier
     public abstract static class AbstractServerStreamingHandler<ReqT, RespT>
             extends AbstractHandler<ReqT, RespT> {
 
-        AbstractServerStreamingHandler(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance, MethodDescriptor.MethodType.SERVER_STREAMING);
+        AbstractServerStreamingHandler(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier, MethodDescriptor.MethodType.SERVER_STREAMING);
         }
 
         @Override
@@ -207,8 +206,8 @@ public class ServerStreamingMethodHandlerSupplier
     public static class ServerStreaming<ReqT, RespT>
             extends AbstractServerStreamingHandler<ReqT, RespT> {
 
-        ServerStreaming(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance);
+        ServerStreaming(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier);
             setRequestType(method.parameterTypes()[0]);
             setResponseType(getGenericResponseType(method.genericParameterTypes()[1]));
         }
@@ -246,8 +245,8 @@ public class ServerStreamingMethodHandlerSupplier
     public static class ServerStreamingNoRequest<ReqT, RespT>
             extends AbstractServerStreamingHandler<ReqT, RespT> {
 
-        ServerStreamingNoRequest(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance);
+        ServerStreamingNoRequest(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier);
             setResponseType(getGenericResponseType(method.genericParameterTypes()[0]));
         }
 
@@ -284,8 +283,8 @@ public class ServerStreamingMethodHandlerSupplier
     public static class StreamResponse<ReqT, RespT>
             extends AbstractServerStreamingHandler<ReqT, RespT> {
 
-        StreamResponse(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance);
+        StreamResponse(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier);
             setRequestType(method.parameterTypes()[0]);
             setResponseType(getGenericResponseType(method.genericReturnType()));
         }
@@ -325,8 +324,8 @@ public class ServerStreamingMethodHandlerSupplier
     public static class StreamResponseNoRequest<ReqT, RespT>
             extends AbstractServerStreamingHandler<ReqT, RespT> {
 
-        StreamResponseNoRequest(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance);
+        StreamResponseNoRequest(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier);
             setResponseType(getGenericResponseType(method.genericReturnType()));
         }
 
@@ -360,8 +359,8 @@ public class ServerStreamingMethodHandlerSupplier
     private static class Observer<T>
             implements StreamObserver<T> {
 
-        private CompletableFuture<List<T>> future = new CompletableFuture<>();
-        private List<T> list = new ArrayList<>();
+        private final CompletableFuture<List<T>> future = new CompletableFuture<>();
+        private final List<T> list = new ArrayList<>();
 
         private CompletableFuture<List<T>> future() {
             return future;

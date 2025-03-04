@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,27 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Vault integration.
  */
+@Feature(value = "HCP Vault",
+        description = "Vault integration",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = "HCP Vault"
+)
 module io.helidon.integrations.vault {
-    requires java.logging;
-    requires transitive jakarta.json;
+    requires static io.helidon.common.features.api;
 
+    requires transitive jakarta.json;
     requires transitive io.helidon.config;
 
     requires io.helidon.common;
-    requires io.helidon.webclient;
-    requires io.helidon.media.jsonp;
-    requires io.helidon.faulttolerance;
-    requires io.helidon.common.serviceloader;
-    requires io.helidon.integrations.common.rest;
+    requires transitive io.helidon.integrations.common.rest;
+    requires transitive io.helidon.webclient;
+    requires transitive io.helidon.faulttolerance;
 
     exports io.helidon.integrations.vault;
     exports io.helidon.integrations.vault.spi;
@@ -40,4 +46,5 @@ module io.helidon.integrations.vault {
 
     // required for CDI
     opens io.helidon.integrations.vault to weld.core.impl, io.helidon.microprofile.cdi;
+	
 }

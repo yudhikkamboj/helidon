@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,29 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Module supporting encryption of secrets in configuration files.
  */
+@Feature(value = "Encryption",
+        description = "Support for secret encryption in config",
+        in = {HelidonFlavor.MP, HelidonFlavor.SE},
+        path = {"Config", "Encryption"}
+)
 module io.helidon.config.encryption {
-    requires java.logging;
 
-    // for RSA encrypted keys
-    requires transitive io.helidon.common.pki;
-    requires transitive io.helidon.common.crypto;
-    requires transitive io.helidon.config;
-
+    requires static io.helidon.common.features.api;
     requires static io.helidon.config.mp;
+
+    requires transitive io.helidon.common.crypto;
+    requires transitive io.helidon.common.pki; // for RSA encrypted keys
+    requires transitive io.helidon.config;
 
     exports io.helidon.config.encryption;
 
     provides io.helidon.config.spi.ConfigFilter with io.helidon.config.encryption.EncryptionFilterService;
     provides io.helidon.config.mp.spi.MpConfigFilter with io.helidon.config.encryption.MpEncryptionFilter;
+
 }

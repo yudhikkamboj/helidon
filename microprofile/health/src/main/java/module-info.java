@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,37 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Microprofile health module.
  *
  * @see org.eclipse.microprofile.health
  */
+@Feature(value = "Health",
+        description = "MicroProfile Health spec implementation",
+        in = HelidonFlavor.MP,
+        path = "Health"
+)
 module io.helidon.microprofile.health {
-    requires java.logging;
-    requires java.management;
 
     requires io.helidon.common;
-    requires io.helidon.common.serviceloader;
-    requires io.helidon.health;
-    requires io.helidon.health.common;
-    requires io.helidon.servicecommon.restcdi;
+    requires io.helidon.config.mp;
     requires io.helidon.microprofile.server;
-
     requires jakarta.cdi;
     requires jakarta.inject;
-    requires jakarta.ws.rs;
     requires jakarta.json;
-    requires jakarta.interceptor.api;
+    requires jakarta.ws.rs;
+    requires java.management;
     requires microprofile.config.api;
     requires microprofile.health.api;
-    requires io.helidon.config.mp;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive io.helidon.health;
+    requires transitive io.helidon.microprofile.servicecommon;
+    requires transitive io.helidon.webserver.observe.health;
 
     exports io.helidon.microprofile.health;
 
@@ -45,6 +52,10 @@ module io.helidon.microprofile.health {
     opens io.helidon.microprofile.health to weld.core.impl, io.helidon.microprofile.cdi;
 
     uses io.helidon.microprofile.health.HealthCheckProvider;
+    uses io.helidon.health.spi.HealthCheckProvider;
 
+    provides org.eclipse.microprofile.health.spi.HealthCheckResponseProvider
+            with io.helidon.microprofile.health.HealthCheckResponseProviderImpl;
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.health.HealthCdiExtension;
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,31 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Vault operation backed by configuration.
  */
+@Feature(value = "Config Vault",
+        description = "Config Vault",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"Security", "Provider", "ConfigVault"}
+)
 module io.helidon.security.providers.config.vault {
-    requires io.helidon.security;
+
     requires io.helidon.common.crypto;
     requires io.helidon.config.encryption;
+    requires io.helidon.security;
+
+    requires static io.helidon.common.features.api;
     requires static io.helidon.config.metadata;
+
+    requires transitive io.helidon.common.config;
 
     exports io.helidon.security.providers.config.vault;
 
     provides io.helidon.security.spi.SecurityProviderService
             with io.helidon.security.providers.config.vault.ConfigVaultProviderService;
+
 }

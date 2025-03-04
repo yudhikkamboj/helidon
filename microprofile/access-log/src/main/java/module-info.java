@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,26 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * MicroProfile access log extension.
  */
+@Feature(value = "Access Log",
+        description = "Access log support",
+        in = HelidonFlavor.MP,
+        path = {"Server", "AccessLog"}
+)
 module io.helidon.microprofile.accesslog {
-    requires jakarta.annotation;
 
     requires io.helidon.microprofile.server;
     requires io.helidon.webserver.accesslog;
-    requires jakarta.interceptor.api;
+    requires jakarta.annotation;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive jakarta.inject;
 
     exports io.helidon.microprofile.accesslog;
 
@@ -30,4 +41,5 @@ module io.helidon.microprofile.accesslog {
     opens io.helidon.microprofile.accesslog to weld.core.impl, io.helidon.microprofile.cdi;
 
     provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.accesslog.AccessLogCdiExtension;
+	
 }

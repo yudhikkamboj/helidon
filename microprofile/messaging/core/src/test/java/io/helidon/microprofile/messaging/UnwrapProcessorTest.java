@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,16 +24,16 @@ import java.util.stream.Stream;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.CoreMatchers.is;
 
 import org.eclipse.microprofile.reactive.messaging.Message;
 import org.eclipse.microprofile.reactive.streams.operators.ReactiveStreams;
 import org.eclipse.microprofile.reactive.streams.operators.SubscriberBuilder;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.reactivestreams.Subscriber;
 
-public class UnwrapProcessorTest {
+class UnwrapProcessorTest {
 
     public SubscriberBuilder<String, Void> testMethodSubscriberBuilderString() {
         return ReactiveStreams.<String>builder().forEach(System.out::println);
@@ -63,7 +63,7 @@ public class UnwrapProcessorTest {
         unwrapProcessor.setMethod(method);
         Object unwrappedValue = unwrapProcessor.unwrap(Message.of("test"));
         if (method.getName().endsWith("Message")) {
-            Assertions.assertTrue(MessageUtils.isMessageType(method));
+            assertThat(MessageUtils.isMessageType(method), is(true));
             assertThat(unwrappedValue, instanceOf(Message.class));
         } else {
             assertThat("Expected method param to be a Message type.",

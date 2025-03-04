@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,347 +15,276 @@
  */
 package io.helidon.webserver.cors;
 
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-
-import io.helidon.common.http.Headers;
-import io.helidon.common.http.Http;
-import io.helidon.common.http.MediaType;
-import io.helidon.webclient.WebClient;
-import io.helidon.webclient.WebClientRequestBuilder;
-import io.helidon.webclient.WebClientResponse;
+import io.helidon.http.HeaderValues;
+import io.helidon.http.Method;
+import io.helidon.http.Status;
+import io.helidon.webclient.api.HttpClientResponse;
+import io.helidon.webclient.http1.Http1Client;
+import io.helidon.webclient.http1.Http1ClientRequest;
+import io.helidon.webclient.http1.Http1ClientResponse;
 
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.common.http.Http.Header.ORIGIN;
+import static io.helidon.common.testing.http.junit5.HttpHeaderMatcher.hasHeader;
+import static io.helidon.common.testing.http.junit5.HttpHeaderMatcher.noHeader;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_CREDENTIALS;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_HEADERS;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_METHODS;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_MAX_AGE;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_REQUEST_HEADERS;
+import static io.helidon.http.HeaderNames.ACCESS_CONTROL_REQUEST_METHOD;
+import static io.helidon.http.HeaderNames.ORIGIN;
 import static io.helidon.webserver.cors.CorsTestServices.SERVICE_1;
 import static io.helidon.webserver.cors.CorsTestServices.SERVICE_2;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_CREDENTIALS;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_HEADERS;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_METHODS;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_ALLOW_ORIGIN;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_MAX_AGE;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_REQUEST_HEADERS;
-import static io.helidon.webserver.cors.CrossOriginConfig.ACCESS_CONTROL_REQUEST_METHOD;
-import static io.helidon.webserver.cors.CustomMatchers.notPresent;
-import static io.helidon.webserver.cors.CustomMatchers.present;
-import static io.helidon.webserver.cors.TestUtil.path;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsNot.not;
 
-public abstract class AbstractCorsTest {
+abstract class AbstractCorsTest extends CorsRouting {
 
     abstract String contextRoot();
 
-    abstract WebClient client();
+    abstract Http1Client client();
 
     abstract String fooOrigin();
 
     abstract String fooHeader();
 
     @Test
-    public void testSimple() throws Exception {
+    void testSimple() {
+        try (Http1ClientResponse response = client().get(contextRoot())
+                .header(HeaderValues.ACCEPT_TEXT)
+                .request()) {
 
-        WebClientResponse response = client().get()
-                .path(contextRoot())
-                .accept(MediaType.TEXT_PLAIN)
-                .request()
-                .toCompletableFuture()
-                .get();
-
-        Http.ResponseStatus result = response.status();
-
-        assertThat(result.code(), is(Http.Status.OK_200.code()));
-    }
-    @Test
-    void test1PreFlightAllowedHeaders1() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_1));
-
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo");
-
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
-
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("http://foo.bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(is("X-foo")));
-        assertThat(res.headers().first(ACCESS_CONTROL_MAX_AGE), present(is("3600")));
+            assertThat(response.status(), is(Status.OK_200));
+        }
     }
 
     @Test
-    void test1PreFlightAllowedHeaders2() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_1));
+    void test1PreFlightAllowedHeaders1() {
+        try (Http1ClientResponse response = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_1))
+                .header(ORIGIN, "http://foo.bar")
+                .header(ACCESS_CONTROL_REQUEST_METHOD, "PUT")
+                .header(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo")
+                .request()) {
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
-
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
-
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("http://foo.bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString("X-foo")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString("X-bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_MAX_AGE), present(is("3600")));
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "http://foo.bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_METHODS, "PUT"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_HEADERS, "X-foo"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_MAX_AGE, "3600"));
+        }
     }
 
     @Test
-    void test2PreFlightForbiddenOrigin() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_2));
+    void test1PreFlightAllowedHeaders2() {
+        try (Http1ClientResponse response = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_1))
+                .header(ORIGIN, "http://foo.bar")
+                .header(ACCESS_CONTROL_REQUEST_METHOD, "PUT")
+                .header(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar")
+                .request()) {
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://not.allowed");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "http://foo.bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_METHODS, "PUT"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_HEADERS));
+            assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).values(), containsString("X-foo"));
+            assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).values(), containsString("X-bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_MAX_AGE, "3600"));
+        }
+    }
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
+    @Test
+    void test2PreFlightForbiddenOrigin() {
+        Status status;
+        try (Http1ClientResponse response = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_2))
+                .header(ORIGIN, "http://not.allowed")
+                .header(ACCESS_CONTROL_REQUEST_METHOD, "PUT")
+                .request()) {
 
-        Http.ResponseStatus status = res.status();
-        assertThat(status.code(), is(Http.Status.FORBIDDEN_403.code()));
+            status = response.status();
+        }
+        assertThat(status.code(), is(Status.FORBIDDEN_403.code()));
         assertThat(status.reasonPhrase(), is("CORS origin is not in allowed list"));
     }
 
     @Test
-    void test2PreFlightAllowedOrigin() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_2));
+    void test2PreFlightAllowedOrigin() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_2));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ORIGIN, "http://foo.bar");
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
+        try (Http1ClientResponse response = request.request()) {
 
-
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("http://foo.bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_CREDENTIALS), present(is("true")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), notPresent());
-        assertThat(res.headers().first(ACCESS_CONTROL_MAX_AGE), notPresent());
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "http://foo.bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_METHODS, "PUT"));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_ALLOW_HEADERS));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_ALLOW_HEADERS));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_MAX_AGE));
+        }
     }
 
     @Test
-    void test2PreFlightForbiddenMethod() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_2));
+    void test2PreFlightForbiddenMethod() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_2));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "POST");
+        request.header(ORIGIN, "http://foo.bar");
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "POST");
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
-
-        Http.ResponseStatus status = res.status();
-        assertThat(status.code(), is(Http.Status.FORBIDDEN_403.code()));
+        Status status;
+        try (Http1ClientResponse response = request.request()) {
+            status = response.status();
+        }
+        assertThat(status.code(), is(Status.FORBIDDEN_403.code()));
         assertThat(status.reasonPhrase(), is("CORS origin is denied"));
     }
 
     @Test
-    void test2PreFlightForbiddenHeader() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_2));
+    void test2PreFlightForbiddenHeader() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_2));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar, X-oops");
+        request.header(ORIGIN, "http://foo.bar");
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar, X-oops");
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
-
-        Http.ResponseStatus status = res.status();
-        assertThat(status.code(), is(Http.Status.FORBIDDEN_403.code()));
-        assertThat(status.reasonPhrase(), is("CORS headers not in allowed list"));
+        try (Http1ClientResponse response = request.request()) {
+            Status status = response.status();
+            assertThat(status.code(), is(Status.FORBIDDEN_403.code()));
+            assertThat(status.reasonPhrase(), is("CORS headers not in allowed list"));
+        }
     }
 
     @Test
-    void test2PreFlightAllowedHeaders1() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(contextRoot(), SERVICE_2));
+    void test2PreFlightAllowedHeaders1() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(contextRoot(), SERVICE_2));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, fooOrigin());
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, fooHeader());
+        request.header(ORIGIN, fooOrigin());
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ACCESS_CONTROL_REQUEST_HEADERS, fooHeader());
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
+        try (Http1ClientResponse response = request.request()) {
 
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers()
-                .first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is(fooOrigin())));
-        assertThat(res.headers()
-                .first(ACCESS_CONTROL_ALLOW_CREDENTIALS), present(is("true")));
-        assertThat(res.headers()
-                .first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers()
-                .first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString(fooHeader())));
-        assertThat(res.headers()
-                .first(ACCESS_CONTROL_MAX_AGE), notPresent());
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers()
+                               .get(ACCESS_CONTROL_ALLOW_ORIGIN).get(), is(fooOrigin()));
+            assertThat(response.headers()
+                               .get(ACCESS_CONTROL_ALLOW_CREDENTIALS).get(), is("true"));
+            assertThat(response.headers()
+                               .get(ACCESS_CONTROL_ALLOW_METHODS).get(), is("PUT"));
+            assertThat(response.headers()
+                               .get(ACCESS_CONTROL_ALLOW_HEADERS).values(), containsString(fooHeader()));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_MAX_AGE));
+        }
     }
 
     @Test
-    void test2PreFlightAllowedHeaders2() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_2));
+    void test2PreFlightAllowedHeaders2() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_2));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
+        request.header(ORIGIN, "http://foo.bar");
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
+        try (Http1ClientResponse response = request.request()) {
 
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("http://foo.bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_CREDENTIALS), present(is("true")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString("X-foo")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString("X-bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_MAX_AGE), notPresent());
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "http://foo.bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_METHODS, "PUT"));
+            assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).get(), containsString("X-foo"));
+            assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).get(), containsString("X-bar"));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_MAX_AGE));
+        }
     }
 
     @Test
-    void test2PreFlightAllowedHeaders3() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(SERVICE_2));
+    void test2PreFlightAllowedHeaders3() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(SERVICE_2));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
-        headers.add(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
+        request.header(ORIGIN, "http://foo.bar");
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
+        request.header(ACCESS_CONTROL_REQUEST_HEADERS, "X-foo, X-bar");
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
+        try (Http1ClientResponse response = request.request()) {
 
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("http://foo.bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_CREDENTIALS), present(is("true")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_METHODS), present(is("PUT")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString("X-foo")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_HEADERS), present(containsString("X-bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_MAX_AGE), notPresent());
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "http://foo.bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_METHODS, "PUT"));
+            assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).get(), containsString("X-foo"));
+            assertThat(response.headers().get(ACCESS_CONTROL_ALLOW_HEADERS).get(), containsString("X-bar"));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_MAX_AGE));
+        }
     }
 
     @Test
-    void test1ActualAllowedOrigin() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .put()
-                .path(path(SERVICE_1))
-                .contentType(MediaType.TEXT_PLAIN);
+    void test1ActualAllowedOrigin() {
+        Http1ClientRequest request = client().method(Method.PUT)
+                .uri(TestUtil.path(SERVICE_1))
+                .header(HeaderValues.CONTENT_TYPE_TEXT_PLAIN);
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ORIGIN, "http://foo.bar");
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
 
-        WebClientResponse res = reqBuilder
-                .submit("")
-                .toCompletableFuture()
-                .get();
+        try (HttpClientResponse response = request.submit("")) {
 
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("*")));
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "*"));
+        }
     }
 
     @Test
-    void test2ActualAllowedOrigin() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .put()
-                .path(path(SERVICE_2))
-                .contentType(MediaType.TEXT_PLAIN);
+    void test2ActualAllowedOrigin() {
+        Http1ClientRequest request = client().method(Method.PUT)
+                .uri(TestUtil.path(SERVICE_2))
+                .header(HeaderValues.CONTENT_TYPE_TEXT_PLAIN);
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
+        request.header(ORIGIN, "http://foo.bar");
 
-        WebClientResponse res = reqBuilder
-                .submit("")
-                .toCompletableFuture()
-                .get();
+        try (HttpClientResponse response = request.submit("")) {
 
-        assertThat(res.status(), is(Http.Status.OK_200));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), present(is("http://foo.bar")));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_CREDENTIALS), present(is("true")));
+            assertThat(response.status(), is(Status.OK_200));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_ORIGIN, "http://foo.bar"));
+            assertThat(response.headers(), hasHeader(ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+        }
     }
-
 
     @Test
-    void test2ErrorResponse() throws ExecutionException, InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .get()
-                .path(path(SERVICE_2) + "/notfound")
-                .contentType(MediaType.TEXT_PLAIN);
+    void test2ErrorResponse() {
+        Http1ClientRequest request = client().get(TestUtil.path(SERVICE_2) + "/notfound")
+                .header(HeaderValues.CONTENT_TYPE_TEXT_PLAIN);
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, "http://foo.bar");
+        request.header(ORIGIN, "http://foo.bar");
 
-        WebClientResponse res = reqBuilder
-                .submit()
-                .toCompletableFuture()
-                .get();
+        try (HttpClientResponse response = request.request()) {
 
-        assertThat(res.status(), is(not(Http.Status.OK_200)));
-        assertThat(res.headers().first(ACCESS_CONTROL_ALLOW_ORIGIN), is(Optional.empty()));
+            assertThat(response.status(), is(not(Status.OK_200)));
+            assertThat(response.headers(), noHeader(ACCESS_CONTROL_ALLOW_ORIGIN));
+        }
     }
 
-    WebClientResponse runTest1PreFlightAllowedOrigin() throws ExecutionException,
-            InterruptedException {
-        WebClientRequestBuilder reqBuilder = client()
-                .options()
-                .path(path(contextRoot(), SERVICE_1));
+    HttpClientResponse runTest1PreFlightAllowedOrigin() {
+        Http1ClientRequest request = client().method(Method.OPTIONS)
+                .uri(TestUtil.path(contextRoot(), SERVICE_1));
 
-        Headers headers = reqBuilder.headers();
-        headers.add(ORIGIN, fooOrigin());
-        headers.add(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
+        request.header(ORIGIN, fooOrigin());
+        request.header(ACCESS_CONTROL_REQUEST_METHOD, "PUT");
 
-        WebClientResponse res = reqBuilder
-                .request()
-                .toCompletableFuture()
-                .get();
-
-        return res;
+        return request.request();
     }
 }

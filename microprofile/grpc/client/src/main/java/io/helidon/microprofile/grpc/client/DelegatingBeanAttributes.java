@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import java.util.Set;
 import jakarta.enterprise.inject.spi.BeanAttributes;
 
 /**
- * A {@link BeanAttributes} implementation.
+ * A {@link jakarta.enterprise.inject.spi.BeanAttributes} implementation.
  *
  * @param <T> the class of the bean instance
  */
@@ -37,8 +37,8 @@ class DelegatingBeanAttributes<T> implements BeanAttributes<T> {
     /**
      * Create a {@link DelegatingBeanAttributes}.
      *
-     * @param delegate  the {@link BeanAttributes} to delegate to
-     * @param types the {@link Type}s for this bean
+     * @param delegate  the {@link jakarta.enterprise.inject.spi.BeanAttributes} to delegate to
+     * @param types the {@link java.lang.reflect.Type}s for this bean
      */
     private DelegatingBeanAttributes(BeanAttributes<?> delegate, Set<Type> types) {
         super();
@@ -50,8 +50,8 @@ class DelegatingBeanAttributes<T> implements BeanAttributes<T> {
     /**
      * Create a {@link DelegatingBeanAttributes}.
      *
-     * @param delegate  the {@link BeanAttributes} to delegate to
-     * @param types the {@link Type}s for this bean
+     * @param delegate  the {@link jakarta.enterprise.inject.spi.BeanAttributes} to delegate to
+     * @param types the {@link java.lang.reflect.Type}s for this bean
      */
     static <T> DelegatingBeanAttributes<T> create(BeanAttributes<?> delegate, Set<Type> types) {
         return new DelegatingBeanAttributes<>(delegate, types);

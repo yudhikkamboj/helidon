@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,36 +24,51 @@ import java.util.function.Function;
 
 import io.helidon.common.GenericType;
 import io.helidon.common.mapper.MapperException;
-import io.helidon.common.mapper.MapperManager;
+import io.helidon.dbclient.DbClientException;
 import io.helidon.dbclient.DbColumn;
+import io.helidon.dbclient.DbContext;
 import io.helidon.dbclient.DbMapperManager;
 import io.helidon.dbclient.DbRow;
+
+import org.bson.Document;
 
 /**
  * Mongo specific representation of a single row in a database.
  */
 final class MongoDbRow implements DbRow {
 
+    private static final System.Logger LOGGER = System.getLogger(MongoDbRow.class.getName());
     private final Map<String, DbColumn> columnsByName;
     private final List<DbColumn> columnsList;
-
     private final DbMapperManager dbMapperManager;
-    private final MapperManager mapperManager;
 
-    MongoDbRow(DbMapperManager dbMapperManager, MapperManager mapperManager, int size) {
-        this.dbMapperManager = dbMapperManager;
-        this.mapperManager = mapperManager;
+    /**
+     * Create a new MongoDB row.
+     *
+     * @param doc     document
+     * @param context context
+     */
+    MongoDbRow(Document doc, DbContext context) {
+        this.dbMapperManager = context.dbMapperManager();
+        int size = doc.size();
         this.columnsByName = new HashMap<>(size);
         this.columnsList = new ArrayList<>(size);
+        doc.forEach((name, value) -> {
+            LOGGER.log(System.Logger.Level.TRACE, () -> String.format(
+                    "Column name = %s, value = %s",
+                    name,
+                    (value != null ? value.toString() : "N/A")));
+
+            add(name, new MongoDbColumn(context.mapperManager(), name, value));
+        });
     }
 
-    MongoDbRow(DbMapperManager dbMapperManager, MapperManager mapperManager) {
-        this.dbMapperManager = dbMapperManager;
-        this.mapperManager = mapperManager;
-        this.columnsByName = new HashMap<>();
-        this.columnsList = new ArrayList<>();
-    }
-
+    /**
+     * Add a column.
+     *
+     * @param name   column name
+     * @param column column
+     */
     void add(String name, DbColumn column) {
         columnsByName.put(name, column);
         columnsList.add(column);
@@ -61,7 +76,11 @@ final class MongoDbRow implements DbRow {
 
     @Override
     public DbColumn column(String name) {
-        return columnsByName.get(name);
+        DbColumn column = columnsByName.get(name);
+        if (column != null) {
+            return column;
+        }
+        throw new DbClientException(String.format("Column with name %s does not exist", name));
     }
 
     @Override
@@ -102,7 +121,7 @@ final class MongoDbRow implements DbRow {
             }
             sb.append(col.name());
             sb.append(':');
-            sb.append(col.value().toString());
+            sb.append(col.get().toString());
         }
         sb.append('}');
         return sb.toString();

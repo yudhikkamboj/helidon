@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ class IncludeTest {
 
     @Test
     void testClasspathIncludes() {
-        Config config = Config.create(ClasspathConfigSource.create("conf/application.conf"));
+        Config config = Config.just(ClasspathConfigSource.create("conf/application.conf"));
 
         String value = config.get("app.greeting").asString().orElse(null);
 
@@ -51,7 +51,7 @@ class IncludeTest {
 
     @Test
     void testFilesIncludes() {
-        Config config = Config.create(FileConfigSource.builder()
+        Config config = Config.just(FileConfigSource.builder()
                                               .path(Paths.get(RELATIVE_PATH_TO_RESOURCE + "conf/application2.conf")));
 
         String value = config.get("app.greeting").asString().orElse(null);
@@ -68,9 +68,28 @@ class IncludeTest {
     @Test
     void testIncludesWithRequiredIncludeNotPresent() {
         ConfigParserException cpe = assertThrows(ConfigParserException.class, () ->
-                Config.create(FileConfigSource.builder()
+                Config.just(FileConfigSource.builder()
                                       .path(Paths.get(RELATIVE_PATH_TO_RESOURCE + "conf/application3.conf"))));
         assertThat(cpe.getMessage(), is("bogus.conf is missing"));
     }
 
+    @Test
+    void testClasspathIncludesNoExtension() {
+        Config config = Config.just(ClasspathConfigSource.create("conf/application4.conf"));
+
+        String value = config.get("app.greeting").asString().orElse(null);
+
+        assertThat("app.greeting should be loaded from application.conf", value, notNullValue());
+        assertThat(value, is("Hello"));
+
+        value = config.get("server.host").asString().orElse(null);
+
+        assertThat("server.host should be loaded from included.conf", value, notNullValue());
+        assertThat(value, is("localhost"));
+
+        value = config.get("server.port").asString().orElse(null);
+
+        assertThat("server.port should be loaded from sub/included.conf", value, notNullValue());
+        assertThat(value, is("8080"));
+    }
 }

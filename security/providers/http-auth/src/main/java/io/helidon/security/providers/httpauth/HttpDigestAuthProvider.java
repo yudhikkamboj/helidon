@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.security.providers.httpauth;
 
+import java.lang.System.Logger.Level;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -27,13 +28,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import javax.crypto.Cipher;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.security.AuthenticationResponse;
 import io.helidon.security.Principal;
 import io.helidon.security.ProviderRequest;
@@ -43,20 +44,20 @@ import io.helidon.security.SecurityResponse;
 import io.helidon.security.Subject;
 import io.helidon.security.SubjectType;
 import io.helidon.security.spi.AuthenticationProvider;
-import io.helidon.security.spi.SynchronousProvider;
+import io.helidon.security.spi.SecurityProvider;
 
 /**
  * Http authentication security provider.
  * Provides support for username and password authentication, with support for roles list.
  */
-public final class HttpDigestAuthProvider extends SynchronousProvider implements AuthenticationProvider {
+public final class HttpDigestAuthProvider implements AuthenticationProvider {
     static final String HEADER_AUTHENTICATION_REQUIRED = "WWW-Authenticate";
     static final String HEADER_AUTHENTICATION = "authorization";
     static final String DIGEST_PREFIX = "digest ";
     private static final int UNAUTHORIZED_STATUS_CODE = 401;
     private static final int SALT_LENGTH = 16;
     private static final int AES_NONCE_LENGTH = 12;
-    private static final Logger LOGGER = Logger.getLogger(HttpDigestAuthProvider.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(HttpDigestAuthProvider.class.getName());
 
     private final List<HttpDigest.Qop> digestQopOptions = new LinkedList<>();
     private final SecureUserStore userStore;
@@ -123,14 +124,14 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
 
             return Base64.getEncoder().encodeToString(result);
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Encryption failed, though this should not happen. This is a bug.", e);
+            LOGGER.log(Level.ERROR, "Encryption failed, though this should not happen. This is a bug.", e);
             //returning an invalid nonce...
             return "failed_nonce_value";
         }
     }
 
     @Override
-    protected AuthenticationResponse syncAuthenticate(ProviderRequest providerRequest) {
+    public AuthenticationResponse authenticate(ProviderRequest providerRequest) {
         Map<String, List<String>> headers = providerRequest.env().headers();
         List<String> authorizationHeader = headers.get(HEADER_AUTHENTICATION);
 
@@ -153,7 +154,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
             token = DigestToken.fromAuthorizationHeader(headerValue.substring(DIGEST_PREFIX.length()),
                                                         env.method().toLowerCase());
         } catch (HttpAuthException e) {
-            LOGGER.log(Level.FINEST, "Failed to process digest token", e);
+            LOGGER.log(Level.TRACE, "Failed to process digest token", e);
             return failOrAbstain(e.getMessage());
         }
         // decrypt
@@ -161,7 +162,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
         try {
             bytes = Base64.getDecoder().decode(token.getNonce());
         } catch (IllegalArgumentException e) {
-            LOGGER.log(Level.FINEST, "Failed to base64 decode nonce", e);
+            LOGGER.log(Level.TRACE, "Failed to base64 decode nonce", e);
             // not base 64
             return failOrAbstain("Nonce must be base64 encoded");
         }
@@ -185,12 +186,15 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
                 return failOrAbstain("Nonce timeout");
             }
         } catch (Exception e) {
-            LOGGER.log(Level.FINEST, "Failed to validate nonce", e);
+            LOGGER.log(Level.TRACE, "Failed to validate nonce", e);
             return failOrAbstain("Invalid nonce value");
         }
 
         // validate realm
         if (!realm.equals(token.getRealm())) {
+            if (LOGGER.isLoggable(Level.TRACE)) {
+                LOGGER.log(Level.TRACE, "Invalid realm. Expected " + realm + ", got: " + token.getRealm());
+            }
             return failOrAbstain("Invalid realm");
         }
 
@@ -238,7 +242,13 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
         challenge.append(", nonce=\"").append(nonce(System.currentTimeMillis(), random, digestServerSecret)).append("\"");
         challenge.append(", opaque=\"").append(opaque()).append("\"");
 
-        return challenge.toString();
+        String challengeString = challenge.toString();
+
+        if (LOGGER.isLoggable(Level.TRACE)) {
+            LOGGER.log(Level.TRACE, "Sending challenge: {0}", challengeString);
+        }
+
+        return challengeString;
     }
 
     private String opaque() {
@@ -269,7 +279,12 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
     /**
      * {@link HttpDigestAuthProvider} fluent API builder.
      */
+    @Configured(prefix = HttpDigestAuthService.PROVIDER_CONFIG_KEY,
+                description = "Http digest authentication security provider",
+                provides = {SecurityProvider.class, AuthenticationProvider.class})
     public static final class Builder implements io.helidon.common.Builder<Builder, HttpDigestAuthProvider> {
+
+        private static final String DEFAULT_REALM = "Helidon";
         private static final SecureUserStore EMPTY_STORE = login -> Optional.empty();
         /**
          * Default is 24 hours.
@@ -278,7 +293,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
         private final List<HttpDigest.Qop> digestQopOptions = new LinkedList<>();
         private SecureUserStore userStore = EMPTY_STORE;
         private boolean optional = false;
-        private String realm = "Helidon";
+        private String realm = DEFAULT_REALM;
         private SubjectType subjectType = SubjectType.USER;
         private HttpDigest.Algorithm digestAlgorithm = HttpDigest.Algorithm.MD5;
         private boolean noDigestQop = false;
@@ -290,13 +305,14 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
 
         /**
          * Update builder from configuration.
+         *
          * @param config to read configuration from, located on the node of the provider
          * @return updated builder instance
          */
         public Builder config(Config config) {
             config.get("optional").asBoolean().ifPresent(this::optional);
             config.get("realm").asString().ifPresent(this::realm);
-            config.get("users").as(ConfigUserStore::create).ifPresent(this::userStore);
+            config.get("users").map(ConfigUserStore::create).ifPresent(this::userStore);
             config.get("algorithm").asString().as(HttpDigest.Algorithm::valueOf).ifPresent(this::digestAlgorithm);
             config.get("nonce-timeout-millis").asLong()
                     .ifPresent(timeout -> this.digestNonceTimeout(timeout, TimeUnit.MILLISECONDS));
@@ -307,7 +323,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
                     .map(String::toCharArray)
                     .ifPresent(this::digestServerSecret);
 
-            config.get("qop").asList(HttpDigest.Qop::create).ifPresent(qop -> {
+            config.get("qop").mapList(HttpDigest.Qop::create).ifPresent(qop -> {
                 if (qop.isEmpty()) {
                     noDigestQop();
                 } else {
@@ -342,6 +358,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param subjectType type of principal
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "principal-type", value = "USER")
         public Builder subjectType(SubjectType subjectType) {
             this.subjectType = subjectType;
 
@@ -362,6 +379,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param store User store to use
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "users", type = ConfigUserStore.ConfigUser.class, kind = ConfiguredOption.Kind.LIST)
         public Builder userStore(SecureUserStore store) {
             this.userStore = store;
             return this;
@@ -375,6 +393,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param optional whether authentication is optional (true) or required (false)
          * @return updated builder instance
          */
+        @ConfiguredOption("false")
         public Builder optional(boolean optional) {
             this.optional = optional;
             return this;
@@ -386,6 +405,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param realm security realm name to send to browser (or any other client) when unauthenticated
          * @return updated builder instance
          */
+        @ConfiguredOption(DEFAULT_REALM)
         public Builder realm(String realm) {
             this.realm = realm;
             return this;
@@ -397,6 +417,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param algorithm Algorithm to use, default is {@link HttpDigest.Algorithm#MD5}
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "algorithm", value = "MD5")
         public Builder digestAlgorithm(HttpDigest.Algorithm algorithm) {
             this.digestAlgorithm = algorithm;
             return this;
@@ -410,6 +431,11 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param unit     Duration time unit
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "nonce-timeout-millis",
+                          type = Long.class,
+                          value = "86400000",
+                          description = "How long will the nonce value be valid. When timed-out, "
+                                  + "browser will re-request username/password.")
         public Builder digestNonceTimeout(long duration, TimeUnit unit) {
             this.digestNonceTimeoutMillis = unit.toMillis(duration);
             return this;
@@ -425,6 +451,7 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param serverSecret a password to encrypt our nonce values with
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "server-secret", type = String.class)
         public Builder digestServerSecret(char[] serverSecret) {
             this.digestServerSecret = Arrays.copyOf(serverSecret, serverSecret.length);
 
@@ -437,6 +464,10 @@ public final class HttpDigestAuthProvider extends SynchronousProvider implements
          * @param qop qop to add to list of supported qops
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "qop",
+                          value = "NONE",
+                          description = "Only `AUTH` supported. If left empty,"
+                                  + " uses the legacy approach (older RFC version). `AUTH-INT` is not supported.")
         public Builder addDigestQop(HttpDigest.Qop qop) {
             this.digestQopOptions.add(qop);
             return this;

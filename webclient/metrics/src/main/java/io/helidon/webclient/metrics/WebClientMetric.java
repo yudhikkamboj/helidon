@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,26 +21,19 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import io.helidon.common.http.Http;
-import io.helidon.config.Config;
-import io.helidon.metrics.RegistryFactory;
-import io.helidon.webclient.WebClientServiceRequest;
-import io.helidon.webclient.WebClientServiceResponse;
+import io.helidon.common.config.Config;
+import io.helidon.http.Method;
+import io.helidon.metrics.api.MeterRegistry;
+import io.helidon.metrics.api.Metrics;
+import io.helidon.webclient.api.WebClientServiceRequest;
+import io.helidon.webclient.api.WebClientServiceResponse;
 import io.helidon.webclient.spi.WebClientService;
 
-import org.eclipse.microprofile.metrics.Metadata;
-import org.eclipse.microprofile.metrics.MetadataBuilder;
-import org.eclipse.microprofile.metrics.MetricRegistry;
-import org.eclipse.microprofile.metrics.MetricType;
-
-/**
- * Base client metric class.
- */
 abstract class WebClientMetric implements WebClientService {
 
     private static final int ERROR_STATUS_CODE = 400;
 
-    private final MetricRegistry registry;
+    private final MeterRegistry registry;
     private final Set<String> methods;
     private final String nameFormat;
     private final String description;
@@ -48,7 +41,7 @@ abstract class WebClientMetric implements WebClientService {
     private final boolean errors;
 
     WebClientMetric(Builder builder) {
-        this.registry = RegistryFactory.getInstance().getRegistry(MetricRegistry.Type.APPLICATION);
+        this.registry = Metrics.globalRegistry();
         this.methods = builder.methods;
         this.nameFormat = builder.nameFormat;
         this.description = builder.description;
@@ -60,7 +53,12 @@ abstract class WebClientMetric implements WebClientService {
         return new Builder(clientMetricType);
     }
 
-    MetricRegistry metricRegistry() {
+    @Override
+    public String type() {
+        return "metrics";
+    }
+
+    MeterRegistry meterRegistry() {
         return registry;
     }
 
@@ -84,15 +82,15 @@ abstract class WebClientMetric implements WebClientService {
         return errors;
     }
 
-    boolean shouldContinueOnSuccess(Http.RequestMethod method, int status) {
+    boolean shouldContinueOnSuccess(Method method, int status) {
         return handlesMethod(method) && measureSuccess() && status < ERROR_STATUS_CODE;
     }
 
-    boolean shouldContinueOnError(Http.RequestMethod method) {
+    boolean shouldContinueOnError(Method method) {
         return handlesMethod(method) && measureErrors();
     }
 
-    boolean shouldContinueOnError(Http.RequestMethod method, int status) {
+    boolean shouldContinueOnError(Method method, int status) {
         if (status >= ERROR_STATUS_CODE) {
             return shouldContinueOnError(method);
         }
@@ -106,7 +104,7 @@ abstract class WebClientMetric implements WebClientService {
         } else {
             name = createName(request, response);
         }
-        MetadataBuilder builder = Metadata.builder().withName(name).withType(metricType());
+        Metadata.Builder builder = Metadata.builder().withName(name);
         if (description != null) {
             builder = builder.withDescription(description);
         }
@@ -114,18 +112,16 @@ abstract class WebClientMetric implements WebClientService {
     }
 
     String createName(WebClientServiceRequest request, WebClientServiceResponse response) {
-        return String.format(nameFormat(), request.method().name(), request.uri().getHost(), response.status().code());
+        return String.format(nameFormat(), request.method().text(), request.uri().host(), response.status().code());
     }
 
     String createName(WebClientServiceRequest request) {
-        return String.format(nameFormat(), request.method().name(), request.uri().getHost());
+        return String.format(nameFormat(), request.method().text(), request.uri().host());
     }
 
-    boolean handlesMethod(Http.RequestMethod method) {
-        return methods().isEmpty() || methods().contains(method.name());
+    boolean handlesMethod(Method method) {
+        return methods().isEmpty() || methods().contains(method.text());
     }
-
-    abstract MetricType metricType();
 
     /**
      * Client metric builder.
@@ -160,8 +156,11 @@ abstract class WebClientMetric implements WebClientService {
          * @param methods metric supported methods
          * @return updated builder instance
          */
-        public Builder methods(Http.Method... methods) {
-            this.methods = Arrays.stream(methods).map(Http.Method::name).map(String::toUpperCase).collect(Collectors.toSet());
+        public Builder methods(Method... methods) {
+            this.methods = Arrays.stream(methods)
+                                 .map(Method::text)
+                                 .map(String::toUpperCase)
+                                 .collect(Collectors.toSet());
             return this;
         }
 
@@ -172,7 +171,9 @@ abstract class WebClientMetric implements WebClientService {
          * @return updated builder instance
          */
         public Builder methods(Collection<String> methods) {
-            this.methods = methods.stream().map(String::toUpperCase).collect(Collectors.toSet());
+            this.methods = methods.stream()
+                                  .map(String::toUpperCase)
+                                  .collect(Collectors.toSet());
             return this;
         }
 
@@ -249,7 +250,7 @@ abstract class WebClientMetric implements WebClientService {
          * <tr>
          *     <td>description</td>
          *     <td>&nbsp;</td>
-         *     <td>Description of this metric, used in metric {@link org.eclipse.microprofile.metrics.Metadata}</td>
+         *     <td>Description of this metric.</td>
          * </tr>
          * </table>
          *
@@ -268,6 +269,33 @@ abstract class WebClientMetric implements WebClientService {
         @Override
         public WebClientMetric build() {
             return type.createInstance(this);
+        }
+    }
+
+    record Metadata(String name, String description) {
+
+        static Builder builder() {
+            return new Builder();
+        }
+
+        static class Builder {
+            private String name;
+            private String description;
+
+            Builder withName(String name) {
+                this.name = name;
+                return this;
+            }
+
+            Builder withDescription(String description) {
+                this.description = description;
+                return this;
+            }
+
+            Metadata build() {
+                return new Metadata(name, description);
+            }
+
         }
     }
 }

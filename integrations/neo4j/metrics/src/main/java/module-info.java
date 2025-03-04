@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,26 +14,30 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+import io.helidon.common.features.api.Preview;
+
 /**
  * Neo4j metrics support module.
  */
+@Preview
+@Feature(value = "Neo4j Metrics",
+        description = "Metrics for Neo4j integration",
+        in = {HelidonFlavor.MP, HelidonFlavor.SE},
+        path = {"Neo4j", "Metrics"}
+)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.integrations.neo4j.metrics {
 
-    requires io.helidon.common;
     requires io.helidon.integrations.neo4j;
+    requires io.helidon.metrics.api;
 
-    requires org.neo4j.driver;
+    requires transitive io.helidon.common;
+    requires transitive org.neo4j.driver;
 
-    requires microprofile.metrics.api;
-    requires io.helidon.metrics;
-
-    requires static jakarta.cdi;
-    requires static jakarta.inject;
-    requires static jakarta.interceptor.api;
-    requires static jakarta.annotation;
+    requires static io.helidon.common.features.api;
 
     exports io.helidon.integrations.neo4j.metrics;
-
-    provides jakarta.enterprise.inject.spi.Extension with io.helidon.integrations.neo4j.metrics.Neo4jMetricsCdiExtension;
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * This class contains the outputs of the tests. In order to avoid that one test mess up in the results
@@ -94,30 +93,11 @@ abstract class AbstractSampleBean {
     }
 
     @ApplicationScoped
-    public static class ChannelAck extends AbstractSampleBean {
-
-        @Incoming("test-channel-ack-1")
-        @Acknowledgment(Acknowledgment.Strategy.MANUAL)
-        public CompletionStage<String> channelAck(Message<String> msg) {
-            LOGGER.fine(() -> String.format("Received %s", msg.getPayload()));
-            consumed().add(msg.getPayload());
-            if (msg.getPayload().startsWith("NO_ACK")) {
-                LOGGER.fine(() -> String.format("NOT Acked %s", msg.getPayload()));
-            } else {
-                LOGGER.fine(() -> String.format("Acked %s", msg.getPayload()));
-                msg.ack();
-            }
-            countDown("channel1()");
-            return CompletableFuture.completedFuture(null);
-        }
-    }
-
-    @ApplicationScoped
     public static class Channel1 extends AbstractSampleBean {
 
         @Incoming("test-channel-1")
         @Acknowledgment(Acknowledgment.Strategy.MANUAL)
-        public CompletionStage<String> channel1(Message<String> msg) {
+        public CompletionStage<Void> channel1(Message<String> msg) {
             LOGGER.fine(() -> String.format("Received %s", msg.getPayload()));
             consumed().add(msg.getPayload());
             msg.ack();
@@ -137,12 +117,12 @@ abstract class AbstractSampleBean {
             return Message.of("Processed" + msg.getPayload());
         }
 
-        @Incoming("test-channel-7")
+        @Incoming("test-channel-31")
         @Acknowledgment(Acknowledgment.Strategy.MANUAL)
-        public CompletionStage<String> channel7(Message<String> msg) {
+        public CompletionStage<Void> channel31(Message<String> msg) {
             LOGGER.fine(() -> String.format("Received %s", msg.getPayload()));
             consumed().add(msg.getPayload());
-            msg.ack().whenComplete((a, b) -> countDown("channel7()"));
+            msg.ack().whenComplete((a, b) -> countDown("channel31()"));
             return CompletableFuture.completedFuture(null);
         }
     }
@@ -150,15 +130,19 @@ abstract class AbstractSampleBean {
     @ApplicationScoped
     public static class ChannelError extends AbstractSampleBean {
         @Incoming("test-channel-error")
-        @Acknowledgment(Acknowledgment.Strategy.MANUAL)
-        public CompletionStage<String> error(Message<String> msg) {
-            try {
-                LOGGER.fine(() -> String.format("Received possible error %s", msg.getPayload()));
-                consumed().add(Integer.toString(Integer.parseInt(msg.getPayload())));
-            } finally {
-                msg.ack().whenComplete((a, b) -> countDown("error()"));
-            }
-            return CompletableFuture.completedFuture(null);
+        @Outgoing("test-channel-error-2")
+        @Acknowledgment(Acknowledgment.Strategy.POST_PROCESSING)
+        public String error(String msg) {
+            LOGGER.fine(() -> String.format("Received possible error %s", msg));
+            consumed().add(Integer.toString(Integer.parseInt(msg)));
+            return msg;
+        }
+
+        @Incoming("test-channel-error-2")
+        public SubscriberBuilder<String, Void> consume() {
+            return ReactiveStreams.<String>builder()
+                    .onError(t -> countDown("error()"))
+                    .ignore();
         }
     }
 
@@ -168,7 +152,7 @@ abstract class AbstractSampleBean {
 
         @Incoming("test-channel-selector")
         @Acknowledgment(Acknowledgment.Strategy.MANUAL)
-        public CompletionStage<String> selector(Message<String> msg) {
+        public CompletionStage<Void> selector(Message<String> msg) {
             LOGGER.fine(() -> String.format("Received %s", msg.getPayload()));
             consumed().add(msg.getPayload());
             msg.ack();
@@ -218,38 +202,41 @@ abstract class AbstractSampleBean {
     public static class Channel5 extends AbstractSampleBean {
 
         @Incoming("test-channel-5")
-        public SubscriberBuilder<Message<String>, Void> channel5() {
-            LOGGER.fine(() -> "In channel5");
-            return ReactiveStreams.<Message<String>>builder()
-                    .to(new Subscriber<Message<String>>() {
-                        @Override
-                        public void onSubscribe(Subscription subscription) {
-                            LOGGER.fine(() -> "channel5 onSubscribe()");
-                            subscription.request(3);
-                        }
-
-                        @Override
-                        public void onNext(Message<String> msg) {
-                            consumed().add(Integer.toString(Integer.parseInt(msg.getPayload())));
-                            LOGGER.fine(() -> "Added " + msg.getPayload());
-                            msg.ack();
-                            countDown("onNext()");
-                        }
-
-                        @Override
-                        public void onError(Throwable t) {
-                            LOGGER.fine(() -> "Error " + t.getMessage() + ". Adding error in consumed() list");
-                            consumed().add("error");
-                            countDown("onError()");
-                        }
-
-                        @Override
-                        public void onComplete() {
-                            consumed().add("complete");
-                            countDown("onComplete()");
-                        }
-                    });
+        public void channel5(String msg) {
+            this.consumed().add(String.valueOf(Integer.parseInt(msg)));
+            countDown("channel5(String msg)");
         }
+    }
+
+    @ApplicationScoped
+    public static class Channel6 extends AbstractSampleBean {
+
+        @Incoming("test-channel-6")
+        public void channel6(String msg) {
+            this.consumed().add(String.valueOf(Integer.parseInt(msg)));
+            countDown("channel6(String msg)");
+        }
+    }
+
+    @ApplicationScoped
+    public static class Channel7 extends AbstractSampleBean {
+
+        @Incoming("test-channel-7")
+        @Outgoing("test-channel-71")
+        public Integer channel7(String msg) {
+            return Integer.parseInt(msg);
+        }
+
+        @Incoming("test-channel-71")
+        public SubscriberBuilder<Integer, Void> sink(){
+            return ReactiveStreams.<Integer>builder()
+                    .map(String::valueOf)
+                    .onErrorResume(t -> "error")
+                    .peek(s -> this.consumed().add(s))
+                    .forEach(s -> countDown("channel7(String msg)"));
+        }
+
+
     }
 
     @ApplicationScoped
@@ -261,7 +248,7 @@ abstract class AbstractSampleBean {
 
         public void await(long timeout) {
             try {
-                assertTrue(countDownLatch.await(timeout, TimeUnit.MILLISECONDS));
+                assertThat(countDownLatch.await(timeout, TimeUnit.MILLISECONDS), is(true));
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
@@ -298,7 +285,7 @@ abstract class AbstractSampleBean {
 
         public void await(long timeout) {
             try {
-                assertTrue(countDownLatch.await(timeout, TimeUnit.MILLISECONDS));
+                assertThat(countDownLatch.await(timeout, TimeUnit.MILLISECONDS), is(true));
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
@@ -343,7 +330,7 @@ abstract class AbstractSampleBean {
 
         public void await(long timeout) {
             try {
-                assertTrue(countDownLatch.await(timeout, TimeUnit.MILLISECONDS));
+                assertThat(countDownLatch.await(timeout, TimeUnit.MILLISECONDS), is(true));
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
@@ -387,7 +374,7 @@ abstract class AbstractSampleBean {
 
         public void await(long timeout) {
             try {
-                assertTrue(countDownLatch.await(timeout, TimeUnit.MILLISECONDS));
+                assertThat(countDownLatch.await(timeout, TimeUnit.MILLISECONDS), is(true));
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }

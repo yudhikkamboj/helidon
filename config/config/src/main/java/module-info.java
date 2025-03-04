@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,26 @@
  * limitations under the License.
  */
 
-import io.helidon.config.PropertiesConfigParser;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
 /**
  * Helidon SE Config module.
  *
  * @see io.helidon.config
  */
+@Feature(value = "Config",
+        description = "Configuration module",
+        in = HelidonFlavor.SE
+)
 module io.helidon.config {
+    requires static io.helidon.common.features.api;
 
-    requires java.logging;
-
-    requires transitive jakarta.annotation;
-
-    requires transitive io.helidon.common;
-    requires transitive io.helidon.common.reactive;
+    requires static io.helidon.service.registry;
+    requires transitive io.helidon.common.config;
     requires transitive io.helidon.common.media.type;
-
-    requires io.helidon.common.serviceloader;
+    requires transitive io.helidon.common;
+    requires transitive io.helidon.builder.api;
 
     exports io.helidon.config;
     exports io.helidon.config.spi;
@@ -45,6 +47,14 @@ module io.helidon.config {
     uses io.helidon.config.spi.PollingStrategyProvider;
     uses io.helidon.config.spi.ChangeWatcherProvider;
 
-    provides io.helidon.config.spi.ConfigParser with PropertiesConfigParser;
+    provides io.helidon.config.spi.ConfigParser
+            with io.helidon.config.PropertiesConfigParser;
+    provides io.helidon.common.config.spi.ConfigProvider
+            with io.helidon.config.HelidonConfigProvider;
+    provides io.helidon.config.spi.ConfigMapperProvider
+            with io.helidon.config.EnumMapperProvider;
+
+    // needed when running with modules - to make private methods accessible
+    opens io.helidon.config to weld.core.impl, io.helidon.microprofile.cdi;
 
 }

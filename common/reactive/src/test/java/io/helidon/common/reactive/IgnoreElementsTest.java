@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 
+import static java.time.Duration.ofMillis;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.CoreMatchers.is;
 
 public class IgnoreElementsTest {
     @Test
@@ -39,7 +40,7 @@ public class IgnoreElementsTest {
                 .peek(i -> latch.countDown())
                 .ignoreElements(); // should trigger subscription on its own
 
-        assertTrue(latch.await(200, TimeUnit.MILLISECONDS));
+        assertThat(latch.await(200, TimeUnit.MILLISECONDS), is(true));
     }
 
     @Test
@@ -49,7 +50,7 @@ public class IgnoreElementsTest {
                 .peek(i -> latch.countDown())
                 .ignoreElement(); // should trigger subscription on its own
 
-        assertTrue(latch.await(200, TimeUnit.MILLISECONDS));
+        assertThat(latch.await(200, TimeUnit.MILLISECONDS), is(true));
     }
 
     @Test
@@ -58,7 +59,7 @@ public class IgnoreElementsTest {
         Multi.just(1, 2, 3)
                 .peek(result::add)
                 .ignoreElements()
-                .await(200, TimeUnit.MILLISECONDS);
+                .await(ofMillis(200));
 
         assertThat(result, Matchers.contains(1, 2, 3));
     }
@@ -69,7 +70,7 @@ public class IgnoreElementsTest {
         Single.just(3)
                 .peek(result::set)
                 .ignoreElement()
-                .await(200, TimeUnit.MILLISECONDS);
+                .await(ofMillis(200));
 
         assertThat(result.get(), Matchers.is(3));
     }

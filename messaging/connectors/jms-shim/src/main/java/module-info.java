@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@
  * Exposes JMS based on {@code javax} packages over {@code jakarta} packages.
  */
 module io.helidon.messaging.jms.shim {
+
+    requires jakarta.messaging;
     requires javax.jms.api;
-    requires jakarta.jms.api;
 
     exports io.helidon.messaging.connectors.jms.shim;
+
 }

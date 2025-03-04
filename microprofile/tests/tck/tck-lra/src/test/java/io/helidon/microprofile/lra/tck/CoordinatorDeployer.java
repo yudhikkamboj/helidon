@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Logger;
 
-import io.helidon.common.http.MediaType;
+import io.helidon.common.media.type.MediaTypes;
 import io.helidon.common.reactive.Single;
 import io.helidon.config.ConfigSources;
 import io.helidon.config.mp.MpConfigSources;
@@ -42,7 +41,7 @@ import org.jboss.shrinkwrap.api.spec.JavaArchive;
 
 public class CoordinatorDeployer {
 
-    private static final Logger LOGGER = Logger.getLogger(CoordinatorDeployer.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(CoordinatorDeployer.class.getName());
 
     static final String COORDINATOR_ROUTING_NAME = "coordinator";
     private static volatile CompletableFuture<Void> startedFuture = new CompletableFuture<>();
@@ -55,7 +54,7 @@ public class CoordinatorDeployer {
 
         containerConfig.addConfigBuilderConsumer(configBuilder -> {
             var is = CoordinatorService.class.getResourceAsStream("/application.yaml");
-            configBuilder.withSources(MpConfigSources.create(ConfigSources.create(is, MediaType.APPLICATION_X_YAML.toString())),
+            configBuilder.withSources(MpConfigSources.create(ConfigSources.create(is, MediaTypes.APPLICATION_X_YAML)),
                     MpConfigSources.create(Map.of(
                             // Force client to use random port first time with 0
                             // reuse port second time(TckRecoveryTests does redeploy)

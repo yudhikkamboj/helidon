@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,40 +16,34 @@
 
 package io.helidon.health.checks;
 
+import java.lang.System.Logger.Level;
+import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.Arrays;
 
 import io.helidon.common.NativeImageHelper;
-import io.helidon.health.common.BuiltInHealthCheck;
-
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import org.eclipse.microprofile.health.HealthCheck;
-import org.eclipse.microprofile.health.HealthCheckResponse;
-import org.eclipse.microprofile.health.Liveness;
+import io.helidon.health.HealthCheck;
+import io.helidon.health.HealthCheckResponse;
+import io.helidon.health.HealthCheckResponse.Status;
+import io.helidon.health.HealthCheckType;
 
 /**
  * A health check that looks for thread deadlocks. Automatically created and registered via CDI.
  * <p>
  * This health check can be referred to in properties as {@code deadlock}. So for example, to exclude this
  * health check from being exposed, use {@code helidon.health.exclude: deadlock}.
- * </p>
  */
-@Liveness
-@ApplicationScoped // this will be ignored if not within CDI
-@BuiltInHealthCheck
-public final class DeadlockHealthCheck implements HealthCheck {
-    private static final Logger LOGGER = Logger.getLogger(DeadlockHealthCheck.class.getName());
+public class DeadlockHealthCheck implements HealthCheck {
+    private static final System.Logger LOGGER = System.getLogger(DeadlockHealthCheck.class.getName());
     private static final String NAME = "deadlock";
+    private static final String PATH = "deadlock";
 
     /**
-     * Used for detecting deadlocks. Injected in the constructor.
+     * Used for detecting deadlocks.
      */
     private final ThreadMXBean threadBean;
     private final boolean disabled;
 
-    @Inject
         // this will be ignored if not within CDI
     DeadlockHealthCheck(ThreadMXBean threadBean) {
         this.threadBean = threadBean;
@@ -61,36 +55,63 @@ public final class DeadlockHealthCheck implements HealthCheck {
      * Create a new deadlock health check to use.
      *
      * @param threadBean thread mx bean to get thread monitoring data from
-     * @return a new health check to register with
-     *         {@link io.helidon.health.HealthSupport.Builder#addLiveness(org.eclipse.microprofile.health.HealthCheck...)}
+     * @return a new health check
      */
     public static DeadlockHealthCheck create(ThreadMXBean threadBean) {
         return new DeadlockHealthCheck(threadBean);
     }
 
+    /**
+     * Create a new deadlock health check to use.
+     *
+     * @return a new health check
+     */
+    public static DeadlockHealthCheck create() {
+        return create(ManagementFactory.getThreadMXBean());
+    }
+
+    @Override
+    public HealthCheckType type() {
+        return HealthCheckType.LIVENESS;
+    }
+
+    @Override
+    public String name() {
+        return NAME;
+    }
+
+    @Override
+    public String path() {
+        return PATH;
+    }
+
     @Override
     public HealthCheckResponse call() {
         if (disabled) {
-            LOGGER.log(Level.FINEST, "Running in graal native image, this health-check always returns up.");
+            LOGGER.log(Level.TRACE, "Running in graal native image, this health-check always returns up.");
             return HealthCheckResponse.builder()
-                    .name(NAME)
-                    .withData("enabled", "false")
-                    .withData("description", "in native image")
-                    .up()
+                    .detail("enabled", "false")
+                    .detail("description", "in native image")
+                    .status(Status.UP)
                     .build();
         }
 
-        boolean noDeadLock = false;
+        HealthCheckResponse.Builder builder = HealthCheckResponse.builder();
+
         try {
             // Thanks to https://stackoverflow.com/questions/1102359/programmatic-deadlock-detection-in-java#1102410
-            noDeadLock = (threadBean.findDeadlockedThreads() == null);
+            long[] deadlockedThreads = threadBean.findDeadlockedThreads();
+            if (deadlockedThreads != null) {
+                builder.status(Status.DOWN);
+                LOGGER.log(Level.TRACE, "Health check observed deadlocked threads: " + Arrays.toString(deadlockedThreads));
+            }
         } catch (Throwable e) {
-            // ThreadBean does not work - probably in native image
-            LOGGER.log(Level.FINEST, "Failed to find deadlocks in ThreadMXBean, ignoring this healthcheck", e);
+            // ThreadBean does not work - probably in native image. Report ERROR, not DOWN, because we do not know that
+            // there are deadlocks which DOWN should imply; we simply cannot find out.
+            LOGGER.log(Level.TRACE, "Error invoking ThreadMXBean to find deadlocks; cannot complete this healthcheck", e);
+            builder.status(Status.ERROR);
         }
-        return HealthCheckResponse.named(NAME)
-                .status(noDeadLock)
-                .build();
+        return builder.build();
     }
 }
 

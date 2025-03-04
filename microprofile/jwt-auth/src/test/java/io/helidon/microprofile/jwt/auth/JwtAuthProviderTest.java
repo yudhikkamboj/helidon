@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ public class JwtAuthProviderTest {
         when(atnRequest.env()).thenReturn(se);
         when(atnRequest.endpointConfig()).thenReturn(ec);
 
-        AuthenticationResponse authenticationResponse = provider.syncAuthenticate(atnRequest);
+        AuthenticationResponse authenticationResponse = provider.authenticate(atnRequest);
 
         assertThat(authenticationResponse.service(), is(Optional.empty()));
         assertThat(authenticationResponse.user(), is(Optional.empty()));
@@ -169,7 +169,7 @@ public class JwtAuthProviderTest {
 
         assertThat(provider.isOutboundSupported(request, outboundEnv, outboundEp), is(true));
 
-        OutboundSecurityResponse response = provider.syncOutbound(request, outboundEnv, outboundEp);
+        OutboundSecurityResponse response = provider.outboundSecurity(request, outboundEnv, outboundEp);
 
         String signedToken = response.requestHeaders().get("Authorization").get(0);
         signedToken = signedToken.substring("bearer ".length());
@@ -208,7 +208,7 @@ public class JwtAuthProviderTest {
         //now we need to use the same token to invoke authentication
         ProviderRequest atnRequest = mockRequest(signedToken);
 
-        AuthenticationResponse authenticationResponse = provider.syncAuthenticate(atnRequest);
+        AuthenticationResponse authenticationResponse = provider.authenticate(atnRequest);
         authenticationResponse.user()
                 .map(Subject::principal)
                 .ifPresentOrElse(atnPrincipal -> {
@@ -226,6 +226,53 @@ public class JwtAuthProviderTest {
                     assertThat(atnPrincipal.abacAttribute("full_name"), is(Optional.of(fullName)));
                     assertThat(atnPrincipal.abacAttribute("locale"), is(Optional.of(locale)));
                 }, () -> fail("User must be present in response"));
+    }
+
+    @Test
+    public void testOutboundNotSupportedWithoutConfiguration() {
+        String username = "user1";
+        String userId = "user1-id";
+        String email = "user1@example.org";
+        String familyName = "Novak";
+        String givenName = "Standa";
+        String fullName = "Standa Novak";
+        Locale locale = Locale.CANADA_FRENCH;
+
+        Principal principal = Principal.builder()
+                .name(username)
+                .id(userId)
+                .addAttribute("email", email)
+                .addAttribute("email_verified", true)
+                .addAttribute("family_name", familyName)
+                .addAttribute("given_name", givenName)
+                .addAttribute("full_name", fullName)
+                .addAttribute("locale", locale)
+                .addAttribute("roles", Set.of("role1", "role2"))
+                .build();
+
+        Subject subject = Subject.builder()
+                .principal(principal)
+                .addGrant(Role.create("group1"))
+                .addGrant(Role.create("group2"))
+                .addGrant(Role.create("group3"))
+                .build();
+
+        JwtAuthProvider provider = JwtAuthProvider.create(Config.create().get("jwt-no-outbound"));
+
+        SecurityContext context = Mockito.mock(SecurityContext.class);
+        when(context.user()).thenReturn(Optional.of(subject));
+
+        ProviderRequest request = mock(ProviderRequest.class);
+        when(request.securityContext()).thenReturn(context);
+        SecurityEnvironment outboundEnv = SecurityEnvironment.builder()
+                .path("/ec")
+                .transport("http")
+                .targetUri(URI.create("http://localhost:8080/ec"))
+                .build();
+
+        EndpointConfig outboundEp = EndpointConfig.create();
+
+        assertThat(provider.isOutboundSupported(request, outboundEnv, outboundEp), is(false));
     }
 
     @Test
@@ -252,7 +299,7 @@ public class JwtAuthProviderTest {
 
         assertThat(provider.isOutboundSupported(request, outboundEnv, outboundEp), is(true));
 
-        OutboundSecurityResponse response = provider.syncOutbound(request, outboundEnv, outboundEp);
+        OutboundSecurityResponse response = provider.outboundSecurity(request, outboundEnv, outboundEp);
 
         String signedToken = response.requestHeaders().get("Authorization").get(0);
         signedToken = signedToken.substring("bearer ".length());
@@ -284,7 +331,7 @@ public class JwtAuthProviderTest {
         //now we need to use the same token to invoke authentication
         ProviderRequest atnRequest = mockRequest(signedToken);
 
-        AuthenticationResponse authenticationResponse = provider.syncAuthenticate(atnRequest);
+        AuthenticationResponse authenticationResponse = provider.authenticate(atnRequest);
         authenticationResponse.user()
                 .map(Subject::principal)
                 .ifPresentOrElse(atnPrincipal -> {
@@ -340,7 +387,7 @@ public class JwtAuthProviderTest {
 
         assertThat(provider.isOutboundSupported(request, outboundEnv, outboundEp), is(true));
 
-        OutboundSecurityResponse response = provider.syncOutbound(request, outboundEnv, outboundEp);
+        OutboundSecurityResponse response = provider.outboundSecurity(request, outboundEnv, outboundEp);
 
         String signedToken = response.requestHeaders().get("Authorization").get(0);
         signedToken = signedToken.substring("bearer ".length());
@@ -375,7 +422,7 @@ public class JwtAuthProviderTest {
         //now we need to use the same token to invoke authentication
         ProviderRequest atnRequest = mockRequest(signedToken);
 
-        AuthenticationResponse authenticationResponse = provider.syncAuthenticate(atnRequest);
+        AuthenticationResponse authenticationResponse = provider.authenticate(atnRequest);
         authenticationResponse.user()
                 .map(Subject::principal)
                 .ifPresentOrElse(atnPrincipal -> {

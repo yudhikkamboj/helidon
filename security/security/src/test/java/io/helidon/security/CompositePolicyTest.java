@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package io.helidon.security;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 
 import io.helidon.security.spi.AuthenticationProvider;
 import io.helidon.security.spi.AuthorizationProvider;
@@ -97,30 +96,25 @@ public abstract class CompositePolicyTest {
 
     @Test
     public void testAtz() {
-        AuthorizationResponse response = SecurityResponse
-                .get(getAuthorization().authorize((context("/atz/permit", "atz/permit"))));
+        AuthorizationResponse response = getAuthorization().authorize((context("/atz/permit", "atz/permit")));
 
         assertThat(response, notNullValue());
         assertThat(response.status(), is(SecurityResponse.SecurityStatus.SUCCESS));
 
-        response = SecurityResponse
-                .get(getAuthorization().authorize((context("/atz/abstain", "atz/permit"))));
+        response = getAuthorization().authorize((context("/atz/abstain", "atz/permit")));
 
         assertThat(response, notNullValue());
         assertThat(response.status(), is(SecurityResponse.SecurityStatus.SUCCESS));
 
-        response = SecurityResponse
-                .get(getAuthorization().authorize((context("/atz/abstain", "atz/abstain"))));
+        response = getAuthorization().authorize((context("/atz/abstain", "atz/abstain")));
 
         assertThat(response, notNullValue());
         assertThat(response.status(), is(SecurityResponse.SecurityStatus.FAILURE));
     }
 
     @Test
-    public void testAtnAllSuccess() throws ExecutionException, InterruptedException {
-        AuthenticationResponse response = getAuthentication().authenticate(context("/jack", "service"))
-                .toCompletableFuture()
-                .get();
+    public void testAtnAllSuccess() {
+        AuthenticationResponse response = getAuthentication().authenticate(context("/jack", "service"));
         assertThat(response, notNullValue());
         assertThat(response.status(), is(SecurityResponse.SecurityStatus.SUCCESS));
 
@@ -131,10 +125,8 @@ public abstract class CompositePolicyTest {
     }
 
     @Test
-    public void testAtnAllSuccessServiceFirst() throws ExecutionException, InterruptedException {
-        AuthenticationResponse response = getAuthentication().authenticate(context("/service", "jack"))
-                .toCompletableFuture()
-                .get();
+    public void testAtnAllSuccessServiceFirst() {
+        AuthenticationResponse response = getAuthentication().authenticate(context("/service", "jack"));
         assertThat(response, notNullValue());
         assertThat(response.status(), is(SecurityResponse.SecurityStatus.SUCCESS));
         Subject user = response.user().get();
@@ -144,15 +136,14 @@ public abstract class CompositePolicyTest {
     }
 
     @Test
-    public void testOutboundSuccess() throws ExecutionException, InterruptedException {
+    public void testOutboundSuccess() {
         ProviderRequest context = context("/jack", "service");
 
         assertThat(getOutbound().isOutboundSupported(context, context.env(), context.endpointConfig()), is(true));
 
         OutboundSecurityResponse response = getOutbound().outboundSecurity(context,
                                                                            context.env(),
-                                                                           context.endpointConfig()).toCompletableFuture()
-                .get();
+                                                                           context.endpointConfig());
 
         assertThat(response.status(), is(SecurityResponse.SecurityStatus.SUCCESS));
 

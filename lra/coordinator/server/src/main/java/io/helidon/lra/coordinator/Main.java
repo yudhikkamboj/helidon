@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,14 @@
 
 package io.helidon.lra.coordinator;
 
-import io.helidon.common.LogConfig;
-import io.helidon.common.reactive.Single;
 import io.helidon.config.Config;
-import io.helidon.health.HealthSupport;
 import io.helidon.health.checks.HealthChecks;
-import io.helidon.metrics.MetricsSupport;
-import io.helidon.webserver.Routing;
+import io.helidon.logging.common.LogConfig;
 import io.helidon.webserver.WebServer;
+import io.helidon.webserver.http.HttpRouting;
+import io.helidon.webserver.observe.ObserveFeature;
+import io.helidon.webserver.observe.health.HealthObserver;
+import io.helidon.webserver.observe.metrics.MetricsObserver;
 
 /**
  * In memory Lra coordinator.
@@ -43,9 +43,14 @@ public class Main {
 
         Config config = Config.create();
 
-        CoordinatorService coordinatorService = CoordinatorService.builder().build();
+        CoordinatorService coordinatorService = CoordinatorService.builder()
+                .config(config.get(CoordinatorService.CONFIG_PREFIX))
+                .build();
 
-        WebServer server = WebServer.builder(createRouting(config, coordinatorService))
+        WebServer server = WebServer.builder()
+                .featuresDiscoverServices(false)
+                .addFeature(ObserveFeature.just(MetricsObserver.create(), HealthObserver.create(HealthChecks.healthChecks())))
+                .routing(it -> updateRouting(it, config, coordinatorService))
                 .config(config.get("helidon.lra.coordinator.server"))
                 .build();
 
@@ -53,31 +58,12 @@ public class Main {
                 .asString()
                 .orElse("/lra-coordinator");
 
-        Single<WebServer> webserver = server.start();
-
-        webserver.thenAccept(ws -> {
-            System.out.println("Helidon LRA Coordinator is up! http://localhost:" + ws.port() + context);
-            ws.whenShutdown()
-                    .thenRun(() -> {
-                        System.out.println("Helidon LRA Coordinator is DOWN. Good bye!");
-                    });
-        }).exceptionallyAccept(t -> {
-            System.err.println("Startup failed: " + t.getMessage());
-            t.printStackTrace(System.err);
-        });
+        WebServer webserver = server.start();
+        System.out.println("Helidon LRA Coordinator is up! http://localhost:" + webserver.port() + context);
     }
 
-    private static Routing createRouting(Config config, CoordinatorService coordinatorService) {
-
-        MetricsSupport metrics = MetricsSupport.create();
-        HealthSupport health = HealthSupport.builder()
-                .addLiveness(HealthChecks.healthChecks())
-                .build();
-
-        return Routing.builder()
-                .register(metrics)
-                .register(health)
-                .register(config.get("mp.lra.coordinator.context.path")
+    private static void updateRouting(HttpRouting.Builder routing, Config config, CoordinatorService coordinatorService) {
+        routing.register(config.get("mp.lra.coordinator.context.path")
                         .asString()
                         .orElse("/lra-coordinator"), coordinatorService)
                 .build();

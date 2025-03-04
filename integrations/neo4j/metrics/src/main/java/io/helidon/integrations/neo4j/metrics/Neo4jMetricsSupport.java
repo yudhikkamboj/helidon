@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,17 +25,13 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import io.helidon.common.LazyValue;
-import io.helidon.metrics.RegistryFactory;
+import io.helidon.metrics.api.FunctionalCounter;
+import io.helidon.metrics.api.Gauge;
+import io.helidon.metrics.api.MeterRegistry;
+import io.helidon.metrics.api.Metrics;
 
-import org.eclipse.microprofile.metrics.Counter;
-import org.eclipse.microprofile.metrics.Gauge;
-import org.eclipse.microprofile.metrics.Metadata;
-import org.eclipse.microprofile.metrics.MetricID;
-import org.eclipse.microprofile.metrics.MetricRegistry;
-import org.eclipse.microprofile.metrics.MetricType;
 import org.neo4j.driver.ConnectionPoolMetrics;
 import org.neo4j.driver.Driver;
 
@@ -47,17 +43,19 @@ import static java.util.Map.entry;
 public class Neo4jMetricsSupport {
 
     private static final String NEO4J_METRIC_NAME_PREFIX = "neo4j";
+    private static final String NEO4J_METER_SCOPE = "vendor";
 
     private final AtomicReference<Collection<ConnectionPoolMetrics>> lastPoolMetrics = new AtomicReference<>();
     private final AtomicReference<ScheduledFuture<?>> reinitFuture = new AtomicReference<>();
     private final AtomicReference<Boolean> metricsInitialized = new AtomicReference<>(false);
-    private final LazyValue<MetricRegistry> metricRegistry;
+    private final LazyValue<MeterRegistry> meterRegistry;
     private final Driver driver;
 
+    @SuppressWarnings("removal")
     private Neo4jMetricsSupport(Builder builder) {
         this.driver = builder.driver;
         // Assuming for the moment that VENDOR is the correct registry to use.
-        metricRegistry = LazyValue.create(() -> RegistryFactory.getInstance().getRegistry(MetricRegistry.Type.VENDOR));
+        meterRegistry = LazyValue.create(Metrics::globalRegistry);
     }
 
     /**
@@ -116,47 +114,34 @@ public class Neo4jMetricsSupport {
         for (ConnectionPoolMetrics it : lastPoolMetrics.get()) {
             //String poolPrefix = NEO4J_METRIC_NAME_PREFIX + "-" + it.id() + "-";
             String poolPrefix = NEO4J_METRIC_NAME_PREFIX + "-";
-            counters.forEach((name, supplier) -> registerCounter(metricRegistry.get(), it, poolPrefix, name, supplier));
-            gauges.forEach((name, supplier) -> registerGauge(metricRegistry.get(), it, poolPrefix, name, supplier));
+            counters.forEach((name, supplier) -> registerCounter(meterRegistry.get(), it, poolPrefix, name, supplier));
+            gauges.forEach((name, supplier) -> registerGauge(meterRegistry.get(), it, poolPrefix, name, supplier));
             // we only care about the first one
             metricsInitialized.set(true);
             break;
         }
     }
 
-    private void registerCounter(MetricRegistry metricRegistry,
+    private void registerCounter(MeterRegistry meterRegistry,
                                  ConnectionPoolMetrics cpm,
                                  String poolPrefix,
                                  String name,
                                  Function<ConnectionPoolMetrics, Long> fn) {
 
         String counterName = poolPrefix + name;
-        if (metricRegistry.getCounters().get(new MetricID(counterName)) == null) {
-            Metadata metadata = Metadata.builder()
-                    .withName(counterName)
-                    .withType(MetricType.COUNTER)
-                    .build();
-            Neo4JCounterWrapper wrapper = new Neo4JCounterWrapper(() -> fn.apply(cpm));
-            metricRegistry.register(metadata, wrapper);
-        }
+        meterRegistry.getOrCreate(FunctionalCounter.builder(counterName, cpm, fn::apply)
+                                          .scope(NEO4J_METER_SCOPE));
     }
 
-    private void registerGauge(MetricRegistry metricRegistry,
+    private void registerGauge(MeterRegistry meterRegistry,
                                ConnectionPoolMetrics cpm,
                                String poolPrefix,
                                String name,
                                Function<ConnectionPoolMetrics, Integer> fn) {
 
         String gaugeName = poolPrefix + name;
-        if (metricRegistry.getGauges().get(new MetricID(gaugeName)) == null) {
-            Metadata metadata = Metadata.builder()
-                    .withName(poolPrefix + name)
-                    .withType(MetricType.GAUGE)
-                    .build();
-            Neo4JGaugeWrapper<Integer> wrapper =
-                    new Neo4JGaugeWrapper<>(() -> fn.apply(cpm));
-            metricRegistry.register(metadata, wrapper);
-        }
+        meterRegistry.getOrCreate(Gauge.builder(gaugeName, cpm, fn::apply)
+                                          .scope(NEO4J_METER_SCOPE));
     }
 
     /**
@@ -188,44 +173,6 @@ public class Neo4jMetricsSupport {
         public Builder driver(Driver driver) {
             this.driver = driver;
             return this;
-        }
-    }
-
-    private static class Neo4JCounterWrapper implements Counter {
-
-        private final Supplier<Long> fn;
-
-        private Neo4JCounterWrapper(Supplier<Long> fn) {
-            this.fn = fn;
-        }
-
-        @Override
-        public void inc() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public void inc(long n) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public long getCount() {
-            return fn.get();
-        }
-    }
-
-    private static class Neo4JGaugeWrapper<T> implements Gauge<T> {
-
-        private final Supplier<T> supplier;
-
-        private Neo4JGaugeWrapper(Supplier<T> supplier) {
-            this.supplier = supplier;
-        }
-
-        @Override
-        public T getValue() {
-            return supplier.get();
         }
     }
 }

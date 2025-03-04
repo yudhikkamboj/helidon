@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,17 @@
  */
 package io.helidon.webclient.security;
 
+import java.lang.System.Logger.Level;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.logging.Logger;
 
 import io.helidon.common.context.Context;
 import io.helidon.common.context.Contexts;
-import io.helidon.common.reactive.Single;
+import io.helidon.http.ClientRequestHeaders;
+import io.helidon.http.HeaderName;
+import io.helidon.http.HeaderNames;
 import io.helidon.security.EndpointConfig;
 import io.helidon.security.OutboundSecurityClientBuilder;
 import io.helidon.security.OutboundSecurityResponse;
@@ -31,20 +33,18 @@ import io.helidon.security.Security;
 import io.helidon.security.SecurityContext;
 import io.helidon.security.SecurityEnvironment;
 import io.helidon.security.providers.common.OutboundConfig;
-import io.helidon.webclient.WebClientRequestHeaders;
-import io.helidon.webclient.WebClientServiceRequest;
+import io.helidon.tracing.Span;
+import io.helidon.tracing.SpanContext;
+import io.helidon.tracing.Tracer;
+import io.helidon.webclient.api.WebClientServiceRequest;
+import io.helidon.webclient.api.WebClientServiceResponse;
 import io.helidon.webclient.spi.WebClientService;
-
-import io.opentracing.Span;
-import io.opentracing.SpanContext;
-import io.opentracing.Tracer;
-import io.opentracing.tag.Tags;
 
 /**
  * Client service for security propagation.
  */
 public class WebClientSecurity implements WebClientService {
-    private static final Logger LOGGER = Logger.getLogger(WebClientSecurity.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(WebClientSecurity.class.getName());
 
     private static final String PROVIDER_NAME = "io.helidon.security.rest.client.security.providerName";
 
@@ -72,7 +72,7 @@ public class WebClientSecurity implements WebClientService {
     }
 
     /**
-     * Creates new instance of client security service base on {@link Security}.
+     * Creates new instance of client security service base on {@link io.helidon.security.Security}.
      *
      * @param security security instance
      * @return client security service
@@ -83,9 +83,14 @@ public class WebClientSecurity implements WebClientService {
     }
 
     @Override
-    public Single<WebClientServiceRequest> request(WebClientServiceRequest request) {
+    public String type() {
+        return "security";
+    }
+
+    @Override
+    public WebClientServiceResponse handle(Chain chain, WebClientServiceRequest request) {
         if ("true".equalsIgnoreCase(request.properties().get(OutboundConfig.PROPERTY_DISABLE_OUTBOUND))) {
-            return Single.just(request);
+            return chain.proceed(request);
         }
 
         Context requestContext = request.context();
@@ -94,9 +99,9 @@ public class WebClientSecurity implements WebClientService {
 
         SecurityContext context;
 
-        if (null == security) {
+        if (security == null) {
             if (maybeContext.isEmpty()) {
-                return Single.just(request);
+                return chain.proceed(request);
             } else {
                 context = maybeContext.get();
             }
@@ -106,11 +111,22 @@ public class WebClientSecurity implements WebClientService {
             context = createContext(request);
         }
 
-        Span span = context.tracer()
-                .buildSpan("security:outbound")
-                .asChildOf(context.tracingSpan())
-                .start();
+        Tracer tracer = context.tracer();
+        Span span;
+        if (tracer == null) {
+            span = null;
+        } else {
+            SpanContext parentSpanContext = context.tracingSpan();
+            span = tracer.spanBuilder("security:outbound")
+                    .update(builder -> {
+                                if (parentSpanContext != null) {
+                                    builder.parent(parentSpanContext);
+                                }
+                            }
+                    )
+                    .start();
 
+        }
         String explicitProvider = request.properties().get(PROVIDER_NAME);
 
         OutboundSecurityClientBuilder clientBuilder;
@@ -118,12 +134,17 @@ public class WebClientSecurity implements WebClientService {
         try {
             SecurityEnvironment.Builder outboundEnv = context.env()
                     .derive()
-                    .clearHeaders();
+                    .clearHeaders()
+                    .clearQueryParams();
 
-            outboundEnv.method(request.method().name())
-                    .path(request.path().toString())
-                    .targetUri(request.uri())
-                    .headers(request.headers().toMap());
+            outboundEnv.method(request.method().text())
+                    .path(request.uri().path().path())
+                    .targetUri(request.uri().toUri())
+                    .queryParams(request.uri().query());
+
+            request.headers()
+                    .stream()
+                    .forEach(headerValue -> outboundEnv.header(headerValue.name(), headerValue.values()));
 
             EndpointConfig.Builder outboundEp = context.endpointConfig().derive();
             Map<String, String> propMap = request.properties();
@@ -144,13 +165,14 @@ public class WebClientSecurity implements WebClientService {
             throw e;
         }
 
-        return Single.create(clientBuilder.submit()
-                                     .thenApply(providerResponse -> processResponse(request, span, providerResponse)));
+        OutboundSecurityResponse providerResponse = clientBuilder.submit();
+        return processResponse(request, span, providerResponse, chain);
     }
 
-    private WebClientServiceRequest processResponse(WebClientServiceRequest request,
-                                                    Span span,
-                                                    OutboundSecurityResponse providerResponse) {
+    private WebClientServiceResponse processResponse(WebClientServiceRequest request,
+                                                     Span span,
+                                                     OutboundSecurityResponse providerResponse,
+                                                     Chain chain) {
         try {
             switch (providerResponse.status()) {
             case FAILURE:
@@ -169,20 +191,24 @@ public class WebClientSecurity implements WebClientService {
 
             Map<String, List<String>> newHeaders = providerResponse.requestHeaders();
 
-            LOGGER.finest(() -> "Client filter header(s). SIZE: " + newHeaders.size());
+            if (LOGGER.isLoggable(Level.TRACE)) {
+                LOGGER.log(Level.TRACE, "Client filter header(s). SIZE: " + newHeaders.size());
+            }
 
-            WebClientRequestHeaders clientHeaders = request.headers();
+            ClientRequestHeaders clientHeaders = request.headers();
             for (Map.Entry<String, List<String>> entry : newHeaders.entrySet()) {
-                LOGGER.finest(() -> "    + Header: " + entry.getKey() + ": " + entry.getValue());
+                if (LOGGER.isLoggable(Level.TRACE)) {
+                    LOGGER.log(Level.TRACE, "    + Header: " + entry.getKey() + ": " + entry.getValue());
+                }
 
                 //replace existing
-                clientHeaders.remove(entry.getKey());
-                for (String value : entry.getValue()) {
-                    clientHeaders.put(entry.getKey(), value);
-                }
+                HeaderName headerName = HeaderNames.create(entry.getKey());
+                clientHeaders.set(headerName, entry.getValue().toArray(new String[0]));
             }
-            span.finish();
-            return request;
+            if (span != null) {
+                span.end();
+            }
+            return chain.proceed(request);
         } catch (Exception e) {
             traceError(span, e, null);
             throw e;
@@ -194,7 +220,7 @@ public class WebClientSecurity implements WebClientService {
                 .endpointConfig(EndpointConfig.builder()
                                         .build())
                 .env(SecurityEnvironment.builder()
-                             .path(request.path().toString())
+                             .path(request.uri().path().path())
                              .build());
         request.context().get(Tracer.class).ifPresent(builder::tracingTracer);
         request.context().get(SpanContext.class).ifPresent(builder::tracingSpan);
@@ -203,16 +229,17 @@ public class WebClientSecurity implements WebClientService {
 
     static void traceError(Span span, Throwable throwable, String description) {
         // failed
-        if (null != throwable) {
-            Tags.ERROR.set(span, true);
-            span.log(Map.of("event", "error",
-                            "error.object", throwable));
-        } else {
-            Tags.ERROR.set(span, true);
-            span.log(Map.of("event", "error",
-                            "message", description,
-                            "error.kind", "SecurityException"));
+        if (span == null) {
+            return;
         }
-        span.finish();
+        span.status(Span.Status.ERROR);
+
+        if (throwable == null) {
+            span.addEvent("error", Map.of("message", description,
+                                          "error.kind", "SecurityException"));
+            span.end();
+        } else {
+            span.end(throwable);
+        }
     }
 }

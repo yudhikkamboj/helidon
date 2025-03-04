@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,33 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * MicroProfile Reactive Streams Operators implementation.
  *
  * @see org.eclipse.microprofile.reactive.streams.operators
  */
+@Feature(value = "Reactive",
+        description = "MicroProfile Reactive Stream operators",
+        in = HelidonFlavor.MP,
+        path = "Reactive"
+)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.microprofile.reactive {
-    requires java.logging;
 
-    requires io.helidon.common.mapper;
     requires io.helidon.common.reactive;
-    requires transitive org.reactivestreams;
-    requires transitive microprofile.reactive.streams.operators.core;
+
+    requires static io.helidon.common.features.api;
+
     requires transitive microprofile.reactive.streams.operators.api;
+    requires transitive microprofile.reactive.streams.operators.core;
+    requires transitive org.reactivestreams;
 
     exports io.helidon.microprofile.reactive;
 
     provides org.eclipse.microprofile.reactive.streams.operators.spi.ReactiveStreamsEngine
             with io.helidon.microprofile.reactive.HelidonReactiveStreamsEngine;
+
 }

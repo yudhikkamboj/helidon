@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package io.helidon.microprofile.lra;
 
+import java.lang.System.Logger.Level;
 import java.lang.reflect.Method;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
-import java.util.logging.Logger;
+import java.util.function.Supplier;
 
 import io.helidon.common.context.Contexts;
-import io.helidon.common.reactive.Single;
 import io.helidon.lra.coordinator.client.CoordinatorClient;
 import io.helidon.lra.coordinator.client.CoordinatorConnectionException;
 import io.helidon.lra.coordinator.client.Participant;
@@ -43,12 +43,12 @@ import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_RECOVER
 
 class LraAnnotationHandler implements AnnotationHandler {
 
-    private static final Logger LOGGER = Logger.getLogger(LraAnnotationHandler.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(LraAnnotationHandler.class.getName());
 
     private final InspectionService.Lra annotation;
     private final CoordinatorClient coordinatorClient;
     private final ParticipantService participantService;
-    private Duration coordinatorTimeout;
+    private final Duration coordinatorTimeout;
 
     LraAnnotationHandler(AnnotationInstance annotation,
                          CoordinatorClient coordinatorClient,
@@ -127,7 +127,7 @@ class LraAnnotationHandler implements AnnotationHandler {
                     setLraContext(reqCtx, lraId);
                     break;
                 default:
-                    LOGGER.severe("Unsupported LRA type " + annotation.value() + " on method " + method.getName());
+                    LOGGER.log(Level.ERROR, "Unsupported LRA type " + annotation.value() + " on method " + method.getName());
                     reqCtx.abortWith(Response.status(500).build());
                     break;
             }
@@ -171,11 +171,11 @@ class LraAnnotationHandler implements AnnotationHandler {
     }
 
     private URI start(String clientId, PropagatedHeaders headers, long timeOut) {
-        return awaitCoordinator(coordinatorClient.start(clientId, headers, timeOut));
+        return callCoordinator(() -> coordinatorClient.start(clientId, headers, timeOut));
     }
 
     private URI start(URI parentLraId, String clientId, PropagatedHeaders headers, long timeOut) {
-        return awaitCoordinator(coordinatorClient.start(parentLraId, clientId, headers, timeOut));
+        return callCoordinator(() -> coordinatorClient.start(parentLraId, clientId, headers, timeOut));
     }
 
     private void join(ContainerRequestContext reqCtx,
@@ -183,16 +183,16 @@ class LraAnnotationHandler implements AnnotationHandler {
                       PropagatedHeaders propagatedHeaders,
                       long timeLimit,
                       Participant participant) {
-        awaitCoordinator(coordinatorClient.join(lraId, propagatedHeaders, timeLimit, participant))
+        callCoordinator(() -> coordinatorClient.join(lraId, propagatedHeaders, timeLimit, participant))
                 .ifPresent(uri -> reqCtx.getHeaders().add(LRA_HTTP_RECOVERY_HEADER, uri.toASCIIString()));
     }
 
     private void close(URI lraId, PropagatedHeaders headers) {
-        awaitCoordinator(coordinatorClient.close(lraId, headers));
+        callCoordinator(() -> coordinatorClient.close(lraId, headers));
     }
 
     private void cancel(URI lraId, PropagatedHeaders headers) {
-        awaitCoordinator(coordinatorClient.cancel(lraId, headers));
+        callCoordinator(() -> coordinatorClient.cancel(lraId, headers));
     }
 
     private void setHeaderPropagationContext(ContainerRequestContext reqCtx, PropagatedHeaders propagatedHeaders) {
@@ -216,10 +216,17 @@ class LraAnnotationHandler implements AnnotationHandler {
                 .ifPresent(context -> context.register(LRA_HTTP_PARENT_CONTEXT_HEADER, lraId));
     }
 
-    private <T> T awaitCoordinator(Single<T> single) {
+    private void callCoordinator(Runnable supplier) {
+        callCoordinator(() -> {
+            supplier.run();
+            return null;
+        });
+    }
+
+    private <T> T callCoordinator(Supplier<T> supplier) {
         try {
             // Connection timeout should be handled by client impl separately
-            return single.await(coordinatorTimeout);
+            return supplier.get();
         } catch (CompletionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof CoordinatorConnectionException) {

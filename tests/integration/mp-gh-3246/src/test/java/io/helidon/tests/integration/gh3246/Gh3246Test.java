@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package io.helidon.tests.integration.gh3246;
 import java.time.Instant;
 
 import io.helidon.common.configurable.Resource;
-import io.helidon.common.http.Http;
-import io.helidon.microprofile.tests.junit5.AddBean;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.http.HeaderNames;
+import io.helidon.microprofile.testing.junit5.AddBean;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 import io.helidon.security.jwt.Jwt;
 import io.helidon.security.jwt.SignedJwt;
 import io.helidon.security.jwt.jwk.JwkKeys;
@@ -68,7 +68,7 @@ public class Gh3246Test {
                 .addUserGroup("admin")
                 .algorithm(JwkRSA.ALG_RS256)
                 .issuer("test-gh-3246")
-                .audience("http://example.helidon.io")
+                .addAudience("http://example.helidon.io")
                 .issueTime(Instant.now())
                 .userPrincipal("jack")
                 .keyId("SIGNING_KEY")
@@ -86,7 +86,7 @@ public class Gh3246Test {
         String response = webTarget.path("/test/secured")
                 .queryParam("port", port)
                 .request()
-                .header(Http.Header.AUTHORIZATION, "Bearer " + tokenContent)
+                .header(HeaderNames.AUTHORIZATION.defaultCase(), "Bearer " + tokenContent)
                 .get(String.class);
 
         assertThat(response, is("hello"));

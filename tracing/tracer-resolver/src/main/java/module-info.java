@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,19 @@
  * {@link io.opentracing.contrib.tracerresolver.TracerResolver} tracing support.
  */
 module io.helidon.tracing.tracerresolver {
-    requires io.helidon.common;
-    requires io.helidon.config;
-    requires io.helidon.tracing;
 
-    requires java.logging;
-    requires io.opentracing.util;
-    requires io.opentracing.noop;
+    requires io.helidon.common.config;
+    requires io.helidon.common;
+    requires io.helidon.tracing.providers.opentracing;
+    requires io.helidon.tracing;
+    requires io.opentracing.api;
     requires io.opentracing.contrib.tracerresolver;
+    requires io.opentracing.noop;
+    requires io.opentracing.util;
 
     exports io.helidon.tracing.tracerresolver;
 
-    provides io.helidon.tracing.spi.TracerProvider with io.helidon.tracing.tracerresolver.TracerResolverProvider;
+    provides io.helidon.tracing.providers.opentracing.spi.OpenTracingProvider
+            with io.helidon.tracing.tracerresolver.TracerResolverProvider;
+
 }

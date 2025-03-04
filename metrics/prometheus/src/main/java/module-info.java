@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@
 /**
  * Prometheus support.
  */
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.metrics.prometheus {
-    requires io.helidon.webserver;
 
+    requires transitive io.helidon.servicecommon;
+    requires transitive io.helidon.webserver;
     // prometheus :(
-    requires simpleclient;
+    requires transitive simpleclient;
 
     exports io.helidon.metrics.prometheus;
+
 }

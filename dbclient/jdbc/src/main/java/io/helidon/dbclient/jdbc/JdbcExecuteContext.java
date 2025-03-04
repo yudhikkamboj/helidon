@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,89 +15,56 @@
  */
 package io.helidon.dbclient.jdbc;
 
-import java.sql.Connection;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-
-import io.helidon.dbclient.common.DbClientContext;
+import io.helidon.dbclient.DbExecuteContext;
 
 /**
- * Stuff needed by each and every statement.
+ * JDBC execution context.
  */
-final class JdbcExecuteContext extends DbClientContext {
-
-    private final ConcurrentHashMap.KeySetView<CompletableFuture<Long>, Boolean> futures = ConcurrentHashMap.newKeySet();
-    private final ExecutorService executorService;
-    private final String dbType;
-    private final CompletionStage<Connection> connection;
+class JdbcExecuteContext extends DbExecuteContext {
 
     private JdbcExecuteContext(Builder builder) {
         super(builder);
-        this.executorService = builder.executorService;
-        this.dbType = builder.dbType;
-        this.connection = builder.connection;
+    }
+
+    JdbcParametersConfigBlueprint parametersConfig() {
+        return clientContext(JdbcClientContext.class).parametersConfig();
     }
 
     /**
-     * Builder to create new instances.
-     * @return a new builder instance
+     * Create a new execution context.
+     *
+     * @param statementName statement name
+     * @param statement     statement
+     * @param context       client context
+     * @return execution context
      */
-    static Builder jdbcBuilder() {
+    public static JdbcExecuteContext jdbcCreate(String statementName, String statement, JdbcClientContext context) {
+        return jdbcBuilder()
+                .statement(statement)
+                .statementName(statementName)
+                .clientContext(context)
+                .build();
+    }
+
+    /**
+     * Create Helidon JDBC database execution context builder.
+     *
+     * @return database client context builder
+     */
+    public static Builder jdbcBuilder() {
         return new Builder();
     }
 
-    ExecutorService executorService() {
-        return executorService;
-    }
-
-    String dbType() {
-        return dbType;
-    }
-
-    CompletionStage<Connection> connection() {
-        return connection;
-    }
-
-    void addFuture(CompletableFuture<Long> queryFuture) {
-        this.futures.add(queryFuture);
-    }
-
-    CompletionStage<Void> whenComplete() {
-        CompletionStage<?> overallStage = CompletableFuture.completedFuture(null);
-
-        for (CompletableFuture<Long> future : futures) {
-            overallStage = overallStage.thenCompose(o -> future);
-        }
-
-        return overallStage.thenAccept(it -> {
-        });
-    }
-
-    static class Builder extends BuilderBase<Builder> implements io.helidon.common.Builder<Builder, JdbcExecuteContext> {
-        private ExecutorService executorService;
-        private String dbType;
-        private CompletionStage<Connection> connection;
+    /**
+     * Builder for {@link DbExecuteContext}.
+     */
+    public static final class Builder extends BuilderBase<Builder, JdbcExecuteContext> {
 
         @Override
         public JdbcExecuteContext build() {
             return new JdbcExecuteContext(this);
         }
 
-        Builder executorService(ExecutorService executorService) {
-            this.executorService = executorService;
-            return this;
-        }
-
-        Builder dbType(String dbType) {
-            this.dbType = dbType;
-            return this;
-        }
-
-        Builder connection(CompletionStage<Connection> connection) {
-            this.connection = connection;
-            return this;
-        }
     }
+
 }

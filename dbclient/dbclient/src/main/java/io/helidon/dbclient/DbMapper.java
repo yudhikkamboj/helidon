@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,19 @@ package io.helidon.dbclient;
 import java.util.List;
 import java.util.Map;
 
+import io.helidon.dbclient.spi.DbClientBuilder;
+import io.helidon.dbclient.spi.DbClientProvider;
+
 /**
  * A mapper to map database objects to/from a specific type.
  * <p>
- * Mappers can be either provided through {@link io.helidon.dbclient.spi.DbClientProvider} or registered directly
- * with the {@link io.helidon.dbclient.spi.DbClientProviderBuilder#addMapper(DbMapper, Class)}.
+ * Mappers can be either provided through {@link DbClientProvider} or registered directly
+ * with the {@link DbClientBuilder#addMapper(DbMapper, Class)}.
  *
  * @param <T> target mapping type
  */
 public interface DbMapper<T> {
+
     /**
      * Read database row and convert it to target type instance.
      *
@@ -40,7 +44,7 @@ public interface DbMapper<T> {
      *
      * @param value mapping type instance containing values to be set into statement
      * @return map of statement named parameters mapped to values to be set
-     * @see io.helidon.dbclient.DbStatement#namedParam(Object)
+     * @see DbStatement#namedParam(Object)
      */
     Map<String, ?> toNamedParameters(T value);
 
@@ -53,7 +57,7 @@ public interface DbMapper<T> {
      *
      * @param value mapping type instance containing values to be set into statement
      * @return map of statement named parameters mapped to values to be set
-     * @see io.helidon.dbclient.DbStatement#indexedParam(Object)
+     * @see DbStatement#indexedParam(Object)
      */
     List<?> toIndexedParameters(T value);
 

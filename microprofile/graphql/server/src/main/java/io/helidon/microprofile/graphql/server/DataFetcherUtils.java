@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.microprofile.graphql.server;
 
+import java.lang.System.Logger.Level;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -41,13 +42,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
-import java.util.logging.Logger;
+import java.util.function.Supplier;
 
 import io.helidon.graphql.server.ExecutionContext;
 
 import graphql.GraphQLException;
 import graphql.schema.DataFetcher;
 import graphql.schema.DataFetchingEnvironment;
+import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.PropertyDataFetcher;
 import graphql.schema.PropertyDataFetcherHelper;
 import jakarta.enterprise.inject.spi.CDI;
@@ -70,7 +72,7 @@ class DataFetcherUtils {
     /**
      * Logger.
      */
-    private static final Logger LOGGER = Logger.getLogger(DataFetcherUtils.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(DataFetcherUtils.class.getName());
 
     /**
      * Empty format.
@@ -116,7 +118,7 @@ class DataFetcherUtils {
                     sourceClazz = Class.forName(source);
                     listArgumentValues.add(sourceClazz.cast(environment.getSource()));
                 } catch (ClassNotFoundException e) {
-                    LOGGER.warning("Unable to find source class " + source);
+                    LOGGER.log(Level.WARNING, "Unable to find source class " + source);
                 }
             }
 
@@ -192,7 +194,7 @@ class DataFetcherUtils {
 
             // retrieve the map and return the collection of V
             Map<?, V> map = (Map<?, V>) PropertyDataFetcherHelper
-                    .getPropertyValue(propertyName, source, environment.getFieldType(), environment);
+                    .getPropertyValue(propertyName, source, environment.getFieldType(), () -> environment);
             return map.values();
         };
     }
@@ -452,7 +454,7 @@ class DataFetcherUtils {
      * An implementation of a {@link PropertyDataFetcher} which returns a formatted number.
      */
     @SuppressWarnings("rawtypes")
-    static class NumberFormattingDataFetcher extends PropertyDataFetcher {
+    static class NumberFormattingDataFetcher extends PropertyDataFetcher<Object> {
 
         /**
          * {@link NumberFormat} to format with.
@@ -483,6 +485,12 @@ class DataFetcherUtils {
         }
 
         @Override
+        public Object get(GraphQLFieldDefinition fieldDefinition, Object source,
+                          Supplier<DataFetchingEnvironment> environmentSupplier) throws Exception {
+            return formatNumber(super.get(environmentSupplier.get()), isScalar, numberFormat);
+        }
+
+        @Override
         public Object get(DataFetchingEnvironment environment) {
             return formatNumber(super.get(environment), isScalar, numberFormat);
         }
@@ -492,7 +500,7 @@ class DataFetcherUtils {
      * An implementation of a {@link PropertyDataFetcher} which returns a formatted date.
      */
     @SuppressWarnings({ "rawtypes" })
-    static class DateFormattingDataFetcher extends PropertyDataFetcher {
+    static class DateFormattingDataFetcher extends PropertyDataFetcher<Object> {
 
         /**
          * {@link DateTimeFormatter} to format with.
@@ -519,11 +527,14 @@ class DataFetcherUtils {
                 // must be java.util.Date
                 simpleDateFormat = new SimpleDateFormat(valueFormat);
             }
-            System.err.println("DateFormattingDataFetcher: propertyName=" + propertyName
-                                        + ", type=" + type
-                                        + ", valueFormat=" + valueFormat
-                                        + ", dateTimeFormatter=" + dateTimeFormatter
-                                        + ", simpleDateFormat=" + simpleDateFormat);
+        }
+
+        @Override
+        public Object get(GraphQLFieldDefinition fieldDefinition, Object source,
+                          Supplier<DataFetchingEnvironment> environmentSupplier) throws Exception {
+                return dateTimeFormatter != null
+                    ? formatDate(super.get(environmentSupplier.get()), dateTimeFormatter)
+                    : formatDate(super.get(environmentSupplier.get()), simpleDateFormat);
         }
 
         @Override
@@ -572,7 +583,7 @@ class DataFetcherUtils {
                 numberKey = (Number) constructor.newInstance(key);
             } catch (NoSuchMethodException | InstantiationException | IllegalAccessException
                      | InvocationTargetException eIgnore) {
-                LOGGER.warning("Cannot find constructor with String arg for class " + originalType.getName());
+                LOGGER.log(Level.WARNING, "Cannot find constructor with String arg for class " + originalType.getName());
             }
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,12 @@ package io.helidon.common.mapper;
 import java.util.List;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.Set;
 
 import io.helidon.common.GenericType;
-import io.helidon.common.Prioritized;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.Weighted;
 import io.helidon.common.mapper.spi.MapperProvider;
-import io.helidon.common.serviceloader.HelidonServiceLoader;
 
 /**
  * Mapper manager of all configured mappers.
@@ -30,20 +31,51 @@ import io.helidon.common.serviceloader.HelidonServiceLoader;
  * To map a source to target, you can use either of the {@code map} methods defined in this interface,
  * as they make sure that the mapping exists in either space.
  * <ul>
- * <li>If you call {@link #map(Object, Class, Class)} and no mapper is found for the class pair,
- * the implementation calls the {@link #map(Object, io.helidon.common.GenericType, io.helidon.common.GenericType)} with
- * {@link io.helidon.common.GenericType}s created for each parameters</li>
- * <li>If you call {@link #map(Object, io.helidon.common.GenericType, io.helidon.common.GenericType)} and no mapper is
+ * <li>If you call {@link #map(Object, Class, Class, String...)} and no mapper is found for the class pair,
+ * the implementation calls the {@link #map(Object, io.helidon.common.GenericType, io.helidon.common.GenericType, String...)}
+ * with {@link io.helidon.common.GenericType}s created for each parameters</li>
+ * <li>If you call {@link #map(Object, io.helidon.common.GenericType, io.helidon.common.GenericType, String...)} and no mapper is
  * found for the {@link io.helidon.common.GenericType} pair, an attempt is to locate a mapper for
  * the underlying class *IF* the generic type represents a simple class (e.g. not a generic type declaration)</li>
  * </ul>
+ *
+ * @deprecated use {@link io.helidon.common.mapper.Mappers} instead
  */
-public interface MapperManager {
+@Deprecated(forRemoval = true, since = "4.2.0")
+public interface MapperManager extends Mappers {
+    /**
+     * Get an instance of the configured global manager. If none is explicitly set, an instance is created using
+     * discovered and built-in mappers.
+     *
+     * @return global mapper manager
+     * @deprecated use {@link io.helidon.service.registry.Services#get(Class)} - i.e. {@code Services.get(Mappers.class)}, or
+     *          use your registry instance in a similar way
+     */
+    @Deprecated(forRemoval = true, since = "4.2.0")
+    static MapperManager global() {
+        return GlobalManager.mapperManager();
+    }
+
+    /**
+     * Configure a new global mapper manager.
+     *
+     * @param manager mapper manager to use
+     * @deprecated use {@link io.helidon.service.registry.Services#set(Class, Object[])} -
+     *      i.e. {@code Services.get(Mappers.class, myMappers)} before the program starts
+     *      (must be configured before it is first used)
+     */
+    @Deprecated(forRemoval = true, since = "4.2.0")
+    static void global(MapperManager manager) {
+        GlobalManager.mapperManager(manager);
+    }
+
     /**
      * Create a fluent API builder to create a customized mapper manager.
      *
      * @return a new builder
+     * @deprecated use {@link io.helidon.common.mapper.Mappers#builder()} instead
      */
+    @Deprecated(forRemoval = true, since = "4.2.0")
     static Builder builder() {
         return new Builder();
     }
@@ -53,33 +85,11 @@ public interface MapperManager {
      * loaded {@link io.helidon.common.mapper.spi.MapperProvider MapperProviders}.
      *
      * @return create a new mapper manager from service loader
+     * @deprecated use {@link io.helidon.common.mapper.Mappers#create()} instead
      */
+    @Deprecated(forRemoval = true, since = "4.2.0")
     static MapperManager create() {
         return MapperManager.builder().build();
-    }
-
-    /**
-     * Create a fluent API builder to create a customized mapper manager based on the provided Helidon Service loader.
-     *
-     * @param serviceLoader fully configured service loader
-     * @return a new builder
-     */
-    static Builder builder(HelidonServiceLoader<MapperProvider> serviceLoader) {
-        return MapperManager.builder()
-                .mapperProviders(serviceLoader);
-    }
-
-    /**
-     * Create a mapper manager using only the provided Helidon Service loader.
-     * loaded {@link io.helidon.common.mapper.spi.MapperProvider MapperProviders}.
-     *
-     * @param serviceLoader fully configured service loader
-     * @return create a new mapper manager from service loader
-     */
-    static MapperManager create(HelidonServiceLoader<MapperProvider> serviceLoader) {
-        return MapperManager.builder()
-                .mapperProviders(serviceLoader)
-                .build();
     }
 
     /**
@@ -88,12 +98,16 @@ public interface MapperManager {
      * @param source     object to map
      * @param sourceType type of the source object (to locate the mapper)
      * @param targetType type of the target object (to locate the mapper)
+     * @param qualifiers qualifiers of the usage (such as {@code http-headers, http}, most specific one first)
      * @param <SOURCE>   type of the source
      * @param <TARGET>   type of the target
      * @return result of the mapping
      * @throws MapperException in case the mapper was not found or failed
      */
-    <SOURCE, TARGET> TARGET map(SOURCE source, GenericType<SOURCE> sourceType, GenericType<TARGET> targetType)
+    <SOURCE, TARGET> TARGET map(SOURCE source,
+                                GenericType<SOURCE> sourceType,
+                                GenericType<TARGET> targetType,
+                                String... qualifiers)
             throws MapperException;
 
     /**
@@ -102,46 +116,61 @@ public interface MapperManager {
      * @param source     object to map
      * @param sourceType class of the source object (to locate the mapper)
      * @param targetType class of the target object (to locate the mapper)
+     * @param qualifiers qualifiers of the usage (such as {@code http-headers, http}, most specific one first)
      * @param <SOURCE>   type of the source
      * @param <TARGET>   type of the target
      * @return result of the mapping
      * @throws MapperException in case the mapper was not found or failed
      */
-    <SOURCE, TARGET> TARGET map(SOURCE source, Class<SOURCE> sourceType, Class<TARGET> targetType) throws MapperException;
+    <SOURCE, TARGET> TARGET map(SOURCE source, Class<SOURCE> sourceType, Class<TARGET> targetType, String... qualifiers)
+            throws MapperException;
+
+    /**
+     * Obtain a mapper for the provided types and qualifiers.
+     *
+     * @param sourceType type to map from
+     * @param targetType type to map to
+     * @param qualifiers qualifiers of the mapper
+     * @return mapper if found
+     * @param <SOURCE> source type
+     * @param <TARGET> target type
+     */
+    <SOURCE, TARGET> Optional<Mapper<SOURCE, TARGET>> mapper(GenericType<SOURCE> sourceType,
+                                                             GenericType<TARGET> targetType,
+                                                             String... qualifiers);
 
     /**
      * Fluent API builder for {@link io.helidon.common.mapper.MapperManager}.
+     *
+     * @deprecated use {@link io.helidon.common.mapper.MappersConfig.Builder}, obtained from {@link Mappers#builder()}
      */
+    @Deprecated(since = "4.2.0", forRemoval = true)
     final class Builder implements io.helidon.common.Builder<Builder, MapperManager> {
         private HelidonServiceLoader.Builder<MapperProvider> providers = HelidonServiceLoader
                 .builder(ServiceLoader.load(MapperProvider.class));
+        private boolean useBuiltIn;
+        private boolean builtInAdded;
+        private boolean discoverServices = true;
 
         private Builder() {
         }
 
         @Override
         public MapperManager build() {
-            return new MapperManagerImpl(this);
-        }
-
-        private Builder mapperProviders(HelidonServiceLoader<MapperProvider> serviceLoader) {
-            providers = HelidonServiceLoader.builder(ServiceLoader.load(MapperProvider.class))
-                    .useSystemServiceLoader(false);
-
-            serviceLoader.forEach(providers::addService);
-            return this;
+            if (useBuiltIn && !builtInAdded) {
+                providers.addService(new BuiltInMappers(), 10);
+                builtInAdded = true;
+            }
+            providers.addService(new DefaultMapperProvider(), 0);
+            providers.useSystemServiceLoader(discoverServices);
+            return new MappersImpl(this);
         }
 
         /**
          * Add a new {@link io.helidon.common.mapper.spi.MapperProvider} to the list of providers loaded from
          * system service loader.
          * <p>
-         * You may add multiple instances of the same implementation class.
-         * <p>
-         * If the same provider implementation would be loaded by Java Service loader, the service loader instance is ignored.
-         * If you need to add a new implementation of the same type, please use the full features
-         * of the {@link io.helidon.common.serviceloader.HelidonServiceLoader} and invoke
-         * {@link MapperManager#create(io.helidon.common.serviceloader.HelidonServiceLoader)}.
+         * You can control whether discovered services are loaded through see {@link #discoverServices(boolean)}
          *
          * @param provider prioritized mapper provider to use
          * @return updated builder instance
@@ -156,11 +185,13 @@ public interface MapperManager {
          * from system service loader with a custom priority.
          *
          * @param provider a mapper provider instance
-         * @param priority priority of the provider (see {@link io.helidon.common.serviceloader.HelidonServiceLoader}
+         * @param priority priority of the provider (see {@link io.helidon.common.HelidonServiceLoader}
          *                 documentation for details about priority handling)
          * @return updated builder instance
          * @see #addMapperProvider(io.helidon.common.mapper.spi.MapperProvider)
+         * @deprecated we have switched to using weights instead of priority, this method will be removed without replacement
          */
+        @Deprecated(forRemoval = true, since = "4.2.0")
         public Builder addMapperProvider(MapperProvider provider, int priority) {
             this.providers.addService(provider, priority);
             return this;
@@ -172,12 +203,13 @@ public interface MapperManager {
          * @param mapper     the mapper to map source instances to target instances
          * @param sourceType class of the source instance
          * @param targetType class of the target instance
+         * @param qualifiers supported qualifiers of this mapper (if none provided, will return a compatible response)
          * @param <S>        type of source
          * @param <T>        type of target
          * @return updated builder instance
          */
-        public <S, T> Builder addMapper(Mapper<S, T> mapper, Class<S> sourceType, Class<T> targetType) {
-            return addMapper(mapper, sourceType, targetType, Prioritized.DEFAULT_PRIORITY);
+        public <S, T> Builder addMapper(Mapper<S, T> mapper, Class<S> sourceType, Class<T> targetType, String... qualifiers) {
+            return addMapper(mapper, sourceType, targetType, Weighted.DEFAULT_WEIGHT, qualifiers);
         }
 
         /**
@@ -186,23 +218,29 @@ public interface MapperManager {
          * @param mapper     the mapper to map source instances to target instances
          * @param sourceType class of the source instance
          * @param targetType class of the target instance
-         * @param priority   order of the mapper usage
+         * @param weight     weight of the mapper
+         * @param qualifiers supported qualifiers of this mapper (if none provided, will return a compatible response)
          * @param <S>        type of source
          * @param <T>        type of target
          * @return updated builder instance
          */
-        public <S, T> Builder addMapper(Mapper<S, T> mapper, Class<S> sourceType, Class<T> targetType, int priority) {
-            this.providers.addService(new MapperProvider() {
-                @SuppressWarnings({"unchecked", "ObjectEquality"})
-                @Override
-                public <FROM, TO> Optional<Mapper<?, ?>> mapper(Class<FROM> sourceClass,
-                                                                    Class<TO> targetClass) {
-                    if ((sourceType == sourceClass) && (targetType == targetClass)) {
-                        return Optional.of((Mapper<FROM, TO>) mapper);
+        public <S, T> Builder addMapper(Mapper<S, T> mapper,
+                                        Class<S> sourceType,
+                                        Class<T> targetType,
+                                        double weight,
+                                        String... qualifiers) {
+            Set<String> qualifierSet = Set.of(qualifiers);
+
+            this.providers.addService((sourceClass, targetClass, qualifier) -> {
+                if ((sourceType == sourceClass) && (targetType == targetClass)) {
+                    if (qualifierSet.contains(qualifier)) {
+                        return new MapperProvider.ProviderResponse(MapperProvider.Support.SUPPORTED, mapper);
+                    } else {
+                        return new MapperProvider.ProviderResponse(MapperProvider.Support.COMPATIBLE, mapper);
                     }
-                    return Optional.empty();
                 }
-            }, priority);
+                return MapperProvider.ProviderResponse.unsupported();
+            }, weight);
             return this;
         }
 
@@ -212,12 +250,16 @@ public interface MapperManager {
          * @param mapper     the mapper to map source instances to target instances
          * @param sourceType generic type of the source instance
          * @param targetType generic type of the target instance
+         * @param qualifiers qualifiers of this mapper, if empty, will be a compatible mapper
          * @param <S>        type of source
          * @param <T>        type of target
          * @return updated builder instance
          */
-        public <S, T> Builder addMapper(Mapper<S, T> mapper, GenericType<S> sourceType, GenericType<T> targetType) {
-            return addMapper(mapper, sourceType, targetType, Prioritized.DEFAULT_PRIORITY);
+        public <S, T> Builder addMapper(Mapper<S, T> mapper,
+                                        GenericType<S> sourceType,
+                                        GenericType<T> targetType,
+                                        String... qualifiers) {
+            return addMapper(mapper, sourceType, targetType, Weighted.DEFAULT_WEIGHT, qualifiers);
         }
 
         /**
@@ -226,28 +268,60 @@ public interface MapperManager {
          * @param mapper     the mapper to map source instances to target instances
          * @param sourceType generic type of the source instance
          * @param targetType generic type of the target instance
-         * @param priority   order of the mapper usage
+         * @param weight     weight of the mapper
+         * @param qualifiers qualifiers of this mapper, if empty, will be a compatible mapper
          * @param <S>        type of source
          * @param <T>        type of target
          * @return updated builder instance
          */
-        public <S, T> Builder addMapper(Mapper<S, T> mapper, GenericType<S> sourceType, GenericType<T> targetType, int priority) {
+        public <S, T> Builder addMapper(Mapper<S, T> mapper,
+                                        GenericType<S> sourceType,
+                                        GenericType<T> targetType,
+                                        double weight,
+                                        String... qualifiers) {
+            Set<String> qualifierSet = Set.of(qualifiers);
+
             this.providers.addService(new MapperProvider() {
                 @Override
-                public <FROM, TO> Optional<Mapper<?, ?>> mapper(Class<FROM> sourceClass, Class<TO> targetClass) {
-                    return Optional.empty();
+                public ProviderResponse mapper(Class<?> sourceClass, Class<?> targetClass, String qualifier) {
+                    return ProviderResponse.unsupported();
                 }
 
-                @SuppressWarnings({"unchecked"})
                 @Override
-                public <FROM, TO> Optional<Mapper<?, ?>> mapper(GenericType<FROM> sourceClass,
-                                                                    GenericType<TO> targetClass) {
-                    if ((sourceType.equals(sourceClass)) && (targetType.equals(targetClass))) {
-                        return Optional.of((Mapper<FROM, TO>) mapper);
+                public ProviderResponse mapper(GenericType<?> source, GenericType<?> target, String qualifier) {
+                    if ((sourceType.equals(source)) && (targetType.equals(target))) {
+                        if (qualifierSet.contains(qualifier)) {
+                            return new ProviderResponse(Support.SUPPORTED, mapper);
+                        } else {
+                            return new ProviderResponse(Support.COMPATIBLE, mapper);
+                        }
+
                     }
-                    return Optional.empty();
+                    return ProviderResponse.unsupported();
                 }
-            }, priority);
+            }, weight);
+            return this;
+        }
+
+        /**
+         * Whether to use built-in mappers.
+         *
+         * @param useBuiltIn whether to use built in mappers (such as String to Integer)
+         * @return updated builder
+         */
+        public Builder useBuiltIn(boolean useBuiltIn) {
+            this.useBuiltIn = useBuiltIn;
+            return this;
+        }
+
+        /**
+         * Whether to use {@link java.util.ServiceLoader} to discover mappers, defaults to {@code true}.
+         *
+         * @param discoverServices whether to discover services
+         * @return updated builder
+         */
+        public Builder discoverServices(boolean discoverServices) {
+            this.discoverServices = discoverServices;
             return this;
         }
 

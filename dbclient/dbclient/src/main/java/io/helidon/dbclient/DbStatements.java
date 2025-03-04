@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
 
 /**
  * Configuration of statements to be used by database provider.
@@ -58,10 +58,13 @@ public interface DbStatements {
     }
 
     /**
-     * Fluent API builder for {@link io.helidon.dbclient.DbStatements}.
+     * Fluent API builder for {@link DbStatements}.
      */
     class Builder implements io.helidon.common.Builder<Builder, DbStatements> {
         private final Map<String, String> configuredStatements = new HashMap<>();
+
+        private Builder() {
+        }
 
         /**
          * Add named database statement to database configuration..

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,36 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Aot;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * MicroProfile Reactive Messaging Oracle AQ connector.
  */
+@Feature(value = "Oracle AQ Connector",
+        description = "Reactive messaging connector for Oracle AQ",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"Messaging", "OracleAQ"}
+)
+@Aot(false)
 module io.helidon.messaging.connectors.aq {
-    requires transitive io.helidon.messaging.connectors.jms;
-    requires java.logging;
-    requires jakarta.jms.api;
-    requires javax.jms.api;
-    requires static io.helidon.config.mp;
+
+    requires aqapi;
     requires io.helidon.common.configurable;
-    requires io.helidon.messaging;
     requires io.helidon.messaging.jms.shim;
+    requires javax.jms.api;
+    requires jakarta.messaging;
+
+    requires static io.helidon.common.features.api;
+    requires static io.helidon.config.mp;
     requires static jakarta.cdi;
     requires static jakarta.inject;
-    requires aqapi;
-    requires java.sql;
+
+    requires transitive io.helidon.messaging.connectors.jms;
+    requires transitive io.helidon.messaging;
+    requires transitive java.sql;
 
     exports io.helidon.messaging.connectors.aq;
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package io.helidon.config;
 
+import java.lang.System.Logger.Level;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,8 +26,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import io.helidon.common.media.type.MediaType;
 import io.helidon.common.media.type.MediaTypes;
 import io.helidon.config.spi.ConfigNode.ListNode;
 import io.helidon.config.spi.ConfigNode.ObjectNode;
@@ -69,7 +72,8 @@ final class MetaConfigFinder {
      */
     public static final String CONFIG_PROFILE_ENVIRONMENT_VARIABLE = "HELIDON_CONFIG_PROFILE";
 
-    private static final Logger LOGGER = Logger.getLogger(MetaConfigFinder.class.getName());
+    private static final MediaType UNKNOWN = MediaTypes.create("unknown", "unknown");
+    private static final System.Logger LOGGER = System.getLogger(MetaConfigFinder.class.getName());
     private static final List<String> CONFIG_SUFFIXES = List.of("yaml", "conf", "json", "properties");
     private static final String META_CONFIG_PREFIX = "meta-config.";
     private static final String CONFIG_PREFIX = "application.";
@@ -81,23 +85,18 @@ final class MetaConfigFinder {
     private MetaConfigFinder() {
     }
 
-    static Optional<Config> findMetaConfig(Function<String, Boolean> supportedMediaType, List<String> supportedSuffixes) {
+    static Optional<Config> findMetaConfig(Function<MediaType, Boolean> supportedMediaType, List<String> supportedSuffixes) {
         return findMetaConfigSource(supportedMediaType, supportedSuffixes)
                 .map(source -> Config.builder(source).build());
     }
 
-    static Optional<ConfigSource> findConfigSource(Function<String, Boolean> supportedMediaType, List<String> supportedSuffixes) {
+    static Optional<ConfigSource> findConfigSource(Function<MediaType, Boolean> supportedMediaType,
+                                                   List<String> supportedSuffixes) {
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         return findSource(supportedMediaType, cl, CONFIG_PREFIX, "config source", supportedSuffixes);
     }
 
-    private static Optional<ConfigSource> findMetaConfigSource(Function<String, Boolean> supportedMediaType,
-                                                               List<String> supportedSuffixes) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        Optional<ConfigSource> source;
-
-        // check if meta configuration is configured using system property
-        String metaConfigFile = System.getProperty(META_CONFIG_SYSTEM_PROPERTY);
+    static Optional<String> profile() {
         // check name of the profile
         String profileName = System.getenv(CONFIG_PROFILE_ENVIRONMENT_VARIABLE);
         if (profileName == null) {
@@ -106,6 +105,44 @@ final class MetaConfigFinder {
         if (profileName == null) {
             profileName = System.getProperty(CONFIG_PROFILE_SYSTEM_PROPERTY);
         }
+        return Optional.ofNullable(profileName);
+    }
+
+    static List<ConfigSource> configSources(List<String> supportedSuffixes,
+                                            String profileName) {
+        return supportedSuffixes.stream()
+                .flatMap(suffix -> configSources("application-" + profileName + "." + suffix))
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    static List<ConfigSource> configSources(List<String> supportedSuffixes) {
+        return supportedSuffixes.stream()
+                .flatMap(suffix -> configSources("application." + suffix))
+                .collect(Collectors.toUnmodifiableList());
+    }
+
+    static Stream<ConfigSource> configSources(String fileName) {
+        // we look on file system and on classpath, file system is more important
+        return Stream.concat(findFile(fileName, "default config source")
+                .stream(),
+                findAllClasspath(fileName));
+    }
+
+    private static Stream<ConfigSource> findAllClasspath(String fileName) {
+        return ConfigSources.classpathAll(fileName)
+                .stream()
+                .map(UrlConfigSource.Builder::build);
+    }
+
+    private static Optional<ConfigSource> findMetaConfigSource(Function<MediaType, Boolean> supportedMediaType,
+                                                               List<String> supportedSuffixes) {
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        Optional<ConfigSource> source;
+
+        // check if meta configuration is configured using system property
+        String metaConfigFile = System.getProperty(META_CONFIG_SYSTEM_PROPERTY);
+        // check name of the profile
+        String profileName = profile().orElse(null);
 
         if (metaConfigFile != null && profileName != null) {
             // we have both profile name and meta configuration file defined
@@ -130,7 +167,7 @@ final class MetaConfigFinder {
             if (source.isPresent()) {
                 return source;
             }
-            LOGGER.info("Custom profile file not found: " + metaWithProfile);
+            LOGGER.log(Level.INFO, "Custom profile file not found: " + metaWithProfile);
         }
         if (metaConfigFile == null) {
             if (profileName != null) {
@@ -148,14 +185,14 @@ final class MetaConfigFinder {
                 return source;
             }
 
-            LOGGER.info("Meta configuration file not found: " + metaConfigFile);
+            LOGGER.log(Level.INFO, "Meta configuration file not found: " + metaConfigFile);
         }
 
         return findSource(supportedMediaType, cl, META_CONFIG_PREFIX, "meta configuration", supportedSuffixes)
                 .or(() -> findSource(supportedMediaType, cl, "config-profile.", "config profile", supportedSuffixes));
     }
 
-    private static ConfigSource profileSource(Function<String, Boolean> supportedMediaType,
+    private static ConfigSource profileSource(Function<MediaType, Boolean> supportedMediaType,
                                               ClassLoader cl,
                                               String profileName,
                                               List<String> supportedSuffixes) {
@@ -231,7 +268,7 @@ final class MetaConfigFinder {
                                             .build());
     }
 
-    private static Optional<ConfigSource> findSource(Function<String, Boolean> supportedMediaType,
+    private static Optional<ConfigSource> findSource(Function<MediaType, Boolean> supportedMediaType,
                                                      ClassLoader cl,
                                                      String configPrefix,
                                                      String type,
@@ -246,11 +283,11 @@ final class MetaConfigFinder {
         // these are the ones we are interested in
         Set<String> validSuffixes = new LinkedHashSet<>();
         CONFIG_SUFFIXES.stream()
-                .filter(suffix -> supportedMediaType.apply(MediaTypes.detectExtensionType(suffix).orElse("unknown/unknown")))
+                .filter(suffix -> supportedMediaType.apply(MediaTypes.detectExtensionType(suffix).orElse(UNKNOWN)))
                 .forEach(validSuffixes::add);
 
         supportedSuffixes.stream()
-                .filter(suffix -> supportedMediaType.apply(MediaTypes.detectExtensionType(suffix).orElse("unknown/unknown")))
+                .filter(suffix -> supportedMediaType.apply(MediaTypes.detectExtensionType(suffix).orElse(UNKNOWN)))
                 .forEach(validSuffixes::add);
 
         validSuffixes.forEach(invalidSuffixes::remove);
@@ -284,17 +321,17 @@ final class MetaConfigFinder {
                     Optional<ConfigSource> found = findFile(it, type);
                     if (found.isPresent()) {
                         if (FILES_LOGGED.add(it)) {
-                            LOGGER.warning("Configuration file "
-                                                   + it
-                                                   + " is on file system, yet there is no parser configured for it");
+                            LOGGER.log(Level.WARNING, "Configuration file "
+                                    + it
+                                    + " is on file system, yet there is no parser configured for it");
                         }
                     }
                     found = MetaConfigFinder.findClasspath(cl, it, type);
                     if (found.isPresent()) {
                         if (CLASSPATH_LOGGED.add(it)) {
-                            LOGGER.warning("Configuration file "
-                                                   + it
-                                                   + " is on classpath, yet there is no parser configured for it");
+                            LOGGER.log(Level.WARNING, "Configuration file "
+                                    + it
+                                    + " is on classpath, yet there is no parser configured for it");
                         }
                     }
                 });
@@ -305,7 +342,7 @@ final class MetaConfigFinder {
     private static Optional<ConfigSource> findFile(String name, String type) {
         Path path = Paths.get(name);
         if (Files.exists(path) && Files.isReadable(path) && !Files.isDirectory(path)) {
-            LOGGER.info("Found " + type + " file: " + path.toAbsolutePath());
+            LOGGER.log(Level.INFO, "Found " + type + " file: " + path.toAbsolutePath());
             return Optional.of(ConfigSources.file(path).build());
         }
         return Optional.empty();
@@ -315,7 +352,7 @@ final class MetaConfigFinder {
         // so it is a classpath resource?
         URL resource = cl.getResource(name);
         if (null != resource) {
-            LOGGER.fine(() -> "Found " + type + " resource: " + resource.getPath());
+            LOGGER.log(Level.TRACE, "Found " + type + " resource: " + resource.getPath());
             return Optional.of(ConfigSources.classpath(name).build());
         }
         return Optional.empty();

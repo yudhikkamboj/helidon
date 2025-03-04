@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.helidon.security.providers.oidc.common;
 
+import java.lang.System.Logger.Level;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,25 +27,22 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.common.http.SetCookie;
-import io.helidon.common.reactive.Single;
+import io.helidon.http.SetCookie;
 
 /**
  * Handler of cookies used in OIDC.
  */
 public class OidcCookieHandler {
-    private static final Logger LOGGER = Logger.getLogger(OidcCookieHandler.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(OidcCookieHandler.class.getName());
 
     private final String createCookieOptions;
     private final List<Consumer<SetCookie.Builder>> removeCookieUpdaters = new LinkedList<>();
     private final List<Consumer<SetCookie.Builder>> createCookieUpdaters = new LinkedList<>();
     private final String cookieName;
     private final String valuePrefix;
-    private final Function<String, Single<String>> encryptFunction;
-    private final Function<String, Single<String>> decryptFunction;
+    private final Function<String, String> encryptFunction;
+    private final Function<String, String> decryptFunction;
 
     private OidcCookieHandler(Builder builder) {
         this.cookieName = builder.cookieName;
@@ -93,15 +91,15 @@ public class OidcCookieHandler {
                                                          builder.encryptionName,
                                                          builder.encryptionPassword);
             this.encryptFunction = it -> cookieEncryption.encrypt(it.getBytes(StandardCharsets.UTF_8));
-            this.decryptFunction = it -> cookieEncryption.decrypt(it).map(String::new);
+            this.decryptFunction = it -> new String(cookieEncryption.decrypt(it), StandardCharsets.UTF_8);
         } else {
-            this.encryptFunction = Single::just;
-            this.decryptFunction = Single::just;
+            this.encryptFunction = Function.identity();
+            this.decryptFunction = Function.identity();
         }
 
-        if (LOGGER.isLoggable(Level.FINEST)) {
-            LOGGER.finest(() -> "OIDC Create cookie example: " + value);
-            LOGGER.finest(() -> "OIDC Remove cookie example: " + removeCookie().build());
+        if (LOGGER.isLoggable(Level.TRACE)) {
+            LOGGER.log(Level.TRACE, () -> "OIDC Create cookie example: " + value);
+            LOGGER.log(Level.TRACE, () -> "OIDC Remove cookie example: " + removeCookie().build());
         }
     }
 
@@ -110,15 +108,14 @@ public class OidcCookieHandler {
     }
 
     /**
-     * {@link io.helidon.common.http.SetCookie} builder to set a new cookie,
+     * {@link io.helidon.http.SetCookie} builder to set a new cookie,
      * returns a future, as the value may need to be encrypted using a remote service.
      *
      * @param value value of the cookie
      * @return a new builder to configure set cookie configured from OIDC Config
      */
-    public Single<SetCookie.Builder> createCookie(String value) {
-        return encryptFunction.apply(value)
-                .map(this::createCookieDirectValue);
+    public SetCookie.Builder createCookie(String value) {
+        return createCookieDirectValue(encryptFunction.apply(value));
     }
 
     /**
@@ -131,7 +128,7 @@ public class OidcCookieHandler {
     }
 
     /**
-     * {@link io.helidon.common.http.SetCookie} builder to remove an existing cookie (such as during logout).
+     * {@link io.helidon.http.SetCookie} builder to remove an existing cookie (such as during logout).
      *
      * @return a new builder to configure set cookie configured from OIDC Config with expiration set to epoch begin and
      *  empty value
@@ -149,7 +146,7 @@ public class OidcCookieHandler {
      * @param headers headers to process
      * @return cookie value, or empty if the cookie could not be found
      */
-    public Optional<Single<String>> findCookie(Map<String, List<String>> headers) {
+    public Optional<String> findCookie(Map<String, List<String>> headers) {
         Objects.requireNonNull(headers);
 
         List<String> cookies = headers.get("Cookie");
@@ -177,7 +174,7 @@ public class OidcCookieHandler {
      * @param cipherText cipher text to decrypt
      * @return secret
      */
-    public Single<String> decrypt(String cipherText) {
+    public String decrypt(String cipherText) {
         return decryptFunction.apply(cipherText);
     }
 

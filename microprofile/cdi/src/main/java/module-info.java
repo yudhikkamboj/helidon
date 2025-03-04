@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,37 +14,67 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * CDI implementation enhancements for Helidon MP.
  *
  * @see jakarta.enterprise.context
  */
+@Feature(value = "CDI",
+         description = "Jakarta CDI implementation",
+         in = HelidonFlavor.MP,
+         path = "CDI"
+)
+@SuppressWarnings({"requires-automatic", "requires-transitive-automatic"})
 module io.helidon.microprofile.cdi {
-    // needed for Unsafe used from Weld
-    requires jdk.unsupported;
-    requires java.logging;
-    requires jakarta.cdi;
 
+    requires io.helidon.common.context;
+    requires io.helidon.common.features.api;
+    requires io.helidon.common.features;
+    requires io.helidon.common.configurable;
     requires io.helidon.common;
-    requires io.helidon.config;
     requires io.helidon.config.mp;
+    requires io.helidon.config;
+    requires io.helidon.logging.common;
+    requires io.helidon.service.registry;
+    requires io.helidon.metadata.reflection;
+    requires jakarta.el; // weld requires jakarta.el.ELResolver on module path
+    requires java.sql; // weld requires java.sql.Date and we fail if not on classpath
+    requires jdk.unsupported; // needed for Unsafe used from Weld
+    requires microprofile.config.api;
+
+    requires transitive io.helidon;
+    requires transitive jakarta.cdi;
+    requires transitive jakarta.inject;
+    requires transitive weld.spi;
 
     requires weld.core.impl;
-    requires weld.spi;
     requires weld.environment.common;
     requires weld.se.core;
-    requires io.helidon.common.context;
-    requires jakarta.inject;
-    requires microprofile.config.api;
+
+    // Need by weld
+    requires org.jboss.logging;
 
     exports io.helidon.microprofile.cdi;
 
     uses jakarta.enterprise.inject.spi.Extension;
 
-    provides jakarta.enterprise.inject.se.SeContainerInitializer with io.helidon.microprofile.cdi.HelidonContainerInitializer;
-    provides jakarta.enterprise.inject.spi.CDIProvider with io.helidon.microprofile.cdi.HelidonCdiProvider;
+    provides io.helidon.spi.HelidonStartupProvider
+            with io.helidon.microprofile.cdi.CdiStartupProvider;
+    provides jakarta.enterprise.inject.se.SeContainerInitializer
+            with io.helidon.microprofile.cdi.HelidonContainerInitializer;
+    provides jakarta.enterprise.inject.spi.CDIProvider
+            with io.helidon.microprofile.cdi.HelidonCdiProvider;
 
-    provides org.jboss.weld.bootstrap.api.Service with io.helidon.microprofile.cdi.ExecutorServices;
+    provides org.jboss.weld.bootstrap.api.Service
+            with io.helidon.microprofile.cdi.ExecutorServices;
+
+    provides jakarta.enterprise.inject.spi.Extension
+            with io.helidon.microprofile.cdi.ExecuteOnExtension,
+                    io.helidon.microprofile.cdi.ServiceRegistryExtension;
 
     opens io.helidon.microprofile.cdi to weld.core.impl;
+
 }

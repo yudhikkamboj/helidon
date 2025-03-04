@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,24 @@
 
 package io.helidon.tests.apps.bookstore.se;
 
-import io.helidon.common.LogConfig;
 import io.helidon.common.configurable.Resource;
-import io.helidon.common.pki.KeyConfig;
+import io.helidon.common.pki.Keys;
+import io.helidon.common.tls.Tls;
 import io.helidon.config.Config;
-import io.helidon.health.HealthSupport;
-import io.helidon.health.checks.HealthChecks;
-import io.helidon.media.jackson.JacksonSupport;
-import io.helidon.media.jsonb.JsonbSupport;
-import io.helidon.media.jsonp.JsonpSupport;
-import io.helidon.metrics.MetricsSupport;
-import io.helidon.webserver.ExperimentalConfiguration;
-import io.helidon.webserver.Http2Configuration;
+import io.helidon.health.checks.DeadlockHealthCheck;
+import io.helidon.health.checks.DiskSpaceHealthCheck;
+import io.helidon.health.checks.HeapMemoryHealthCheck;
+import io.helidon.http.media.jackson.JacksonSupport;
+import io.helidon.http.media.jsonb.JsonbSupport;
+import io.helidon.http.media.jsonp.JsonpSupport;
+import io.helidon.logging.common.LogConfig;
 import io.helidon.webserver.Routing;
 import io.helidon.webserver.WebServer;
-import io.helidon.webserver.WebServerTls;
+import io.helidon.webserver.WebServerConfig;
+import io.helidon.webserver.http.HttpRouting;
+import io.helidon.webserver.observe.ObserveFeature;
+import io.helidon.webserver.observe.health.HealthObserver;
+import io.helidon.webserver.observe.metrics.MetricsObserver;
 
 /**
  * Simple Hello World rest application.
@@ -38,12 +41,6 @@ import io.helidon.webserver.WebServerTls;
 public final class Main {
 
     private static final String SERVICE_PATH = "/books";
-
-    enum JsonLibrary {
-        JSONP,
-        JSONB,
-        JACKSON
-    }
 
     /**
      * Cannot be instantiated.
@@ -77,91 +74,45 @@ public final class Main {
      * @return the created {@link WebServer} instance
      */
     static WebServer startServer(boolean ssl, boolean http2, boolean compression) {
+        WebServerConfig.Builder serverBuilder = WebServerConfig.builder();
+        setupServer(serverBuilder, ssl);
+
+        WebServer server = serverBuilder.build();
+        server.start();
+        String url = (ssl ? "https" : "http") + "://localhost:" + server.port() + SERVICE_PATH;
+        System.out.println("WEB server is up! " + url + " [ssl=" + ssl + ", http2=" + http2
+                                   + ", compression=" + compression + "]");
+
+        return server;
+    }
+
+    static void setupServer(WebServerConfig.Builder serverBuilder, boolean ssl) {
         // load logging configuration
         LogConfig.configureRuntime();
 
         // By default this will pick up application.yaml from the classpath
         Config config = Config.create();
 
+        HealthObserver health = HealthObserver.builder()
+                .useSystemServices(false)
+                .addCheck(HeapMemoryHealthCheck.create())
+                .addCheck(DiskSpaceHealthCheck.create())
+                .addCheck(DeadlockHealthCheck.create())
+                .details(true)
+                .endpoint("/health")
+                .build();
+        MetricsObserver metrics = MetricsObserver.builder()
+                .endpoint("/metrics")
+                .build();
+
         // Build server config based on params
-        WebServer server = WebServer.builder(createRouting(config))
+        serverBuilder
+                // Health at "/health", and metrics at "/metrics"
+                .addFeature(ObserveFeature.just(health, metrics))
+                .addRouting(createRouting(config))
                 .config(config.get("server"))
                 .update(it -> configureJsonSupport(it, config))
-                .update(it -> configureSsl(it, ssl))
-                .update(it -> configureHttp2(it, http2))
-                .enableCompression(compression)
-                .build();
-
-        // Start the server and print some info.
-        server.start().thenAccept(ws -> {
-            String url = (ssl ? "https" : "http") + "://localhost:" + ws.port() + SERVICE_PATH;
-            System.out.println("WEB server is up! " + url + " [ssl=" + ssl + ", http2=" + http2
-                    + ", compression=" + compression + "]");
-        });
-
-        // Server threads are not daemon. NO need to block. Just react.
-        server.whenShutdown()
-                .thenRun(() -> System.out.println("WEB server is DOWN. Good bye!"));
-
-        return server;
-    }
-
-    private static void configureJsonSupport(WebServer.Builder wsBuilder, Config config) {
-        JsonLibrary jsonLibrary = getJsonLibrary(config);
-
-        switch (jsonLibrary) {
-        case JSONP:
-            wsBuilder.addMediaSupport(JsonpSupport.create());
-            break;
-        case JSONB:
-            wsBuilder.addMediaSupport(JsonbSupport.create());
-            break;
-        case JACKSON:
-            wsBuilder.addMediaSupport(JacksonSupport.create());
-            break;
-        default:
-            throw new RuntimeException("Unknown JSON library " + jsonLibrary);
-        }
-    }
-
-    private static void configureHttp2(WebServer.Builder wsBuilder, boolean useHttp2) {
-        if (!useHttp2) {
-            return;
-        }
-        wsBuilder.experimental(
-                ExperimentalConfiguration.builder()
-                        .http2(Http2Configuration.builder().enable(true).build()).build());
-    }
-
-    private static void configureSsl(WebServer.Builder wsBuilder, boolean useSsl) {
-        if (!useSsl) {
-            return;
-        }
-
-        wsBuilder.tls(WebServerTls.builder()
-                              .privateKey(KeyConfig.keystoreBuilder()
-                                                  .keystore(Resource.create("certificate.p12"))
-                                                  .keystorePassphrase("helidon".toCharArray())
-                                                  .build())
-                              .build());
-    }
-
-    /**
-     * Creates new {@link Routing}.
-     *
-     * @param config configuration of this server
-     * @return routing configured with JSON support, a health check, and a service
-     */
-    private static Routing createRouting(Config config) {
-        HealthSupport health = HealthSupport.builder()
-                .addLiveness(HealthChecks.healthChecks())   // Adds a convenient set of checks
-                .build();
-
-        return Routing.builder()
-                .register(health)                   // Health at "/health"
-                .register(MetricsSupport.create())  // Metrics at "/metrics"
-                .register(SERVICE_PATH, new BookService(config))
-                .build();
+                .update(it -> configureSsl(it, ssl));
     }
 
     static JsonLibrary getJsonLibrary(Config config) {
@@ -170,5 +121,60 @@ public final class Main {
                 .map(String::toUpperCase)
                 .map(JsonLibrary::valueOf)
                 .orElse(JsonLibrary.JSONP);
+    }
+
+    private static void configureJsonSupport(WebServerConfig.Builder wsBuilder, Config config) {
+        JsonLibrary jsonLibrary = getJsonLibrary(config);
+
+        wsBuilder.mediaContext(context -> {
+            context.mediaSupportsDiscoverServices(false);
+            switch (jsonLibrary) {
+            case JSONP -> context.addMediaSupport(JsonpSupport.create(config));
+            case JSONB -> context.addMediaSupport(JsonbSupport.create(config));
+            case JACKSON -> context.addMediaSupport(JacksonSupport.create(config));
+            default -> throw new RuntimeException("Unknown JSON library " + jsonLibrary);
+            }
+        });
+    }
+
+    private static void configureSsl(WebServerConfig.Builder wsBuilder, boolean useSsl) {
+        if (!useSsl) {
+            return;
+        }
+
+        Keys privateKeyConfig = privateKey();
+        Tls tls = Tls.builder()
+                .privateKey(privateKeyConfig.privateKey().get())
+                .privateKeyCertChain(privateKeyConfig.certChain())
+                .build();
+
+        wsBuilder.tls(tls);
+    }
+
+    private static Keys privateKey() {
+        String password = "helidon";
+
+        return Keys.builder()
+                .keystore(keystore -> keystore.keystore(Resource.create("certificate.p12"))
+                        .passphrase(password))
+                .build();
+    }
+
+    /**
+     * Creates new {@link Routing}.
+     *
+     * @param config configuration of this server
+     * @return routing configured with JSON support, a health check, and a service
+     */
+    private static HttpRouting.Builder createRouting(Config config) {
+
+        return HttpRouting.builder()
+                .register(SERVICE_PATH, new BookService(config));
+    }
+
+    enum JsonLibrary {
+        JSONP,
+        JSONB,
+        JACKSON
     }
 }

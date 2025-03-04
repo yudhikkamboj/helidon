@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,29 @@
 
 package io.helidon.microprofile.metrics;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import io.helidon.metrics.MetricsSupport;
+import io.helidon.common.testing.junit5.OptionalMatcher;
+import io.helidon.metrics.api.Metrics;
+import io.helidon.metrics.providers.micrometer.MicrometerPrometheusFormatter;
 
 import org.eclipse.microprofile.metrics.Counter;
 import org.eclipse.microprofile.metrics.Gauge;
 import org.eclipse.microprofile.metrics.Metadata;
-import org.eclipse.microprofile.metrics.Meter;
 import org.eclipse.microprofile.metrics.MetricID;
-import org.eclipse.microprofile.metrics.MetricType;
-import org.eclipse.microprofile.metrics.MetricUnits;
-import org.eclipse.microprofile.metrics.SimpleTimer;
 import org.eclipse.microprofile.metrics.Timer;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.number.OrderingComparison.greaterThan;
 import static org.hamcrest.number.OrderingComparison.lessThan;
 
@@ -90,30 +90,12 @@ public class MetricsTest extends MetricsBaseTest {
     }
 
     @Test
-    public void testMetered1() {
-        MeteredBean bean = newBean(MeteredBean.class);
-        IntStream.range(0, 9).forEach(i -> bean.method1());
-        Meter meter = getMetric(bean, "method1");
-        assertThat(meter.getCount(), is(9L));
-        assertThat(meter.getMeanRate(), is(greaterThan(0.0)));
-    }
-
-    @Test
-    public void testMetered2() {
-        MeteredBean bean = newBean(MeteredBean.class);
-        IntStream.range(0, 12).forEach(i -> bean.method2());
-        Meter meter = getMetric(bean, "method2");
-        assertThat(meter.getCount(), is(12L));
-        assertThat(meter.getMeanRate(), is(greaterThan(0.0)));
-    }
-
-    @Test
     public void testTimed1() {
         TimedBean bean = newBean(TimedBean.class);
         IntStream.range(0, 11).forEach(i -> bean.method1());
         Timer timer = getMetric(bean, "method1");
         assertThat(timer.getCount(), is(11L));
-        assertThat(timer.getMeanRate(), is(greaterThan(0.0)));
+        assertThat(timer.getSnapshot().getMean(), is(greaterThan(0.0)));
     }
 
     @Test
@@ -122,32 +104,13 @@ public class MetricsTest extends MetricsBaseTest {
         IntStream.range(0, 14).forEach(i -> bean.method2());
         Timer timer = getMetric(bean, "method2");
         assertThat(timer.getCount(), is(14L));
-        assertThat(timer.getMeanRate(), is(greaterThan(0.0)));
-    }
-
-    @Test
-    public void testSimplyTimed1() {
-        SimplyTimedBean bean = newBean(SimplyTimedBean.class);
-        IntStream.range(0, 7).forEach(i -> bean.method1());
-        SimpleTimer simpleTimer = getMetric(bean, "method1");
-        assertThat(simpleTimer.getCount(), is(7L));
-        assertThat(simpleTimer.getElapsedTime().toNanos(), is(greaterThan(0L)));
-    }
-
-    @Test
-    public void testSimplyTimed2() {
-        SimplyTimedBean bean = newBean(SimplyTimedBean.class);
-        IntStream.range(0, 15).forEach(i -> bean.method2());
-        SimpleTimer simpleTimer = getMetric(bean, "method2");
-        assertThat(simpleTimer.getCount(), is(15L));
-        assertThat(simpleTimer.getElapsedTime().toNanos(), is(greaterThan(0L)));
+        assertThat(timer.getSnapshot().getMean(), is(greaterThan(0.0)));
     }
 
     @Test
     public void testInjection() {
         InjectedBean bean = newBean(InjectedBean.class);
         assertThat(bean.counter, notNullValue());
-        assertThat(bean.meter, notNullValue());
         assertThat(bean.timer, notNullValue());
         assertThat(bean.histogram, notNullValue());
         assertThat(bean.gaugeForInjectionTest, notNullValue());
@@ -178,13 +141,22 @@ public class MetricsTest extends MetricsBaseTest {
         bean.setValue(expectedValue);
 
         Gauge<Integer> gauge = getMetric(bean, GaugedBean.LOCAL_INJECTABLE_GAUGE_NAME);
-        String promData = MetricsSupport.toPrometheusData(
-                new MetricID(GaugedBean.LOCAL_INJECTABLE_GAUGE_NAME), gauge, true).trim();
+        MicrometerPrometheusFormatter formatter = MicrometerPrometheusFormatter.builder(Metrics.globalRegistry())
+                .scopeTagName("mp_scope")
+                .build();
+        Optional<Object> outputOpt = formatter.format();
 
-        assertThat(promData, containsString("# TYPE application_gaugeForInjectionTest_seconds gauge"));
-        assertThat(promData, containsString("\n# HELP application_gaugeForInjectionTest_seconds"));
-        assertThat(promData, containsString("\napplication_gaugeForInjectionTest_seconds "
-                + (expectedValue * 60)));
+        assertThat("Output", outputOpt, OptionalMatcher.optionalPresent());
+        assertThat("Output", outputOpt.get(), is(instanceOf(String.class)));
+
+        String promData = (String) outputOpt.get();
+
+        // The @Gauge overrides the default units. Plus, the Prometheus output from Micrometer now includes the mp_scope tag and
+        // the value formatted as a double (that's Prometheus exposition format standard).
+        assertThat(promData, containsString("# TYPE gaugeForInjectionTest_minutes gauge"));
+        assertThat(promData, containsString("# HELP gaugeForInjectionTest_minutes"));
+        assertThat(promData, containsString("gaugeForInjectionTest_minutes{mp_scope=\"application\",} "
+                + (double) expectedValue));
     }
 
     @Test
@@ -196,20 +168,16 @@ public class MetricsTest extends MetricsBaseTest {
 
     @Test
     void testOmittedDisplayName() {
-        MeteredBean bean = newBean(MeteredBean.class);
-        String metricName = MeteredBean.class.getName() + ".method1";
+        TimedBean bean = newBean(TimedBean.class);
+        String metricName = TimedBean.class.getName() + ".method1";
         Metadata metadata = getMetricRegistry().getMetadata().get(metricName);
         assertThat("Metadata for meter of annotated method", metadata, is(notNullValue()));
 
-        // The displayName value stored in the retrieved metadata should be null, but Metadata.getDisplayName() returns the name
-        // in those cases. So an easy way to check is to attempt to re-register/look up the meter using a new Metadata instance
-        // for which we know the displayName is null.
         Metadata newMetadata = Metadata.builder()
                 .withName(metadata.getName())
-                .withType(MetricType.METERED)
-                .withUnit(MetricUnits.PER_SECOND)
+                .withUnit(metadata.getUnit())
                 .build();
         // Should return the existing meter. Throws exception if metadata is mismatched.
-        Meter meter = getMetricRegistry().meter(newMetadata);
+        Timer timer = getMetricRegistry().timer(newMetadata);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ConcurrentHashMap;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.security.AuthenticationResponse;
 import io.helidon.security.EndpointConfig;
 import io.helidon.security.OutboundSecurityResponse;
@@ -76,7 +77,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
     private final Map<String, InboundClientDefinition> inboundKeys;
     private final OutboundConfig outboundConfig;
     // cache of target name to a signature configuration for outbound calls
-    private final Map<String, OutboundTargetDefinition> targetKeys = new HashMap<>();
+    private final Map<String, OutboundTargetDefinition> targetKeys = new ConcurrentHashMap<>();
     private final boolean backwardCompatibleEol;
 
     private HttpSignProvider(Builder builder) {
@@ -93,7 +94,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
 
         outboundConfig.targets().forEach(target -> target.getConfig().ifPresent(targetConfig -> {
             OutboundTargetDefinition outboundTargetDefinition = targetConfig.get("signature")
-                    .as(OutboundTargetDefinition::create)
+                    .map(OutboundTargetDefinition::create)
                     .get();
             targetKeys.put(target.name(), outboundTargetDefinition);
         }));
@@ -119,26 +120,21 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
     }
 
     @Override
-    public CompletionStage<AuthenticationResponse> authenticate(ProviderRequest providerRequest) {
+    public AuthenticationResponse authenticate(ProviderRequest providerRequest) {
         Map<String, List<String>> headers = providerRequest.env().headers();
 
         if ((headers.get("Signature") != null) && acceptHeaders.contains(HttpSignHeader.SIGNATURE)) {
-            return CompletableFuture
-                    .supplyAsync(() -> signatureHeader(headers.get("Signature"), providerRequest.env()),
-                                 providerRequest.securityContext().executorService());
+            return signatureHeader(headers.get("Signature"), providerRequest.env());
         } else if ((headers.get("Authorization") != null) && acceptHeaders.contains(HttpSignHeader.AUTHORIZATION)) {
             // TODO when authorization header in use and "authorization" is also a
             // required header to be signed, we must either fail or ignore, as we cannot sign ourselves
-            return CompletableFuture
-                    .supplyAsync(() -> authorizeHeader(providerRequest.env()),
-                                 providerRequest.securityContext().executorService());
+            return authorizeHeader(providerRequest.env());
         }
 
         if (optional) {
-            return CompletableFuture.completedFuture(AuthenticationResponse.abstain());
+            return AuthenticationResponse.abstain();
         }
-        return CompletableFuture
-                .completedFuture(AuthenticationResponse.failed("Missing header. Accepted headers: " + acceptHeaders));
+        return AuthenticationResponse.failed("Missing header. Accepted headers: " + acceptHeaders);
     }
 
     private AuthenticationResponse authorizeHeader(SecurityEnvironment env) {
@@ -254,12 +250,10 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
     }
 
     @Override
-    public CompletionStage<OutboundSecurityResponse> outboundSecurity(ProviderRequest providerRequest,
-                                                                      SecurityEnvironment outboundEnv,
-                                                                      EndpointConfig outboundConfig) {
-
-        return CompletableFuture.supplyAsync(() -> signRequest(outboundEnv),
-                                             providerRequest.securityContext().executorService());
+    public OutboundSecurityResponse outboundSecurity(ProviderRequest providerRequest,
+                                                     SecurityEnvironment outboundEnv,
+                                                     EndpointConfig outboundConfig) {
+        return signRequest(outboundEnv);
     }
 
     private OutboundSecurityResponse signRequest(SecurityEnvironment outboundEnv) {
@@ -316,17 +310,20 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
     /**
      * Fluent API builder for this provider. Call {@link #build()} to create a provider instance.
      */
+    @Configured(prefix = HttpSignService.PROVIDER_CONFIG_KEY,
+                description = "HTTP header signature provider.",
+                provides = {AuthenticationProvider.class})
     public static final class Builder implements io.helidon.common.Builder<Builder, HttpSignProvider> {
+
+        private static final String DEFAULT_REALM_VALUE = "helidon";
+
         private boolean optional = true;
-        private String realm = "helidon";
+        private String realm = DEFAULT_REALM_VALUE;
         private final Set<HttpSignHeader> acceptHeaders = EnumSet.noneOf(HttpSignHeader.class);
         private SignedHeadersConfig inboundRequiredHeaders = SignedHeadersConfig.builder().build();
         private OutboundConfig outboundConfig = OutboundConfig.builder().build();
         private final Map<String, InboundClientDefinition> inboundKeys = new HashMap<>();
-        // not to self - we need to switch default to false in 3.0.0
-        // and probably remove this in 4.0.0
-        @Deprecated
-        private boolean backwardCompatibleEol = true;
+        private boolean backwardCompatibleEol = false;
 
         private Builder() {
         }
@@ -346,11 +343,11 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
             config.get("headers").asList(HttpSignHeader.class).ifPresent(list -> list.forEach(this::addAcceptHeader));
             config.get("optional").asBoolean().ifPresent(this::optional);
             config.get("realm").asString().ifPresent(this::realm);
-            config.get("sign-headers").as(SignedHeadersConfig::create).ifPresent(this::inboundRequiredHeaders);
+            config.get("sign-headers").map(SignedHeadersConfig::create).ifPresent(this::inboundRequiredHeaders);
             outboundConfig = OutboundConfig.create(config);
 
             config.get("inbound.keys")
-                    .asList(InboundClientDefinition::create)
+                    .mapList(InboundClientDefinition::create)
                     .ifPresent(list -> list.forEach(inbound -> inboundKeys.put(inbound.keyId(), inbound)));
 
             config.get("backward-compatible-eol").asBoolean().ifPresent(this::backwardCompatibleEol);
@@ -390,6 +387,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
          * @param targets targets to select correct outbound security
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "outbound")
         public Builder outbound(OutboundConfig targets) {
             this.outboundConfig = targets;
             return this;
@@ -420,6 +418,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
          * @param client a single client configuration for inbound communication
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "inbound.keys", kind = ConfiguredOption.Kind.LIST)
         public Builder addInbound(InboundClientDefinition client) {
             this.inboundKeys.put(client.keyId(), client);
             return this;
@@ -441,6 +440,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
          * @param inboundRequiredHeaders headers configuration
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "sign-headers", type = SignedHeadersConfig.HeadersConfig.class, kind = ConfiguredOption.Kind.LIST)
         public Builder inboundRequiredHeaders(SignedHeadersConfig inboundRequiredHeaders) {
             this.inboundRequiredHeaders = inboundRequiredHeaders;
             return this;
@@ -453,6 +453,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
          * @param header header to look for signature
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "headers", kind = ConfiguredOption.Kind.LIST)
         public Builder addAcceptHeader(HttpSignHeader header) {
             this.acceptHeaders.add(header);
             return this;
@@ -467,6 +468,7 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
          * @param optional true for optional singatures
          * @return updated builder instance
          */
+        @ConfiguredOption("true")
         public Builder optional(boolean optional) {
             this.optional = optional;
             return this;
@@ -479,19 +481,25 @@ public final class HttpSignProvider implements AuthenticationProvider, OutboundS
          * @param realm realm to challenge with, defautls to "helidon"
          * @return updated builder instance
          */
+        @ConfiguredOption(DEFAULT_REALM_VALUE)
         public Builder realm(String realm) {
             this.realm = realm;
             return this;
         }
 
         /**
-         * Until version 3.0.0 (exclusive) there is a trailing end of line added to the signed
+         * Enable support for Helidon versions before 3.0.0 (exclusive).
+         * <p>
+         * Until version 3.0.0 (exclusive) there was a trailing end of line added to the signed
          * data.
-         * To be able to communicate cross versions, we must configure this for newer versions
+         * To be able to communicate cross versions, we must configure this when talking to older versions of Helidon.
+         * Default value is {@code false}. In Helidon 2.x, this switch exists as well and the default is {@code true}, to
+         * allow communication between versions as needed.
          *
          * @param backwardCompatible whether to run in backward compatible mode
          * @return updated builder instance
          */
+        @ConfiguredOption("false")
         public Builder backwardCompatibleEol(Boolean backwardCompatible) {
             this.backwardCompatibleEol = backwardCompatible;
             return this;

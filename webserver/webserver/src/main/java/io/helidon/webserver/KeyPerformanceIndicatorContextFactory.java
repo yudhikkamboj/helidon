@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,9 @@
  */
 package io.helidon.webserver;
 
-import io.helidon.webserver.KeyPerformanceIndicatorSupport.Context;
-import io.helidon.webserver.KeyPerformanceIndicatorSupport.Metrics;
-
 class KeyPerformanceIndicatorContextFactory {
 
-    static Context immediateRequestContext() {
+    static KeyPerformanceIndicatorSupport.Context immediateRequestContext() {
         return new ImmediateRequestContext();
     }
 
@@ -31,15 +28,15 @@ class KeyPerformanceIndicatorContextFactory {
     private KeyPerformanceIndicatorContextFactory() {
     }
 
-    private static class ImmediateRequestContext implements Context {
+    private static class ImmediateRequestContext implements KeyPerformanceIndicatorSupport.Context {
 
         // kpiMetrics is set from MetricsSupport, so in apps without metrics kpiMetrics will be null in this context.
-        private Metrics kpiMetrics;
+        private KeyPerformanceIndicatorSupport.Metrics kpiMetrics;
 
         private long requestStartTime;
 
         @Override
-        public void requestHandlingStarted(Metrics kpiMetrics) {
+        public void requestHandlingStarted(KeyPerformanceIndicatorSupport.Metrics kpiMetrics) {
             recordStartTime();
             kpiMetrics(kpiMetrics);
             kpiMetrics.onRequestReceived();
@@ -57,11 +54,11 @@ class KeyPerformanceIndicatorContextFactory {
             requestStartTime = System.currentTimeMillis();
         }
 
-        protected void kpiMetrics(Metrics kpiMetrics) {
+        protected void kpiMetrics(KeyPerformanceIndicatorSupport.Metrics kpiMetrics) {
             this.kpiMetrics = kpiMetrics;
         }
 
-        protected Metrics kpiMetrics() {
+        protected KeyPerformanceIndicatorSupport.Metrics kpiMetrics() {
             return kpiMetrics;
         }
     }
@@ -72,7 +69,7 @@ class KeyPerformanceIndicatorContextFactory {
         private boolean isStartRecorded = false;
 
         @Override
-        public void requestHandlingStarted(Metrics kpiMetrics) {
+        public void requestHandlingStarted(KeyPerformanceIndicatorSupport.Metrics kpiMetrics) {
             kpiMetrics(kpiMetrics);
             recordStartTime(); // In case no handler in the chain manages the start-of-processing moment.
             kpiMetrics.onRequestReceived();
@@ -95,7 +92,7 @@ class KeyPerformanceIndicatorContextFactory {
 
         private void recordProcessingStarted() {
             isStartRecorded = true;
-            Metrics kpiMetrics = kpiMetrics();
+            KeyPerformanceIndicatorSupport.Metrics kpiMetrics = kpiMetrics();
             if (kpiMetrics != null) {
                 kpiMetrics().onRequestStarted();
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,39 +14,52 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Implementation of a layer that binds microprofile components together and
  * runs an HTTP server.
  */
+@Feature(value = "Server",
+        description = "Server for Helidon MP",
+        in = HelidonFlavor.MP,
+        path = "Server"
+)
 module io.helidon.microprofile.server {
-    requires transitive io.helidon.webserver;
-    requires transitive io.helidon.webserver.jersey;
-    requires transitive io.helidon.common.context;
-    requires transitive io.helidon.jersey.server;
-
-    requires transitive io.helidon.microprofile.cdi;
 
     requires io.helidon.config.mp;
+    requires io.helidon.common.resumable;
+    requires io.helidon.jersey.media.jsonp;
     requires io.helidon.microprofile.config;
-    requires transitive jakarta.cdi;
-    requires transitive jakarta.ws.rs;
-    requires jakarta.interceptor.api;
-    requires jakarta.json;
-
-    requires java.logging;
-    requires io.helidon.common.serviceloader;
     requires io.helidon.webserver.staticcontent;
-
-    // there is now a hardcoded dependency on Weld, to configure additional bean defining annotation
-    requires java.management;
+    requires java.management; // there is now a hardcoded dependency on Weld, to configure additional bean defining annotation
     requires microprofile.config.api;
+
+    requires static io.helidon.common.features.api;
+    requires static io.helidon.config.metadata;
+
+    requires transitive io.helidon.common.configurable;
+    requires transitive io.helidon.common.context;
+    requires transitive io.helidon.jersey.server;
+    requires transitive io.helidon.microprofile.cdi;
+    requires transitive io.helidon.webserver.context;
+    requires transitive io.helidon.webserver;
+    requires transitive io.helidon.webserver.observe;
+    requires transitive jakarta.validation;
+    requires transitive jakarta.cdi;
+    requires transitive jakarta.json;
+    requires transitive jakarta.ws.rs;
 
     exports io.helidon.microprofile.server;
 
-    provides jakarta.enterprise.inject.spi.Extension with
-            io.helidon.microprofile.server.ServerCdiExtension,
-            io.helidon.microprofile.server.JaxRsCdiExtension;
+    provides jakarta.enterprise.inject.spi.Extension
+            with io.helidon.microprofile.server.ServerCdiExtension, io.helidon.microprofile.server.JaxRsCdiExtension;
 
-    // needed when running with modules - to make private methods accessible
-    opens io.helidon.microprofile.server to weld.core.impl, io.helidon.microprofile.cdi;
+    provides org.glassfish.jersey.internal.inject.InjectionManagerFactory
+            with io.helidon.microprofile.server.HelidonHK2InjectionManagerFactory;
+
+    // needed when running with modules - to make private methods and types accessible
+    opens io.helidon.microprofile.server;
+
 }

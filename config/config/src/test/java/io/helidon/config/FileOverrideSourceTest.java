@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,8 @@ import java.util.Optional;
 
 import io.helidon.config.spi.ConfigContent;
 import io.helidon.config.spi.OverrideSource;
-import io.helidon.config.test.infra.TemporaryFolderExt;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -36,9 +34,6 @@ import static org.hamcrest.core.Is.is;
 public class FileOverrideSourceTest {
 
     private static final String RELATIVE_PATH_TO_RESOURCE = "/src/test/resources/";
-
-    @RegisterExtension
-    static TemporaryFolderExt folder = TemporaryFolderExt.build();
 
     private static String getDir() {
         return Paths.get("").toAbsolutePath() + RELATIVE_PATH_TO_RESOURCE;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,14 @@
 package io.helidon.config;
 
 import java.io.IOException;
+import java.lang.System.Logger.Level;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -32,8 +34,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import io.helidon.config.spi.ChangeEventType;
 import io.helidon.config.spi.ChangeWatcher;
@@ -66,7 +66,7 @@ import static java.nio.file.StandardWatchEventKinds.OVERFLOW;
  */
 public final class FileSystemWatcher implements ChangeWatcher<Path> {
 
-    private static final Logger LOGGER = Logger.getLogger(FileSystemWatcher.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(FileSystemWatcher.class.getName());
 
     /*
      * Configurable options through builder.
@@ -257,24 +257,24 @@ public final class FileSystemWatcher implements ChangeWatcher<Path> {
                 eventPath = watchedDir.resolve(eventPath);
                 WatchEvent.Kind<Path> kind = event.kind();
                 if (kind.equals(OVERFLOW)) {
-                    LOGGER.finest("Overflow event on path: " + eventPath);
+                    LOGGER.log(Level.DEBUG, "Overflow event on path: " + eventPath);
                     continue;
                 }
 
                 if (kind.equals(ENTRY_CREATE)) {
-                    LOGGER.finest("Entry created. Path: " + eventPath);
+                    LOGGER.log(Level.DEBUG, "Entry created. Path: " + eventPath);
                     listener.accept(ChangeEvent.create(eventPath, ChangeEventType.CREATED));
                 } else if (kind == ENTRY_DELETE) {
-                    LOGGER.finest("Entry deleted. Path: " + eventPath);
+                    LOGGER.log(Level.DEBUG, "Entry deleted. Path: " + eventPath);
                     listener.accept(ChangeEvent.create(eventPath, ChangeEventType.DELETED));
                 } else if (kind == ENTRY_MODIFY) {
-                    LOGGER.finest("Entry changed. Path: " + eventPath);
+                    LOGGER.log(Level.DEBUG, "Entry changed. Path: " + eventPath);
                     listener.accept(ChangeEvent.create(eventPath, ChangeEventType.CHANGED));
                 }
             }
 
             if (!key.reset()) {
-                LOGGER.log(Level.FINE, () -> "Directory of '" + target + "' is no more valid to be watched.");
+                LOGGER.log(Level.TRACE, "Directory of '" + target + "' is no more valid to be watched.");
                 failed = true;
             }
         }
@@ -305,7 +305,7 @@ public final class FileSystemWatcher implements ChangeWatcher<Path> {
                     oldWatchKey.cancel();
                 }
             } catch (IOException e) {
-                LOGGER.log(Level.FINEST, "Failed to register watch service", e);
+                LOGGER.log(Level.TRACE, "Failed to register watch service", e);
                 this.failed = true;
             }
 
@@ -329,7 +329,7 @@ public final class FileSystemWatcher implements ChangeWatcher<Path> {
             try {
                 watchService.close();
             } catch (IOException e) {
-                LOGGER.log(Level.FINE, "Failed to close watch service", e);
+                LOGGER.log(Level.TRACE, "Failed to close watch service", e);
             }
         }
 
@@ -342,7 +342,7 @@ public final class FileSystemWatcher implements ChangeWatcher<Path> {
         }
 
         private Path parentDir(Path path) {
-            Path parent = path.getParent();
+            Path parent = path.toAbsolutePath().getParent();
             if (parent == null) {
                 throw new ConfigException(
                         String.format("Cannot find parent directory for '%s' to register watch service.", path));
@@ -414,12 +414,38 @@ public final class FileSystemWatcher implements ChangeWatcher<Path> {
          * @param initialDelay initial delay before regular scheduling starts
          * @param delay delay between schedules
          * @param timeUnit time unit of the delays
-         * @return updated builer instance
+         * @return updated builder instance
+         * @deprecated use {@link #initialDelay(Duration)} and {@link #delay(Duration)} instead
          */
+        @Deprecated(since = "4.0.0")
         public Builder schedule(long initialDelay, long delay, TimeUnit timeUnit) {
             this.initialDelay = initialDelay;
             this.delay = delay;
             this.timeUnit = timeUnit;
+            return this;
+        }
+
+        /**
+         * Configure an initial delay before regular scheduling starts.
+         *
+         * @param initialDelay initial delay
+         * @return updated builder instance
+         */
+        public Builder initialDelay(Duration initialDelay) {
+            this.initialDelay = initialDelay.toMillis();
+            this.timeUnit = TimeUnit.MILLISECONDS;
+            return this;
+        }
+
+        /**
+         * Configure a delay between schedules.
+         *
+         * @param delay delay between schedules
+         * @return updated builder instance
+         */
+        public Builder delay(Duration delay) {
+            this.delay = delay.toMillis();
+            this.timeUnit = TimeUnit.MILLISECONDS;
             return this;
         }
 

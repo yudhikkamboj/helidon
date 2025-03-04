@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,22 +21,23 @@ import io.helidon.config.etcd.EtcdWatcherProvider;
  */
 module io.helidon.config.etcd {
 
-    requires java.logging;
-    requires transitive io.helidon.config;
-    requires etcd4j;
-    requires grpc.protobuf;
-    requires grpc.stub;
-    requires com.google.protobuf;
     requires com.google.common;
-    requires io.helidon.common;
-    requires io.helidon.common.media.type;
+    requires com.google.protobuf;
+    requires etcd4j;
     requires io.grpc;
-    // TODO 3.0.0-JAKARTA
-    // used only for compilation of generated classes
+    requires io.grpc.protobuf;
+    requires io.grpc.stub;
+    requires io.helidon.common.media.type;
+    requires io.helidon.common;
+    requires io.helidon.webclient.grpc;
+
     requires static java.annotation;
+
+    requires transitive io.helidon.config;
 
     exports io.helidon.config.etcd;
 
     provides io.helidon.config.spi.ConfigSourceProvider with io.helidon.config.etcd.EtcdConfigSourceProvider;
     provides io.helidon.config.spi.ChangeWatcherProvider with EtcdWatcherProvider;
+
 }

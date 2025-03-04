@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,13 +40,13 @@ import java.util.logging.LogRecord;
  */
 public class AccessLogHandler extends FileHandler {
     /**
-     * Construct a default {@code AccessLogHandler}.  This will be configured
-     * entirely from {@link java.util.logging.LogManager} properties (or their default values).
-     * <p>
-     * @exception IOException if there are IO problems opening the files.
-     * @exception SecurityException  if a security manager exists and if
-     *             the caller does not have <code>LoggingPermission("control"))</code>.
-     * @exception NullPointerException if pattern property is an empty String.
+     * Construct a default {@code AccessLogHandler}. This will be configured
+     * entirely from {@link System.Logger}.
+     *
+     * @throws java.io.IOException  if there are IO problems opening the files.
+     * @throws SecurityException    if a security manager exists and if
+     *                              the caller does not have <code>LoggingPermission("control"))</code>.
+     * @throws NullPointerException if pattern property is an empty String.
      */
     public AccessLogHandler() throws IOException, SecurityException {
         super();

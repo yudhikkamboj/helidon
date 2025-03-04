@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,14 @@
 
 package io.helidon.microprofile.metrics;
 
+import java.lang.System.Logger.Level;
 import java.lang.reflect.Executable;
 import java.time.Duration;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.metrics.serviceapi.PostRequestMetricsSupport;
-import io.helidon.servicecommon.restcdi.HelidonInterceptor;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
+import io.helidon.microprofile.servicecommon.HelidonInterceptor;
+import io.helidon.webserver.http.ServerRequest;
+import io.helidon.webserver.http.ServerResponse;
+import io.helidon.webserver.observe.metrics.PostRequestMetricsSupport;
 
 import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
@@ -56,7 +55,7 @@ final class InterceptorSyntheticRestRequest extends HelidonInterceptor.Base<Synt
         implements HelidonInterceptor<SyntheticRestRequestWorkItem> {
 
 
-    private static final Logger LOGGER = Logger.getLogger(InterceptorSyntheticRestRequest.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(InterceptorSyntheticRestRequest.class.getName());
 
     private long startNanos;
 
@@ -73,12 +72,12 @@ final class InterceptorSyntheticRestRequest extends HelidonInterceptor.Base<Synt
 
     @Override
     public void preInvocation(InvocationContext context, SyntheticRestRequestWorkItem workItem) {
-        MetricsInterceptorBase.verifyMetric(workItem.successfulSimpleTimerMetricID(),
-                                            workItem.successfulSimpleTimer());
+        MetricsInterceptorBase.verifyMetric(workItem.successfulTimerMetricID(),
+                                            workItem.successfulTimer());
         MetricsInterceptorBase.verifyMetric(workItem.unmappedExceptionCounterMetricID(),
                                             workItem.unmappedExceptionCounter());
-        if (LOGGER.isLoggable(Level.FINEST)) {
-            LOGGER.log(Level.FINEST, String.format(
+        if (LOGGER.isLoggable(Level.TRACE)) {
+            LOGGER.log(Level.TRACE, String.format(
                     "%s (%s) is starting processing of a REST request on %s triggered by @%s",
                     getClass().getSimpleName(),
                     MetricsInterceptorBase.ActionType.PREINVOKE,
@@ -105,7 +104,7 @@ final class InterceptorSyntheticRestRequest extends HelidonInterceptor.Base<Synt
                 // Because our SimpleTimer implementation does not update the metric if the elapsed time is 0, make sure to record
                 // a duration of at least 1 nanosecond.
                 long elapsedNanos = endNanos > startNanos ? endNanos - startNanos : 1;
-                workItem.successfulSimpleTimer().update(Duration.ofNanos(elapsedNanos));
+                workItem.successfulTimer().update(Duration.ofNanos(elapsedNanos));
             } else {
                 workItem.unmappedExceptionCounter().inc();
             }

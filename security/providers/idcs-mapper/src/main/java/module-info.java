@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,26 +14,39 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Aot;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * IDCS role mapper.
  */
+@Feature(value = "IDCS Role Mapper",
+        description = "Security provider role mapping - Oracle IDCS",
+        in = {HelidonFlavor.SE, HelidonFlavor.MP},
+        path = {"Security", "Provider", "IdcsRoleMapper"}
+)
+@Aot(false)
 module io.helidon.security.providers.idcs.mapper {
+
+    requires io.helidon.common.context;
+    requires io.helidon.common;
+    requires io.helidon.security.integration.common;
+    requires io.helidon.security.providers.common;
+    requires io.helidon.security.util;
+
+    requires static io.helidon.common.features.api;
+    requires static io.helidon.config.metadata;
+
     requires transitive io.helidon.config;
-    requires transitive io.helidon.common;
-    requires transitive io.helidon.security;
-    requires transitive io.helidon.security.providers.common;
     requires transitive io.helidon.security.jwt;
     requires transitive io.helidon.security.providers.oidc.common;
+    requires transitive io.helidon.security;
 
-    requires io.helidon.security.integration.common;
-    requires io.helidon.security.util;
-    requires io.helidon.webclient;
-    requires java.logging;
-
-    requires jersey.client;
     requires jakarta.ws.rs;
 
     exports io.helidon.security.providers.idcs.mapper;
 
     provides io.helidon.security.spi.SecurityProviderService with io.helidon.security.providers.idcs.mapper.IdcsRoleMapperProviderService;
+
 }

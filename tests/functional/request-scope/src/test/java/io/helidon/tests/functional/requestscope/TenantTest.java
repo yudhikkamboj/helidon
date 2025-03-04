@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 import io.helidon.faulttolerance.Async;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
-import io.netty.handler.codec.http.HttpResponseStatus;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.client.WebTarget;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -65,7 +65,7 @@ class TenantTest {
         CompletableFuture.allOf(futures).join();
         for (int i = 0; i < CONCURRENT_REQS; i++) {
             Response r = (Response) futures[i].get();
-            assertThat(r.getStatus(), is(HttpResponseStatus.OK.code()));
+            assertThat(r.getStatus(), is(Status.OK.getStatusCode()));
             if (entityValue != null) {
                 String value = r.readEntity(String.class);
                 assertThat(entityValue, is(value));
@@ -80,7 +80,7 @@ class TenantTest {
                 .queryParam("param1", "1")
                 .request()
                 .get();
-        assertThat(r.getStatus(), is(HttpResponseStatus.OK.code()));
+        assertThat(r.getStatus(), is(Status.OK.getStatusCode()));
         String entityValue = r.readEntity(String.class);
         assertThat(entityValue, is("1"));
     }
@@ -92,7 +92,7 @@ class TenantTest {
                 .request()
                 .header("x-tenant-id", "1")
                 .get();
-        assertThat(r.getStatus(), is(HttpResponseStatus.OK.code()));
+        assertThat(r.getStatus(), is(Status.OK.getStatusCode()));
         String entityValue = r.readEntity(String.class);
         assertThat(entityValue, is("1"));
     }

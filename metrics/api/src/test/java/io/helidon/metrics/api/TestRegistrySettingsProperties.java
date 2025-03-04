@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package io.helidon.metrics.api;
 import io.helidon.config.Config;
 import io.helidon.config.ConfigSources;
 
-import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -27,26 +26,44 @@ import static org.hamcrest.Matchers.is;
 
 public class TestRegistrySettingsProperties {
 
-    private static Config metricsConfig;
+    private static Config metricsConfigNode;
+    private static Config fromYaml;
 
     @BeforeAll
     static void prep() {
-        metricsConfig = Config.create(ConfigSources.classpath("registrySettings.properties")).get("metrics");
+        metricsConfigNode = Config.just(ConfigSources.classpath("registrySettings.properties")).get("metrics");
+        fromYaml = Config.create(ConfigSources.classpath("scopeSettings.yaml")).get("metrics");
     }
 
     @Test
     void testInclude() {
-        MetricsSettings metricsSettings = MetricsSettings.create(metricsConfig);
+        MetricsConfig metricsConfig = MetricsConfig.create(metricsConfigNode);
         assertThat("'pass.me' metric is enabled",
-                   metricsSettings.registrySettings(MetricRegistry.Type.VENDOR).isMetricEnabled("pass.me"),
+                   metricsConfig.scoping().scopes().get("vendor").isMeterEnabled("pass.me"),
                    is(true));
     }
 
     @Test
     void testExclude() {
-        MetricsSettings metricsSettings = MetricsSettings.create(metricsConfig);
+        MetricsConfig metricsConfig = MetricsConfig.create(metricsConfigNode);
         assertThat("'ignore.me' metric is enabled",
-                   metricsSettings.registrySettings(MetricRegistry.Type.VENDOR).isMetricEnabled("ignore.me"),
+                   metricsConfig.scoping().scopes().get("vendor").isMeterEnabled("ignore.me"),
+                   is(false));
+    }
+
+    @Test
+    void testIncludeYaml() {
+        MetricsConfig metricsConfig = MetricsConfig.create(fromYaml);
+        assertThat("'pass.me' metric is enabled",
+                   metricsConfig.scoping().scopes().get("vendor").isMeterEnabled("pass.me"),
+                   is(true));
+    }
+
+    @Test
+    void testExcludeYaml() {
+        MetricsConfig metricsConfig = MetricsConfig.create(fromYaml);
+        assertThat("'ignore.me' metric is enabled",
+                   metricsConfig.scoping().scopes().get("vendor").isMeterEnabled("ignore.me"),
                    is(false));
     }
 }

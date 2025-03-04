@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,30 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+import io.helidon.common.features.api.Preview;
+
 /**
  * Neo4j support module.
  */
+@Preview
+@Feature(value = "Neo4j integration",
+         description = "Integration with Neo4j driver",
+         in = HelidonFlavor.SE,
+         path = "Neo4j"
+)
+@SuppressWarnings({ "requires-automatic"})
 module io.helidon.integrations.neo4j {
-    requires java.logging;
 
-    requires static jakarta.cdi;
-    requires static jakarta.inject;
-    requires static jakarta.interceptor.api;
-    requires static io.helidon.config;
-    requires static io.helidon.config.mp;
+    requires io.helidon.common;
 
-    requires org.neo4j.driver;
+    requires static io.helidon.common.features.api;
+    requires static io.helidon.config.metadata;
+
+    requires transitive io.helidon.common.config;
+    requires transitive org.neo4j.driver;
 
     exports io.helidon.integrations.neo4j;
 
-    provides jakarta.enterprise.inject.spi.Extension with io.helidon.integrations.neo4j.Neo4jCdiExtension;
 }

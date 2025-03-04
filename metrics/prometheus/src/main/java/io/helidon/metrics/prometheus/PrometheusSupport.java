@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,17 @@ package io.helidon.metrics.prometheus;
 
 import java.util.Enumeration;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
-import io.helidon.common.http.MediaType;
-import io.helidon.webserver.Routing;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
-import io.helidon.webserver.Service;
+import io.helidon.http.HttpMediaType;
+import io.helidon.webserver.http.HttpRouting;
+import io.helidon.webserver.http.HttpRules;
+import io.helidon.webserver.http.HttpService;
+import io.helidon.webserver.http.ServerRequest;
+import io.helidon.webserver.http.ServerResponse;
+import io.helidon.webserver.servicecommon.HelidonFeatureSupport;
 
 import io.prometheus.client.Collector;
 import io.prometheus.client.CollectorRegistry;
@@ -32,40 +36,50 @@ import io.prometheus.client.CollectorRegistry;
 /**
  * Support for Prometheus client endpoint.
  * <p>
- * Default and simplest use on {@link Routing} creates {@code /metrics} endpoint
+ * Default and simplest use on {@link HttpRouting} creates {@code /metrics} endpoint
  * for {@link CollectorRegistry default CollectorRegistry}.
  * <pre>{@code
- * Routing.builder()
- *        .register(PrometheusSupport.create())
+ * HttpRouting.builder()
+ *        ..addFeature(PrometheusSupport.create())
  * }</pre>
- * <p>
- * It is possible to use
  */
-public final class PrometheusSupport implements Service {
+public final class PrometheusSupport extends HelidonFeatureSupport {
+
+    private static final System.Logger LOGGER = System.getLogger(PrometheusSupport.class.getName());
 
     /**
      * Standard path of Prometheus client resource: {@code /metrics}.
      */
     private static final String DEFAULT_PATH = "/metrics";
 
-    private static final MediaType CONTENT_TYPE = MediaType.parse("text/plain; version=0.0.4; charset=utf-8");
+    private static final HttpMediaType CONTENT_TYPE = HttpMediaType.create("text/plain; version=0.0.4; charset=utf-8");
 
     private final CollectorRegistry collectorRegistry;
     private final String path;
 
-    private PrometheusSupport(CollectorRegistry collectorRegistry, String path) {
-        this.collectorRegistry = collectorRegistry == null ? CollectorRegistry.defaultRegistry : collectorRegistry;
-        this.path = path == null ? DEFAULT_PATH : path;
+    private PrometheusSupport(Builder builder) {
+        super(LOGGER, builder, "prometheus");
+        this.collectorRegistry = builder.registry;
+        this.path = builder.path;
     }
 
-    @Override
-    public void update(Routing.Rules rules) {
+    private void configureRoutes(HttpRules rules) {
         rules.get(path, this::process);
     }
 
+    @Override
+    public Optional<HttpService> service() {
+            return Optional.of(this::configureRoutes);
+    }
+
     private void process(ServerRequest req, ServerResponse res) {
-        Set<String> filters = new HashSet<>(req.queryParams().all("name[]"));
-        Enumeration<Collector.MetricFamilySamples> mfs = collectorRegistry.filteredMetricFamilySamples(filters);
+        // Recent releases of the Prometheus client append suffixes such as "_total" to the meter names. To preserve the
+        // outward behavior of this endpoint where the query parameter specifies the base name (without the suffix),
+        // pass a predicate for filtering rather than just the set of strings of base names.
+        Set<String> filters = new HashSet<>(req.query().all("name[]", List::of));
+        Enumeration<Collector.MetricFamilySamples> mfs = collectorRegistry.filteredMetricFamilySamples(candidate ->
+                filters.isEmpty() || filters.stream().anyMatch(candidate::startsWith));
+
         res.headers().contentType(CONTENT_TYPE);
         res.send(compose(mfs));
     }
@@ -170,7 +184,7 @@ public final class PrometheusSupport implements Service {
      * @see #builder()
      */
     public static PrometheusSupport create(CollectorRegistry collectorRegistry) {
-        return new PrometheusSupport(collectorRegistry, DEFAULT_PATH);
+        return builder().collectorRegistry(collectorRegistry).build();
     }
 
     /**
@@ -182,7 +196,7 @@ public final class PrometheusSupport implements Service {
      * @see #builder()
      */
     public static PrometheusSupport create() {
-        return create(null);
+        return builder().build();
     }
 
     /**
@@ -199,12 +213,13 @@ public final class PrometheusSupport implements Service {
     /**
      * A builder of {@link PrometheusSupport}.
      */
-    public static final class Builder implements io.helidon.common.Builder<Builder, PrometheusSupport> {
+    public static final class Builder extends HelidonFeatureSupport.Builder<Builder, PrometheusSupport> {
 
         private CollectorRegistry registry = CollectorRegistry.defaultRegistry;
-        private String path;
+        private String path = DEFAULT_PATH;
 
         private Builder() {
+            super("/");
         }
 
         /**
@@ -235,7 +250,7 @@ public final class PrometheusSupport implements Service {
 
         @Override
         public PrometheusSupport build() {
-            return new PrometheusSupport(registry, path == null ? DEFAULT_PATH : path);
+            return new PrometheusSupport(this);
         }
     }
 }

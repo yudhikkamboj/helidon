@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,30 +19,26 @@ package io.helidon.microprofile.grpc.client;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 import io.helidon.common.Builder;
-import io.helidon.grpc.client.ClientMethodDescriptor;
-import io.helidon.grpc.client.ClientServiceDescriptor;
+import io.helidon.grpc.api.Grpc;
 import io.helidon.grpc.core.MethodHandler;
 import io.helidon.microprofile.grpc.core.AbstractServiceBuilder;
 import io.helidon.microprofile.grpc.core.AnnotatedMethod;
 import io.helidon.microprofile.grpc.core.AnnotatedMethodList;
-import io.helidon.microprofile.grpc.core.GrpcMarshaller;
-import io.helidon.microprofile.grpc.core.GrpcMethod;
-import io.helidon.microprofile.grpc.core.Instance;
+import io.helidon.microprofile.grpc.core.InstanceSupplier;
 import io.helidon.microprofile.grpc.core.ModelHelper;
 
+import static java.lang.System.Logger.Level;
+
 /**
- * A builder for constructing a {@link ClientServiceDescriptor.Builder} instances
+ * A builder for constructing a {@link io.helidon.microprofile.grpc.client.ClientServiceDescriptor} instances
  * from an annotated POJO.
  */
-class GrpcClientBuilder
-        extends AbstractServiceBuilder
+class GrpcClientBuilder extends AbstractServiceBuilder
         implements Builder<GrpcClientBuilder, ClientServiceDescriptor.Builder> {
 
-    private static final Logger LOGGER = Logger.getLogger(GrpcClientBuilder.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(GrpcClientBuilder.class.getName());
 
     /**
      * Create a {@link GrpcClientBuilder} for a given gRPC service class.
@@ -63,7 +59,7 @@ class GrpcClientBuilder
      * @return a {@link GrpcClientBuilder}
      */
     static GrpcClientBuilder create(Object service) {
-        return new GrpcClientBuilder(service.getClass(), Instance.singleton(service));
+        return new GrpcClientBuilder(service.getClass(), InstanceSupplier.singleton(service));
     }
 
     /**
@@ -99,37 +95,37 @@ class GrpcClientBuilder
 
         addServiceMethods(builder, methodList);
 
-        LOGGER.log(Level.FINEST, () -> String.format("A new gRPC service was created by ServiceModeller: %s", builder));
+        LOGGER.log(Level.DEBUG, () -> String.format("A new gRPC service was created by ServiceModeller: %s", builder));
 
         return builder;
     }
 
     /**
-     * Add methods to the {@link ClientServiceDescriptor.Builder}.
+     * Add methods to the {@link io.helidon.microprofile.grpc.client.ClientServiceDescriptor.Builder}.
      *
-     * @param builder     the {@link ClientServiceDescriptor.Builder} to add the method to
+     * @param builder     the {@link io.helidon.microprofile.grpc.client.ClientServiceDescriptor.Builder} to add the method to
      * @param methodList  the list of methods to add
      */
     private void addServiceMethods(ClientServiceDescriptor.Builder builder, AnnotatedMethodList methodList) {
-        for (AnnotatedMethod am : methodList.withAnnotation(GrpcMethod.class)) {
+        for (AnnotatedMethod am : methodList.withAnnotation(Grpc.GrpcMethod.class)) {
             addServiceMethod(builder, am);
         }
-        for (AnnotatedMethod am : methodList.withMetaAnnotation(GrpcMethod.class)) {
+        for (AnnotatedMethod am : methodList.withMetaAnnotation(Grpc.GrpcMethod.class)) {
             addServiceMethod(builder, am);
         }
     }
 
     /**
-     * Add a method to the {@link ClientServiceDescriptor.Builder}.
+     * Add a method to the {@link io.helidon.microprofile.grpc.client.ClientServiceDescriptor.Builder}.
      * <p>
      * The method configuration will be determined by the annotations present on the
      * method and the method signature.
      *
-     * @param builder  the {@link ClientServiceDescriptor.Builder} to add the method to
+     * @param builder  the {@link io.helidon.microprofile.grpc.client.ClientServiceDescriptor.Builder} to add the method to
      * @param method   the {@link io.helidon.microprofile.grpc.core.AnnotatedMethod} representing the method to add
      */
     private void addServiceMethod(ClientServiceDescriptor.Builder builder, AnnotatedMethod method) {
-        GrpcMethod annotation = method.firstAnnotationOrMetaAnnotation(GrpcMethod.class);
+        Grpc.GrpcMethod annotation = method.firstAnnotationOrMetaAnnotation(Grpc.GrpcMethod.class);
         String name = determineMethodName(method, annotation);
 
         MethodHandler handler = handlerSuppliers().stream()
@@ -142,7 +138,7 @@ class GrpcClientBuilder
         Class<?> responseType = handler.getResponseType();
         AnnotatedMethodConfigurer configurer = new AnnotatedMethodConfigurer(method, requestType, responseType, handler);
 
-        switch (annotation.type()) {
+        switch (annotation.value()) {
         case UNARY:
             builder.unary(name, configurer);
             break;
@@ -157,12 +153,12 @@ class GrpcClientBuilder
             break;
         case UNKNOWN:
         default:
-            LOGGER.log(Level.SEVERE, () -> "Unrecognized method type " + annotation.type());
+            LOGGER.log(Level.ERROR, () -> "Unrecognized method type " + annotation.value());
         }
     }
 
     /**
-     * A {@link java.util.function.Consumer} of {@link ClientMethodDescriptor.Rules}
+     * A {@link java.util.function.Consumer} of {@link io.helidon.microprofile.grpc.client.ClientMethodDescriptor.Rules}
      * that applies configuration changes based on annotations present on the gRPC
      * method.
      */
@@ -187,11 +183,12 @@ class GrpcClientBuilder
         @Override
         public void accept(ClientMethodDescriptor.Rules config) {
             config.requestType(requestType)
-                  .responseType(responseType)
-                  .methodHandler(methodHandler);
+                    .responseType(responseType)
+                    .methodHandler(methodHandler);
 
-            if (method.isAnnotationPresent(GrpcMarshaller.class)) {
-                config.marshallerSupplier(ModelHelper.getMarshallerSupplier(method.getAnnotation(GrpcMarshaller.class)));
+            if (method.isAnnotationPresent(Grpc.GrpcMarshaller.class)) {
+                config.marshallerSupplier(ModelHelper.getMarshallerSupplier(
+                        method.getAnnotation(Grpc.GrpcMarshaller.class)));
             }
         }
     }

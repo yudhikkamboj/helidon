@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 package io.helidon.metrics.api;
 
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
 import io.helidon.config.metadata.Configured;
 import io.helidon.config.metadata.ConfiguredOption;
 
 /**
  * Settings which control metrics behavior for a metrics-capable component.
  * <p>
- *     <em>Do not</em> use this for controlling overall metrics. Use {@link MetricsSettings} instead.
+ *     <em>Do not</em> use this for controlling overall metrics. Use {@link io.helidon.metrics.api.MetricsConfig} instead.
  * </p>
  */
 public interface ComponentMetricsSettings {
@@ -59,6 +59,7 @@ public interface ComponentMetricsSettings {
     }
 
     /**
+     * Returns whether the component settings indicate that metrics are enabled for the component.
      *
      * @return whether metrics are enabled for the component according to the settings
      */

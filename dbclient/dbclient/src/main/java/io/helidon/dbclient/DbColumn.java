@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,13 @@ import java.util.Optional;
 
 import io.helidon.common.GenericType;
 import io.helidon.common.mapper.MapperException;
+import io.helidon.common.mapper.Value;
 
 /**
  * Column data and metadata.
  */
-public interface DbColumn {
+public interface DbColumn extends Value<Object> {
+
     /**
      * Typed value of this column.
      * This method can return a correct result only if the type is the same as {@link #javaType()} or there is a
@@ -32,10 +34,11 @@ public interface DbColumn {
      * @param type class of the type that should be returned (must be supported by the underlying data type)
      * @param <T>  type of the returned value
      * @return value of this column correctly typed
-     * @throws MapperException in case the type is not the underlying {@link #javaType()} and
+     * @throws io.helidon.common.mapper.MapperException in case the type is not the underlying {@link #javaType()} and
      *                         there is no mapper registered for it
      */
-    <T> T as(Class<T> type) throws MapperException;
+    @Override
+    <T> T get(Class<T> type) throws MapperException;
 
     /**
      * Value of this column as a generic type.
@@ -47,15 +50,17 @@ public interface DbColumn {
      * @return value mapped to the expected type if possible
      * @throws MapperException in case the mapping cannot be done
      */
-    <T> T as(GenericType<T> type) throws MapperException;
+    @Override
+    <T> T get(GenericType<T> type) throws MapperException;
 
     /**
      * Untyped value of this column, returns java type as provided by the underlying database driver.
      *
      * @return value of this column
      */
-    default Object value() {
-        return as(javaType());
+    @Override
+    default Object get() {
+        return as(javaType()).get();
     }
 
     /**
@@ -81,6 +86,7 @@ public interface DbColumn {
      *
      * @return name of this column
      */
+    @Override
     String name();
 
     /**
@@ -110,4 +116,5 @@ public interface DbColumn {
     default Optional<Integer> scale() {
         return Optional.empty();
     }
+
 }

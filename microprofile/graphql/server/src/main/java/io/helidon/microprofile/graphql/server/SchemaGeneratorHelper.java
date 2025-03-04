@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.helidon.microprofile.graphql.server;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.System.Logger.Level;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.AnnotatedParameterizedType;
@@ -41,10 +42,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.logging.Logger;
 
 import graphql.scalars.ExtendedScalars;
-import graphql.scalars.object.ObjectScalar;
 import jakarta.json.bind.annotation.JsonbProperty;
 import jakarta.json.bind.annotation.JsonbTransient;
 import org.eclipse.microprofile.graphql.DefaultValue;
@@ -272,7 +271,7 @@ final class SchemaGeneratorHelper {
     /**
      * Logger.
      */
-    private static final Logger LOGGER = Logger.getLogger(SchemaGeneratorHelper.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(SchemaGeneratorHelper.class.getName());
 
     /**
      * Indicates empty annotations.
@@ -284,7 +283,7 @@ final class SchemaGeneratorHelper {
      */
     static final Map<String, SchemaScalar> SUPPORTED_SCALARS = new HashMap<>() {{
         // Object Scalar
-        put(Object.class.getName(), new SchemaScalar("Object", Object.class.getName(), new ObjectScalar(), null));
+        put(Object.class.getName(), new SchemaScalar("Object", Object.class.getName(), ExtendedScalars.Object, null));
 
         // Time scalars
         put(OffsetTime.class.getName(),
@@ -891,10 +890,10 @@ final class SchemaGeneratorHelper {
     /**
      * Ensure the provided name is a valid GraphQL name.
      *
-     * @param logger {@link Logger} to log to
+     * @param logger {@link System.Logger} to log to
      * @param name   to validate
      */
-    protected static void ensureValidName(Logger logger, String name) {
+    protected static void ensureValidName(System.Logger logger, String name) {
         if (name != null && !isValidGraphQLName(name)) {
             ensureConfigurationException(LOGGER, "The name '" + name + "' is not a valid "
                     + "GraphQL name and cannot be used.");
@@ -1059,9 +1058,9 @@ final class SchemaGeneratorHelper {
      * Ensures a {@link RuntimeException} with the message supplied is thrown and logged.
      *
      * @param message message to throw
-     * @param logger  the {@link Logger} to use
+     * @param logger  the {@link System.Logger} to use
      */
-    protected static void ensureRuntimeException(Logger logger, String message) {
+    protected static void ensureRuntimeException(System.Logger logger, String message) {
         ensureRuntimeException(logger, message, null);
     }
 
@@ -1070,12 +1069,12 @@ final class SchemaGeneratorHelper {
      *
      * @param message message to throw
      * @param cause   cause of the erro
-     * @param logger  the {@link Logger} to use
+     * @param logger  the {@link System.Logger} to use
      */
-    protected static void ensureRuntimeException(Logger logger, String message, Throwable cause) {
-        logger.warning(message);
+    protected static void ensureRuntimeException(System.Logger logger, String message, Throwable cause) {
+        logger.log(Level.WARNING, message);
         if (cause != null) {
-            logger.warning(getStackTrace(cause));
+            logger.log(Level.WARNING, getStackTrace(cause));
         }
         throw new RuntimeException(message, cause);
     }
@@ -1084,9 +1083,9 @@ final class SchemaGeneratorHelper {
      * Ensures a {@link GraphQlConfigurationException} with the message suppleid is thrown and logged.
      *
      * @param message message to throw
-     * @param logger  the {@link Logger} to use
+     * @param logger  the {@link System.Logger} to use
      */
-    protected static void ensureConfigurationException(Logger logger, String message) {
+    protected static void ensureConfigurationException(System.Logger logger, String message) {
         ensureConfigurationException(logger, message, null);
     }
 
@@ -1095,12 +1094,12 @@ final class SchemaGeneratorHelper {
      *
      * @param message message to throw
      * @param cause   cause of the erro
-     * @param logger  the {@link Logger} to use
+     * @param logger  the {@link System.Logger} to use
      */
-    protected static void ensureConfigurationException(Logger logger, String message, Throwable cause) {
-        logger.warning(message);
+    protected static void ensureConfigurationException(System.Logger logger, String message, Throwable cause) {
+        logger.log(Level.WARNING, message);
         if (cause != null) {
-            logger.warning(getStackTrace(cause));
+            logger.log(Level.WARNING, getStackTrace(cause));
         }
         throw new GraphQlConfigurationException(message, cause);
     }

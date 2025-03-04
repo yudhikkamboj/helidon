@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,20 @@
  * gRPC microprofile core module
  */
 module io.helidon.microprofile.grpc.core {
-    exports io.helidon.microprofile.grpc.core;
+
+    requires io.helidon.common;
+    requires io.helidon.grpc.api;
+    requires io.helidon.microprofile.config;
 
     requires transitive io.helidon.grpc.core;
-    requires transitive io.helidon.grpc.client;
-    requires transitive io.helidon.microprofile.config;
-    requires io.helidon.common.serviceloader;
-
     requires transitive jakarta.cdi;
 
-    requires java.logging;
     requires jakarta.inject;
 
+    exports io.helidon.microprofile.grpc.core;
+
     uses io.helidon.microprofile.grpc.core.MethodHandlerSupplier;
+    uses io.helidon.grpc.core.MarshallerSupplier;
 
     provides io.helidon.microprofile.grpc.core.MethodHandlerSupplier
             with io.helidon.microprofile.grpc.core.BidirectionalMethodHandlerSupplier,

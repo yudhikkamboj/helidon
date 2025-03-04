@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,97 +17,87 @@ package io.helidon.dbclient;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 
 import io.helidon.common.context.Context;
+import io.helidon.common.context.Contexts;
+
+import static io.helidon.dbclient.DbStatementParameters.UNDEFINED;
 
 /**
- * Client service context is a mutable object that is sent to {@link DbClientService}.
+ * Interceptor context to get (and possibly manipulate) database operations.
+ * <p>
+ * This is a mutable object - acts as a builder during the invocation of {@link DbClientService}.
+ * The interceptors are executed sequentially, so there is no need for synchronization.
  */
-class DbClientServiceContextImpl implements DbClientServiceContext {
-    private final String dbType;
-    private DbStatementType dbStatementType;
+public class DbClientServiceContextImpl implements DbClientServiceContext {
+
+    private final DbExecuteContext execContext;
+    private final DbStatementType stmtType;
+    private final CompletionStage<Void> stmtFuture;
+    private final CompletionStage<Long> queryFuture;
+    private DbStatementParameters stmtParams;
     private Context context;
-    private String statementName;
-    private String statement;
-    private CompletionStage<Void> statementFuture;
-    private CompletionStage<Long> queryFuture;
-    private List<Object> indexedParams;
-    private Map<String, Object> namedParams;
-    private boolean indexed;
+    private String stmt;
+    private String stmtName;
 
-    DbClientServiceContextImpl(String dbType) {
-        this.dbType = dbType;
-    }
+    /**
+     * Create a new instance.
+     *
+     * @param execContext execution context
+     * @param stmtType    statement type
+     * @param stmtFuture  statement future
+     * @param queryFuture query future
+     * @param stmtParams  statement parameters
+     */
+    DbClientServiceContextImpl(DbExecuteContext execContext,
+                               DbStatementType stmtType,
+                               CompletionStage<Void> stmtFuture,
+                               CompletionStage<Long> queryFuture,
+                               DbStatementParameters stmtParams) {
 
-    @Override
-    public String dbType() {
-        return dbType;
+        this.execContext = execContext;
+        this.stmtType = stmtType;
+        this.stmtFuture = stmtFuture;
+        this.queryFuture = queryFuture;
+        this.stmt = execContext.statement();
+        this.stmtName = execContext.statementName();
+        this.stmtParams = stmtParams;
     }
 
     @Override
     public Context context() {
-        return context;
-    }
-
-    @Override
-    public String statementName() {
-        return statementName;
+        return context != null ? context : Contexts.context().orElseGet(Contexts::globalContext);
     }
 
     @Override
     public String statement() {
-        return statement;
+        return stmt;
+    }
+
+    @Override
+    public String statementName() {
+        return stmtName;
+    }
+
+    @Override
+    public DbStatementType statementType() {
+        return stmtType;
+    }
+
+    @Override
+    public DbStatementParameters statementParameters() {
+        return stmtParams;
+    }
+
+    @Override
+    public String dbType() {
+        return execContext.dbType();
     }
 
     @Override
     public CompletionStage<Void> statementFuture() {
-        return statementFuture;
-    }
-
-    @Override
-    public Optional<List<Object>> indexedParameters() {
-        if (indexed) {
-            return Optional.of(indexedParams);
-        }
-        throw new IllegalStateException("Indexed parameters are not available for statement with named parameters");
-    }
-
-    @Override
-    public Optional<Map<String, Object>> namedParameters() {
-        if (indexed) {
-            throw new IllegalStateException("Named parameters are not available for statement with indexed parameters");
-        }
-        return Optional.of(namedParams);
-    }
-
-    @Override
-    public boolean isIndexed() {
-        return indexed;
-    }
-
-    @Override
-    public boolean isNamed() {
-        return !indexed;
-    }
-
-    @Override
-    public DbClientServiceContext context(Context context) {
-        this.context = context;
-        return this;
-    }
-
-    @Override
-    public DbClientServiceContext statementName(String newName) {
-        this.statementName = newName;
-        return this;
-    }
-
-    @Override
-    public DbClientServiceContext statementFuture(CompletionStage<Void> statementFuture) {
-        this.statementFuture = statementFuture;
-        return this;
+        return stmtFuture;
     }
 
     @Override
@@ -116,57 +106,52 @@ class DbClientServiceContextImpl implements DbClientServiceContext {
     }
 
     @Override
-    public DbClientServiceContext resultFuture(CompletionStage<Long> resultFuture) {
-        this.queryFuture = resultFuture;
-        return this;
-    }
-
-    @Override
-    public DbClientServiceContext statement(String statement, List<Object> indexedParams) {
-        this.statement = statement;
-        this.indexedParams = indexedParams;
-        this.indexed = true;
-        return this;
-    }
-
-    @Override
-    public DbClientServiceContext statement(String statement, Map<String, Object> namedParams) {
-        this.statement = statement;
-        this.namedParams = namedParams;
-        this.indexed = false;
-        return this;
-    }
-
-    @Override
-    public DbClientServiceContext parameters(List<Object> indexedParameters) {
-        if (indexed) {
-            this.indexedParams = indexedParameters;
-        } else {
-            throw new IllegalStateException("Cannot configure indexed parameters for a statement that expects named "
-                                                    + "parameters");
+    public DbClientServiceContextImpl statement(String stmt, List<Object> parameters) {
+        if (stmtParams == UNDEFINED) {
+            stmtParams = new DbIndexedStatementParameters();
         }
+        parameters.forEach(stmtParams::addParam);
+        this.stmt = stmt;
         return this;
     }
 
     @Override
-    public DbClientServiceContext parameters(Map<String, Object> namedParameters) {
-        if (indexed) {
-            throw new IllegalStateException("Cannot configure named parameters for a statement that expects indexed "
-                                                    + "parameters");
+    public DbClientServiceContextImpl statement(String stmt, Map<String, Object> parameters) {
+        if (stmtParams == UNDEFINED) {
+            stmtParams = new DbNamedStatementParameters();
         }
-
-        this.namedParams = namedParameters;
+        parameters.forEach(stmtParams::addParam);
+        this.stmt = stmt;
         return this;
     }
 
     @Override
-    public DbStatementType statementType() {
-        return dbStatementType;
+    public DbClientServiceContextImpl parameters(List<Object> parameters) {
+        parameters.forEach(stmtParams::addParam);
+        return this;
     }
 
     @Override
-    public DbClientServiceContext statementType(DbStatementType type) {
-        this.dbStatementType = type;
+    public DbClientServiceContextImpl parameters(Map<String, Object> parameters) {
+        parameters.forEach(stmtParams::addParam);
+        return this;
+    }
+
+    @Override
+    public DbClientServiceContextImpl context(Context context) {
+        this.context = context;
+        return this;
+    }
+
+    @Override
+    public DbClientServiceContextImpl statement(String name) {
+        this.stmtName = name;
+        return this;
+    }
+
+    @Override
+    public DbClientServiceContextImpl statementName(String name) {
+        this.stmtName = name;
         return this;
     }
 }

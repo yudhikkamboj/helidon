@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ package io.helidon.tests.integration.mp.ws.services;
 
 import io.helidon.microprofile.server.RoutingName;
 import io.helidon.microprofile.server.RoutingPath;
-import io.helidon.webserver.Routing;
-import io.helidon.webserver.Service;
+import io.helidon.webserver.http.HttpRules;
+import io.helidon.webserver.http.HttpService;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -32,9 +32,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 @RoutingPath("/wrong")
 // see application.yaml for override
 @RoutingName(value = "wrong", required = true)
-public class AdminService implements Service {
+public class AdminService implements HttpService {
     @Override
-    public void update(Routing.Rules rules) {
+    public void routing(HttpRules rules) {
         rules.get("/admin", (req, res) -> res.send("admin"))
                 .get("/", (req, res) -> res.send("admin"));
     }

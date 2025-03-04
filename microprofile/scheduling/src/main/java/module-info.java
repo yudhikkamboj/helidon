@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,25 +14,33 @@
  * limitations under the License.
  */
 
-import io.helidon.microprofile.scheduling.SchedulingCdiExtension;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
 
 /**
  * CDI Scheduling implementation.
  */
+@Feature(value = "Scheduling",
+        description = "Task scheduling",
+        in = HelidonFlavor.MP,
+        path = "Scheduling"
+)
 module io.helidon.microprofile.scheduling {
-    requires java.logging;
-    requires static jakarta.cdi;
-    requires static jakarta.inject;
-    requires jakarta.interceptor.api;
+
     requires io.helidon.common.configurable;
-    requires io.helidon.config;
     requires io.helidon.config.mp;
+    requires io.helidon.config;
     requires io.helidon.microprofile.cdi;
     requires io.helidon.microprofile.config;
     requires io.helidon.scheduling;
 
+    requires static io.helidon.common.features.api;
+    requires static jakarta.cdi;
+    requires static jakarta.inject;
+
     exports io.helidon.microprofile.scheduling;
     opens io.helidon.microprofile.scheduling;
 
-    provides jakarta.enterprise.inject.spi.Extension with SchedulingCdiExtension;
+    provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.scheduling.SchedulingCdiExtension;
+
 }

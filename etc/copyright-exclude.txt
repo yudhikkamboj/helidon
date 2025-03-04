@@ -1,3 +1,4 @@
+jvm.config
 .iml
 .apt
 .args
@@ -13,6 +14,7 @@
 .jks
 .jpg
 .json
+.lua
 .mm
 .ods
 .png
@@ -24,17 +26,19 @@
 .MD
 .p12
 .txt
-.sql
 jaxb.index
 /MANIFEST.MF
 /README
 /CONTRIBUTING.md
+.crt
 .pem
 .p8
 .pkcs8.pem
 .p12
 .bin
 .vm
+.sql
+.crl
 src/main/proto/
 src/test/resources/keystore/
 etc/javadoc/
@@ -46,6 +50,10 @@ node_modules
 archetype-resources/pom.xml
 # excluded as it contains both Oracle and original copyright notice
 src/main/java/org/jboss/weld/bean/proxy/ProxyFactory.java
+src/main/java/io/helidon/examples/integrations/neo4j/domain/Actor.java
+src/main/java/io/helidon/examples/integrations/neo4j/domain/Movie.java
+src/main/java/io/helidon/examples/integrations/neo4j/domain/Person.java
+src/main/java/io/helidon/examples/integrations/neo4j/domain/MovieRepository.java
 etc/THIRD_PARTY_LICENSES.xml
 etc/HELIDON_THIRD_PARTY_LICENSES.xml
 etc/dependency-check-suppression.xml
@@ -55,3 +63,9 @@ target/
 META-INF/services/
 persistence_3_0.xjb
 persistence_3_0.xsd
+# excluded as this is a test file and we need to validate its content
+src/test/resources/static/classpath/index.html
+._java_
+._inject_
+service.loader
+.repo

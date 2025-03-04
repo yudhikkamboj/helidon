@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,18 @@
  */
 package io.helidon.microprofile.metrics;
 
-import io.helidon.microprofile.tests.junit5.AddConfig;
-import io.helidon.microprofile.tests.junit5.AddExtension;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import java.lang.reflect.Method;
+
+import io.helidon.microprofile.testing.junit5.AddConfig;
+import io.helidon.microprofile.testing.junit5.AddExtension;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
+
 import org.eclipse.microprofile.metrics.MetricID;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-
-import java.lang.reflect.Method;
 
 @HelidonTest
 @Disabled // Need to revisit clearing out the repo of REST.request metrics between tests
@@ -43,31 +44,31 @@ public class TestVetoedResource extends MetricsMpServiceTest {
     }
 
     @Test
-    void testNoSyntheticSimplyTimedMetricForVetoedResource() throws NoSuchMethodException {
+    void testNoSyntheticTimedMetricForVetoedResource() throws NoSuchMethodException {
         // Makes sure that a vetoed JAX-RS resource with an explicit metric annotation was not registered with a synthetic
-        // SimplyTimed metric.
+        // Timed metric.
         Method method = VetoedResource.class.getMethod("get");
         assertThat(
-                "Metrics CDI extension incorrectly registered a synthetic simple timer on a vetoed resource JAX-RS endpoint "
+                "Metrics CDI extension incorrectly registered a synthetic timer on a vetoed resource JAX-RS endpoint "
                         + "method with an explicit metrics annotation",
-                syntheticSimpleTimerRegistry()
-                        .getSimpleTimers()
-                        .containsKey(MetricsCdiExtension.restEndpointSimpleTimerMetricID(method)),
+                syntheticTimerTimerRegistry()
+                        .getTimers()
+                        .containsKey(MetricsCdiExtension.restEndpointTimerMetricID(method)),
                 is(false));
     }
 
     @Test
-    void testNoSyntheticSimplyTimedMetricForVetoedResourceWithJaxRsEndpointButOtherwiseUnmeasured() throws NoSuchMethodException {
+    void testNoSyntheticTimedMetricForVetoedResourceWithJaxRsEndpointButOtherwiseUnmeasured() throws NoSuchMethodException {
         // Makes sure that a vetoed JAX-RS resource with no explicit metric annotation was not registered with a synthetic
-        // SimpleTimed metric.
+        // Timed metric.
         Method method = VetoedJaxRsButOtherwiseUnmeasuredResource.class.getMethod("get");
         assertThat(
-                "Metrics CDI extension incorrectly registered a synthetic simple timer on JAX-RS endpoint method with no "
+                "Metrics CDI extension incorrectly registered a synthetic timer on JAX-RS endpoint method with no "
                         + "explicit metrics annotation: "
                         + VetoedJaxRsButOtherwiseUnmeasuredResource.class.getName() + "#" + method.getName(),
                 MetricsCdiExtension.getRegistryForSyntheticRestRequestMetrics()
-                        .getSimpleTimers()
-                        .containsKey(MetricsCdiExtension.restEndpointSimpleTimerMetricID(method)),
+                        .getTimers()
+                        .containsKey(MetricsCdiExtension.restEndpointTimerMetricID(method)),
                 is(false));
     }
 }

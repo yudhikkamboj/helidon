@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,14 +27,16 @@ import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
 import io.helidon.common.GenericType;
-import io.helidon.common.Prioritized;
-import io.helidon.common.serviceloader.HelidonServiceLoader;
-import io.helidon.common.serviceloader.Priorities;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.Weighted;
+import io.helidon.common.Weights;
+import io.helidon.common.media.type.MediaType;
 import io.helidon.config.ConfigMapperManager.MapperProviders;
 import io.helidon.config.spi.ConfigContext;
 import io.helidon.config.spi.ConfigFilter;
@@ -44,6 +46,7 @@ import io.helidon.config.spi.ConfigParser;
 import io.helidon.config.spi.ConfigSource;
 import io.helidon.config.spi.MergingStrategy;
 import io.helidon.config.spi.OverrideSource;
+import io.helidon.service.registry.ServiceRegistry;
 
 /**
  * {@link Config} Builder implementation.
@@ -59,6 +62,7 @@ class BuilderImpl implements Config.Builder {
     private MergingStrategy mergingStrategy = MergingStrategy.fallback();
     private boolean hasSystemPropertiesSource;
     private boolean hasEnvVarSource;
+    private boolean sourcesConfigured;
     /*
      * Config mapper providers
      */
@@ -90,7 +94,9 @@ class BuilderImpl implements Config.Builder {
      */
     private boolean cachingEnabled;
     private boolean keyResolving;
+    private boolean keyResolvingFailOnMissing;
     private boolean valueResolving;
+    private boolean valueResolvingFailOnMissing;
     private boolean systemPropertiesSourceEnabled;
     private boolean environmentVariablesSourceEnabled;
     private boolean envVarAliasGeneratorEnabled;
@@ -119,6 +125,8 @@ class BuilderImpl implements Config.Builder {
         sourceSuppliers.stream()
                 .map(Supplier::get)
                 .forEach(this::addSource);
+        // this was intentional, even if empty (such as from Config.just())
+        this.sourcesConfigured = true;
 
         return this;
     }
@@ -262,8 +270,20 @@ class BuilderImpl implements Config.Builder {
     }
 
     @Override
+    public Config.Builder failOnMissingKeyReference(boolean shouldFail) {
+        this.keyResolvingFailOnMissing = shouldFail;
+        return this;
+    }
+
+    @Override
     public Config.Builder disableValueResolving() {
         this.valueResolving = false;
+        return this;
+    }
+
+    @Override
+    public Config.Builder failOnMissingValueReference(boolean shouldFail) {
+        this.valueResolvingFailOnMissing = shouldFail;
         return this;
     }
 
@@ -282,7 +302,7 @@ class BuilderImpl implements Config.Builder {
     @Override
     public AbstractConfigImpl build() {
         if (valueResolving) {
-            addFilter(ConfigFilters.valueResolving());
+            addFilter(ConfigFilters.valueResolving().failOnMissingReference(valueResolvingFailOnMissing));
         }
         if (null == changesExecutor) {
             changesExecutor = Executors.newCachedThreadPool(new ConfigThreadFactory("config-changes"));
@@ -329,8 +349,15 @@ class BuilderImpl implements Config.Builder {
                               cachingEnabled,
                               changesExecutor,
                               keyResolving,
+                              keyResolvingFailOnMissing,
                               aliasGenerator)
                 .newConfig();
+    }
+
+    @Override
+    public Config.Builder serviceRegistry(ServiceRegistry serviceRegistry) {
+        // not yet implemented
+        return this;
     }
 
     private static void addBuiltInMapperServices(List<PrioritizedMapperProvider> prioritizedMappers) {
@@ -338,10 +365,10 @@ class BuilderImpl implements Config.Builder {
         // and yet we can still define a service that is only used after these (such as config beans)
         prioritizedMappers
                 .add(new HelidonMapperWrapper(new InternalMapperProvider(ConfigMappers.essentialMappers(),
-                                                                         "essential"), 200));
+                                                                         "essential"), 1));
         prioritizedMappers
                 .add(new HelidonMapperWrapper(new InternalMapperProvider(ConfigMappers.builtInMappers(),
-                                                                         "built-in"), 200));
+                                                                         "built-in"), 1));
     }
 
     @Override
@@ -410,14 +437,14 @@ class BuilderImpl implements Config.Builder {
             envVarAliasGeneratorEnabled = true;
         }
 
-        boolean nothingConfigured = sources.isEmpty();
+        boolean nothingConfigured = sources.isEmpty() && !sourcesConfigured;
 
         if (nothingConfigured) {
             // use meta configuration to load all sources
-            MetaConfig.configSources(mediaType -> context.findParser(mediaType).isPresent(), context.supportedSuffixes())
-                    .stream()
+            MetaConfigFinder.findConfigSource(mediaType -> context.findParser(mediaType).isPresent(),
+                                                     context.supportedSuffixes())
                     .map(context::sourceRuntimeBase)
-                    .forEach(targetSources::add);
+                    .ifPresent(targetSources::add);
         } else {
             // add all configured or discovered sources
 
@@ -439,6 +466,7 @@ class BuilderImpl implements Config.Builder {
                                 boolean cachingEnabled,
                                 Executor changesExecutor,
                                 boolean keyResolving,
+                                boolean keyResolvingFailOnMissing,
                                 Function<String, List<String>> aliasGenerator) {
         return new ProviderImpl(configMapperManager,
                                 targetConfigSource,
@@ -447,6 +475,7 @@ class BuilderImpl implements Config.Builder {
                                 cachingEnabled,
                                 changesExecutor,
                                 keyResolving,
+                                keyResolvingFailOnMissing,
                                 aliasGenerator);
     }
 
@@ -463,7 +492,12 @@ class BuilderImpl implements Config.Builder {
 
     // this is a unit test method
     static ConfigMapperManager buildMappers(MapperProviders userDefinedProviders) {
-        return buildMappers(new ArrayList<>(), userDefinedProviders, false);
+        return buildMappers(userDefinedProviders, false);
+    }
+
+    // unit test method
+    static ConfigMapperManager buildMappers(MapperProviders userDefinedProviders, boolean mapperServicesEnabled) {
+        return buildMappers(new ArrayList<>(), userDefinedProviders, mapperServicesEnabled);
     }
 
     static ConfigMapperManager buildMappers(List<PrioritizedMapperProvider> prioritizedMappers,
@@ -475,7 +509,7 @@ class BuilderImpl implements Config.Builder {
             loadMapperServices(prioritizedMappers);
         }
         addBuiltInMapperServices(prioritizedMappers);
-        Priorities.sort(prioritizedMappers);
+        Collections.sort(prioritizedMappers);
 
         // as the mapperProviders.add adds the last as first, we need to reverse order
         Collections.reverse(prioritizedMappers);
@@ -492,14 +526,13 @@ class BuilderImpl implements Config.Builder {
 
     private static void loadMapperServices(List<PrioritizedMapperProvider> providers) {
         HelidonServiceLoader.builder(ServiceLoader.load(ConfigMapperProvider.class))
-                .defaultPriority(ConfigMapperProvider.PRIORITY)
+                .addService(new EnumMapperProvider())
                 .build()
-                .forEach(mapper -> providers.add(new HelidonMapperWrapper(mapper, Priorities.find(mapper, 100))));
+                .forEach(mapper -> providers.add(new HelidonMapperWrapper(mapper, Weights.find(mapper, 100))));
     }
 
     private static List<ConfigParser> loadParserServices() {
         return HelidonServiceLoader.builder(ServiceLoader.load(ConfigParser.class))
-                .defaultPriority(ConfigParser.PRIORITY)
                 .build()
                 .asList();
     }
@@ -523,12 +556,15 @@ class BuilderImpl implements Config.Builder {
          * Map each autoloaded ConfigFilter to a filter-providing function.
          */
         HelidonServiceLoader.builder(ServiceLoader.load(ConfigFilter.class))
-                .defaultPriority(ConfigFilter.PRIORITY)
                 .build()
                 .asList()
                 .stream()
                 .map(LoadedFilterProvider::new)
                 .forEach(this::addFilter);
+    }
+
+    private interface PrioritizedMapperProvider extends Weighted,
+                                                        ConfigMapperProvider {
     }
 
     /**
@@ -554,7 +590,7 @@ class BuilderImpl implements Config.Builder {
             return runtimes.computeIfAbsent(source, it -> new ConfigSourceRuntimeImpl(this, source));
         }
 
-        Optional<ConfigParser> findParser(String mediaType) {
+        Optional<ConfigParser> findParser(MediaType mediaType) {
             Objects.requireNonNull(mediaType, "Unknown media type of resource.");
 
             return configParsers.stream()
@@ -599,6 +635,23 @@ class BuilderImpl implements Config.Builder {
 
     }
 
+    static final class GlobalConfigHolder {
+        private static final AtomicReference<Config> GLOBAL_CONFIG = new AtomicReference<>();
+
+        static Config get() {
+            Config config = GLOBAL_CONFIG.get();
+            if (config == null) {
+                config = Config.create();
+                GLOBAL_CONFIG.set(config);
+            }
+            return config;
+        }
+
+        static void set(Config config) {
+            GLOBAL_CONFIG.set(config);
+        }
+    }
+
     static class InternalMapperProvider implements ConfigMapperProvider {
         private final Map<Class<?>, Function<Config, ?>> converterMap;
         private final String name;
@@ -619,22 +672,18 @@ class BuilderImpl implements Config.Builder {
         }
     }
 
-    private interface PrioritizedMapperProvider extends Prioritized,
-                                                        ConfigMapperProvider {
-    }
-
     private static final class HelidonMapperWrapper implements PrioritizedMapperProvider {
         private final ConfigMapperProvider delegate;
-        private final int priority;
+        private final double weight;
 
-        private HelidonMapperWrapper(ConfigMapperProvider delegate, int priority) {
+        private HelidonMapperWrapper(ConfigMapperProvider delegate, double weight) {
             this.delegate = delegate;
-            this.priority = priority;
+            this.weight = weight;
         }
 
         @Override
-        public int priority() {
-            return priority;
+        public double weight() {
+            return weight;
         }
 
         @Override
@@ -659,57 +708,7 @@ class BuilderImpl implements Config.Builder {
 
         @Override
         public String toString() {
-            return priority + ": " + delegate;
-        }
-    }
-
-    private static final class PrioritizedConfigSource implements Prioritized {
-        private final HelidonSourceWithPriority source;
-        private final ConfigContext context;
-
-        private PrioritizedConfigSource(HelidonSourceWithPriority source, ConfigContext context) {
-            this.source = source;
-            this.context = context;
-        }
-
-        private ConfigSourceRuntimeImpl runtime(ConfigContextImpl context) {
-            return context.sourceRuntimeBase(source.unwrap());
-        }
-
-        @Override
-        public int priority() {
-            return source.priority(context);
-        }
-    }
-
-    private static final class HelidonSourceWithPriority {
-        private final ConfigSource configSource;
-        private final Integer explicitPriority;
-
-        private HelidonSourceWithPriority(ConfigSource configSource, Integer explicitPriority) {
-            this.configSource = configSource;
-            this.explicitPriority = explicitPriority;
-        }
-
-        ConfigSource unwrap() {
-            return configSource;
-        }
-
-        int priority(ConfigContext context) {
-            // first - explicit priority. If configured by user, return it
-            if (null != explicitPriority) {
-                return explicitPriority;
-            }
-
-            // ordinal from data
-            return context.sourceRuntime(configSource)
-                    .node("config_priority")
-                    .flatMap(node -> node.value()
-                            .map(Integer::parseInt))
-                    .orElseGet(() -> {
-                        // the config source does not have an ordinal configured, I need to get it from other places
-                        return Priorities.find(configSource, 100);
-                    });
+            return weight + ": " + delegate;
         }
     }
 

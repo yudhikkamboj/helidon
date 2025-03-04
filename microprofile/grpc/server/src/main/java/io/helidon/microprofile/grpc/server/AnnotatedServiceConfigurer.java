@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,26 @@
 
 package io.helidon.microprofile.grpc.server;
 
-import io.helidon.grpc.server.ServiceDescriptor;
+import io.helidon.webserver.grpc.GrpcServiceDescriptor;
 
 /**
- * A class that may apply modifications to a {@link ServiceDescriptor.Builder}
+ * A class that may apply modifications to a {@link GrpcServiceDescriptor.Builder}
  * for an annotated gRPC service class.
  * <p>
  * Implementations of this class are called by the {@link GrpcServiceBuilder} when
- * it builds a {@link ServiceDescriptor} from an annotated class. Instances of
+ * it builds a {@link GrpcServiceDescriptor} from an annotated class. Instances of
  * {@link AnnotatedServiceConfigurer} are discovered using the
- * {@link io.helidon.common.serviceloader.HelidonServiceLoader}. This service
+ * {@link io.helidon.common.HelidonServiceLoader}. This service
  * loader supports ordering of configurers.
  */
 @FunctionalInterface
 public interface AnnotatedServiceConfigurer {
     /**
-     * Apply modifications to a {@link ServiceDescriptor.Builder}.
+     * Apply modifications to a {@link GrpcServiceDescriptor.Builder}.
+     *
      * @param serviceClass the annotated gRPC service class
-     * @param annotatedClass the  class with the {@link io.helidon.microprofile.grpc.core.Grpc} annotation
-     * @param builder      the builder to modify
+     * @param annotatedClass the  class with the {@link io.helidon.grpc.api.Grpc.GrpcService} annotation
+     * @param builder the builder to modify
      */
-    void accept(Class<?> serviceClass, Class<?> annotatedClass, ServiceDescriptor.Builder builder);
+    void accept(Class<?> serviceClass, Class<?> annotatedClass, GrpcServiceDescriptor.Builder builder);
 }

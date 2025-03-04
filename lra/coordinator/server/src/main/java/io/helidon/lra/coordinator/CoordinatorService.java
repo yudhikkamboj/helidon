@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package io.helidon.lra.coordinator;
 
+import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.util.Collections;
 import java.util.Objects;
@@ -22,42 +23,44 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import io.helidon.common.LazyValue;
-import io.helidon.common.reactive.Single;
 import io.helidon.config.Config;
-import io.helidon.media.common.MessageBodyWriter;
-import io.helidon.media.jsonp.JsonpSupport;
+import io.helidon.http.HeaderName;
+import io.helidon.http.HeaderNames;
 import io.helidon.scheduling.FixedRateInvocation;
 import io.helidon.scheduling.Scheduling;
 import io.helidon.scheduling.Task;
-import io.helidon.webserver.Routing;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
-import io.helidon.webserver.Service;
+import io.helidon.webserver.http.HttpRules;
+import io.helidon.webserver.http.HttpService;
+import io.helidon.webserver.http.ServerRequest;
+import io.helidon.webserver.http.ServerResponse;
 
 import jakarta.json.Json;
 import jakarta.json.JsonArray;
 import jakarta.json.JsonArrayBuilder;
 import jakarta.json.JsonBuilderFactory;
 import jakarta.json.JsonObject;
-import jakarta.json.JsonStructure;
 import jakarta.json.JsonValue;
 import org.eclipse.microprofile.lra.annotation.LRAStatus;
+import org.eclipse.microprofile.lra.annotation.ws.rs.LRA;
 
-import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_CONTEXT_HEADER;
-import static org.eclipse.microprofile.lra.annotation.ws.rs.LRA.LRA_HTTP_RECOVERY_HEADER;
+import static io.helidon.http.Status.CREATED_201;
+import static io.helidon.http.Status.GONE_410;
+import static io.helidon.http.Status.NOT_FOUND_404;
+import static io.helidon.http.Status.OK_200;
+import static io.helidon.http.Status.PRECONDITION_FAILED_412;
 
 /**
  * LRA coordinator with Narayana like rest api.
  */
-public class CoordinatorService implements Service {
+public class CoordinatorService implements HttpService {
 
     /**
      * Configuration prefix.
@@ -69,11 +72,12 @@ public class CoordinatorService implements Service {
     static final String COORDINATOR_URL_KEY = "url";
     static final String DEFAULT_COORDINATOR_URL = "http://localhost:8070/lra-coordinator";
 
-    private static final Logger LOGGER = Logger.getLogger(CoordinatorService.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(CoordinatorService.class.getName());
+    private static final HeaderName LRA_HTTP_CONTEXT_HEADER = HeaderNames.create(LRA.LRA_HTTP_CONTEXT_HEADER);
+    private static final HeaderName LRA_HTTP_RECOVERY_HEADER = HeaderNames.create(LRA.LRA_HTTP_RECOVERY_HEADER);
+
     private static final Set<LRAStatus> RECOVERABLE_STATUSES = Set.of(LRAStatus.Cancelling, LRAStatus.Closing, LRAStatus.Active);
     private static final JsonBuilderFactory JSON = Json.createBuilderFactory(Collections.emptyMap());
-    private static final MessageBodyWriter<JsonStructure> JSON_WRITER = JsonpSupport.create().writerInstance();
-
     private final AtomicReference<CompletableFuture<Void>> completedRecovery = new AtomicReference<>(new CompletableFuture<>());
 
     private final LraPersistentRegistry lraPersistentRegistry;
@@ -82,37 +86,39 @@ public class CoordinatorService implements Service {
     private final Config config;
     private Task recoveryTask;
     private Task persistTask = null;
+    private volatile boolean shuttingDown = false;
 
     CoordinatorService(LraPersistentRegistry lraPersistentRegistry, Supplier<URI> coordinatorUriSupplier, Config config) {
         this.lraPersistentRegistry = lraPersistentRegistry;
-        coordinatorURL = LazyValue.create(coordinatorUriSupplier);
+        this.coordinatorURL = LazyValue.create(coordinatorUriSupplier);
         this.config = config;
         init();
     }
 
-    private void init() {
-        lraPersistentRegistry.load(this);
-        recoveryTask = Scheduling.fixedRateBuilder()
-                .delay(config.get("recovery-interval").asLong().orElse(300L))
-                .initialDelay(200)
-                .timeUnit(TimeUnit.MILLISECONDS)
-                .task(this::tick)
+    /**
+     * Create a new Lra coordinator.
+     *
+     * @return coordinator
+     */
+    public static CoordinatorService create() {
+        return builder()
                 .build();
+    }
 
-        if (config.get("periodical-persist").asBoolean().orElse(false)) {
-            persistTask = Scheduling.fixedRateBuilder()
-                    .delay(config.get("persist-interval").asLong().orElse(5000L))
-                    .initialDelay(200)
-                    .timeUnit(TimeUnit.MILLISECONDS)
-                    .task(inv -> lraPersistentRegistry.save())
-                    .build();
-        }
+    /**
+     * Create a new fluent API builder.
+     *
+     * @return a new builder
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
      * Gracefully shutdown coordinator.
      */
     public void shutdown() {
+        shuttingDown = true;
         Stream.of(recoveryTask, persistTask)
                 .filter(Objects::nonNull)
                 .forEach(task -> {
@@ -129,7 +135,7 @@ public class CoordinatorService implements Service {
     }
 
     @Override
-    public void update(Routing.Rules rules) {
+    public void routing(HttpRules rules) {
         rules
                 .get("/", this::get)
                 .get("/recovery", this::recovery)
@@ -144,6 +150,39 @@ public class CoordinatorService implements Service {
     }
 
     /**
+     * Get LRA by lraId.
+     *
+     * @param lraId without coordinator uri prefix
+     * @return LRA when managed by this coordinator or null
+     */
+    public Lra lra(String lraId) {
+        return this.lraPersistentRegistry.get(lraId);
+    }
+
+    LazyValue<URI> coordinatorURL() {
+        return coordinatorURL;
+    }
+
+    private void init() {
+        lraPersistentRegistry.load(this);
+        recoveryTask = Scheduling.fixedRate()
+                .delay(config.get("recovery-interval").asLong().orElse(200L))
+                .initialDelay(200)
+                .timeUnit(TimeUnit.MILLISECONDS)
+                .task(this::tick)
+                .build();
+
+        if (config.get("periodical-persist").asBoolean().orElse(false)) {
+            persistTask = Scheduling.fixedRate()
+                    .delay(config.get("persist-interval").asLong().orElse(5000L))
+                    .initialDelay(200)
+                    .timeUnit(TimeUnit.MILLISECONDS)
+                    .task(inv -> lraPersistentRegistry.save())
+                    .build();
+        }
+    }
+
+    /**
      * Ask coordinator to start new LRA and return its id.
      *
      * @param req HTTP Request
@@ -151,27 +190,27 @@ public class CoordinatorService implements Service {
      */
     private void start(ServerRequest req, ServerResponse res) {
 
-        long timeLimit = req.queryParams().first(TIME_LIMIT_PARAM_NAME).map(Long::valueOf).orElse(0L);
-        String parentLRA = req.queryParams().first(PARENT_LRA_PARAM_NAME).orElse("");
+        long timeLimit = req.query().first(TIME_LIMIT_PARAM_NAME).map(Long::valueOf).orElse(0L);
+        String parentLRA = req.query().first(PARENT_LRA_PARAM_NAME).orElse("");
 
         String lraUUID = UUID.randomUUID().toString();
         URI lraId = coordinatorUriWithPath(lraUUID);
         if (!parentLRA.isEmpty()) {
-            Lra parent = lraPersistentRegistry.get(parentLRA.replace(coordinatorURL.get().toASCIIString() + "/", ""));
+            LraImpl parent = lraPersistentRegistry.get(parentLRA.replace(coordinatorURL.get().toASCIIString() + "/", ""));
             if (parent != null) {
-                Lra childLra = new Lra(this, lraUUID, URI.create(parentLRA), this.config);
+                LraImpl childLra = new LraImpl(this, lraUUID, URI.create(parentLRA), this.config);
                 childLra.setupTimeout(timeLimit);
                 lraPersistentRegistry.put(lraUUID, childLra);
                 parent.addChild(childLra);
             }
         } else {
-            Lra newLra = new Lra(this, lraUUID, config);
+            LraImpl newLra = new LraImpl(this, lraUUID, config);
             newLra.setupTimeout(timeLimit);
             lraPersistentRegistry.put(lraUUID, newLra);
         }
 
         res.headers().add(LRA_HTTP_CONTEXT_HEADER, lraId.toASCIIString());
-        res.status(201)
+        res.status(CREATED_201)
                 .send(lraId.toString());
     }
 
@@ -182,19 +221,19 @@ public class CoordinatorService implements Service {
      * @param res HTTP Response
      */
     private void close(ServerRequest req, ServerResponse res) {
-        String lraId = req.path().param("LraId");
-        Lra lra = lraPersistentRegistry.get(lraId);
+        String lraId = req.path().pathParameters().get("LraId");
+        LraImpl lra = lraPersistentRegistry.get(lraId);
         if (lra == null) {
-            res.status(404).send();
+            res.status(NOT_FOUND_404).send();
             return;
         }
-        if (lra.status().get() != LRAStatus.Active) {
+        if (lra.lraStatus().get() != LRAStatus.Active) {
             // Already time-outed
-            res.status(410).send();
+            res.status(GONE_410).send();
             return;
         }
         lra.close();
-        res.status(200).send();
+        res.status(OK_200).send();
     }
 
     /**
@@ -204,14 +243,14 @@ public class CoordinatorService implements Service {
      * @param res HTTP Response
      */
     private void cancel(ServerRequest req, ServerResponse res) {
-        String lraId = req.path().param("LraId");
-        Lra lra = lraPersistentRegistry.get(lraId);
+        String lraId = req.path().pathParameters().get("LraId");
+        LraImpl lra = lraPersistentRegistry.get(lraId);
         if (lra == null) {
-            res.status(404).send();
+            res.status(NOT_FOUND_404).send();
             return;
         }
         lra.cancel();
-        res.status(200).send();
+        res.status(OK_200).send();
     }
 
     /**
@@ -222,24 +261,24 @@ public class CoordinatorService implements Service {
      */
     private void join(ServerRequest req, ServerResponse res) {
 
-        String lraId = req.path().param("LraId");
-        String compensatorLink = req.headers().first("Link").orElse("");
+        String lraId = req.path().pathParameters().get("LraId");
+        String compensatorLink = req.headers().first(HeaderNames.LINK).orElse("");
 
-        Lra lra = lraPersistentRegistry.get(lraId);
+        LraImpl lra = lraPersistentRegistry.get(lraId);
         if (lra == null) {
-            res.status(404).send();
+            res.status(NOT_FOUND_404).send();
             return;
         } else if (lra.checkTimeout()) {
             // too late to join
-            res.status(412).send();
+            res.status(PRECONDITION_FAILED_412).send();
             return;
         }
         lra.addParticipant(compensatorLink);
         String recoveryUrl = coordinatorUriWithPath("/" + lraId + "/recovery").toASCIIString();
 
-        res.headers().put(LRA_HTTP_RECOVERY_HEADER, recoveryUrl);
-        res.headers().put("Location", recoveryUrl);
-        res.status(200)
+        res.headers().set(LRA_HTTP_RECOVERY_HEADER, recoveryUrl);
+        res.headers().set(HeaderNames.LOCATION, recoveryUrl);
+        res.status(OK_200)
                 .send(recoveryUrl);
     }
 
@@ -250,15 +289,15 @@ public class CoordinatorService implements Service {
      * @param res HTTP Response
      */
     private void status(ServerRequest req, ServerResponse res) {
-        String lraId = req.path().param("LraId");
-        Lra lra = lraPersistentRegistry.get(lraId);
+        String lraId = req.path().pathParameters().get("LraId");
+        LraImpl lra = lraPersistentRegistry.get(lraId);
         if (lra == null) {
-            res.status(404).send();
+            res.status(NOT_FOUND_404).send();
             return;
         }
 
-        res.status(200)
-                .send(lra.status().get().name());
+        res.status(OK_200)
+                .send(lra.lraStatus().get().name());
     }
 
     /**
@@ -269,18 +308,16 @@ public class CoordinatorService implements Service {
      * @param res HTTP Response
      */
     private void leave(ServerRequest req, ServerResponse res) {
-        String lraId = req.path().param("LraId");
-        req.content()
-                .as(String.class)
-                .forSingle(compensatorLinks -> {
-                    Lra lra = lraPersistentRegistry.get(lraId);
-                    if (lra == null) {
-                        res.status(404).send();
-                    } else {
-                        lra.removeParticipant(compensatorLinks);
-                        res.status(200).send();
-                    }
-                }).exceptionally(res::send);
+        String lraId = req.path().pathParameters().get("LraId");
+        String compensatorLinks = req.content().as(String.class);
+
+        LraImpl lra = lraPersistentRegistry.get(lraId);
+        if (lra == null) {
+            res.status(NOT_FOUND_404).send();
+        } else {
+            lra.removeParticipant(compensatorLinks);
+            res.status(OK_200).send();
+        }
     }
 
     /**
@@ -290,95 +327,98 @@ public class CoordinatorService implements Service {
      * @param res HTTP Response
      */
     private void recovery(ServerRequest req, ServerResponse res) {
-        Optional<String> lraId = req.queryParams().first("lraId")
-                .or(() -> Optional.ofNullable(req.path().param("LraId")));
+        nextRecoveryCycle();
 
-        if (lraId.isPresent()) {
-            Lra lra = lraPersistentRegistry.get(lraId.get());
+        Optional<String> lraUUID = req.query().first("lraId")
+                .or(() -> req.path().pathParameters().first("LraId").asOptional())
+                .map(l -> {
+                    if (l.lastIndexOf("/") != -1 && l.lastIndexOf("/") + 1 < l.length()) {
+                        return l.substring(l.lastIndexOf("/") + 1);
+                    } else {
+                        return l;
+                    }
+                });
+
+        if (lraUUID.isPresent()) {
+            LraImpl lra = lraPersistentRegistry.get(lraUUID.get());
             if (lra != null) {
-                nextRecoveryCycle()
-                        .map(Lra.class::cast)
-                        .onCompleteResume(lra)
-                        .filter(l -> RECOVERABLE_STATUSES.contains(lra.status().get()))
-                        .map(l -> JSON.createObjectBuilder()
-                                .add("lraId", l.lraId())
-                                .add("status", l.status().get().name())
-                                .build()
-                        )
-                        .first()
-                        .onError(res::send)
-                        .defaultIfEmpty(JsonValue.EMPTY_JSON_OBJECT)
-                        .forSingle(s -> res.status(200).send(JSON_WRITER.marshall(s)));
+                if (RECOVERABLE_STATUSES.contains(lra.lraStatus().get())) {
+                    JsonObject json = JSON.createObjectBuilder()
+                            .add("lraId", lra.lraId())
+                            .add("status", lra.lraStatus().get().name())
+                            .add("recovering", Set.of(LRAStatus.Closed, LRAStatus.Cancelled).contains(lra.lraStatus().get()))
+                            .build();
+                    res.status(OK_200).send(json);
+                } else {
+                    res.status(OK_200).send(JsonValue.EMPTY_JSON_OBJECT);
+                }
             } else {
-                nextRecoveryCycle()
-                        .map(String::valueOf)
-                        .onError(res::send)
-                        .map(JsonObject.class::cast)
-                        .defaultIfEmpty(JsonValue.EMPTY_JSON_OBJECT)
-                        .forSingle(s -> res.status(404).send());
+                res.status(NOT_FOUND_404).send(JsonValue.EMPTY_JSON_OBJECT);
             }
         } else {
-            nextRecoveryCycle()
-                    .map(JsonArray.class::cast)
-                    .onCompleteResumeWith(lraPersistentRegistry
-                            .stream()
-                            .filter(lra -> RECOVERABLE_STATUSES.contains(lra.status().get()))
-                            .map(l -> JSON.createObjectBuilder()
-                                    .add("lraId", l.lraId())
-                                    .add("status", l.status().get().name())
-                                    .build()
-                            )
-                            .collect(JSON::createArrayBuilder, JsonArrayBuilder::add)
-                            .map(JsonArrayBuilder::build))
-                    .first()
-                    .onError(res::send)
-                    .defaultIfEmpty(JsonArray.EMPTY_JSON_ARRAY)
-                    .forSingle(s -> res.status(200).send(JSON_WRITER.marshall(s)));
+            JsonArray jsonValues = lraPersistentRegistry
+                    .stream()
+                    .filter(lra -> RECOVERABLE_STATUSES.contains(lra.lraStatus().get()))
+                    .map(l -> JSON.createObjectBuilder()
+                            .add("lraId", l.lraId())
+                            .add("status", l.lraStatus().get().name())
+                            .build()
+                    )
+                    .collect(JSON::createArrayBuilder, JsonArrayBuilder::add, JsonArrayBuilder::addAll)
+                    .build();
+
+            res.status(OK_200).send(jsonValues);
         }
     }
 
     private void get(ServerRequest req, ServerResponse res) {
-        Optional<String> lraId = Optional.ofNullable(req.path().param("LraId"))
-                .or(() -> req.queryParams().first("lraId"));
+        Optional<String> lraId = req.path().pathParameters().first("LraId")
+                .or(() -> req.query().first("lraId").asOptional());
 
-        lraPersistentRegistry
+        JsonArray array = lraPersistentRegistry
                 .stream()
                 // filter by lraId param or dont filter at all
                 .filter(lra -> lraId.map(id -> lra.lraId().equals(id)).orElse(true))
                 .map(l -> JSON.createObjectBuilder()
                         .add("lraId", l.lraId())
-                        .add("status", l.status().get().name())
+                        .add("status", l.lraStatus().get().name())
                         .build()
                 )
-                .collect(JSON::createArrayBuilder, JsonArrayBuilder::add)
-                .map(JsonArrayBuilder::build)
-                .onError(res::send)
-                .defaultIfEmpty(JsonArray.EMPTY_JSON_ARRAY)
-                .forSingle(s -> res.status(200).send(JSON_WRITER.marshall(s)));
+                .collect(JSON::createArrayBuilder, JsonArrayBuilder::add, JsonArrayBuilder::addAll)
+                .build();
+
+        res.status(OK_200)
+                .send(array);
     }
 
     private void tick(FixedRateInvocation inv) {
+        if (shuttingDown) {
+            return;
+        }
         lraPersistentRegistry.stream().forEach(lra -> {
+            if (shuttingDown) {
+                return;
+            }
             if (lra.isReadyToDelete()) {
                 lraPersistentRegistry.remove(lra.lraId());
             } else {
-                if (LRAStatus.Cancelling == lra.status().get()) {
-                    LOGGER.log(Level.FINE, "Recovering {0}", lra.lraId());
+                if (LRAStatus.Cancelling == lra.lraStatus().get()) {
+                    LOGGER.log(Level.DEBUG, "Recovering {0}", lra.lraId());
                     lra.cancel();
                 }
-                if (LRAStatus.Closing == lra.status().get()) {
-                    LOGGER.log(Level.FINE, "Recovering {0}", lra.lraId());
+                if (LRAStatus.Closing == lra.lraStatus().get()) {
+                    LOGGER.log(Level.DEBUG, "Recovering {0}", lra.lraId());
                     lra.close();
                 }
-                if (lra.checkTimeout() && lra.status().get().equals(LRAStatus.Active)) {
-                    LOGGER.log(Level.FINE, "Timeouting {0} ", lra.lraId());
-                    lra.timeout();
+                if (lra.checkTimeout() && lra.lraStatus().get().equals(LRAStatus.Active)) {
+                    LOGGER.log(Level.DEBUG, "Timeouting {0} ", lra.lraId());
+                    lra.triggerTimeout();
                 }
-                if (Set.of(LRAStatus.Closed, LRAStatus.Cancelled).contains(lra.status().get())) {
+                if (Set.of(LRAStatus.Closed, LRAStatus.Cancelled).contains(lra.lraStatus().get())) {
                     // If a participant is unable to complete or compensate immediately or because of a failure
                     // then it must remember the fact (by reporting its' status via the @Status method)
                     // until explicitly told that it can clean up using this @Forget annotation.
-                    LOGGER.log(Level.FINE, "Forgetting {0} {1}", new Object[] {lra.status().get(), lra.lraId()});
+                    LOGGER.log(Level.DEBUG, "Forgetting {0} {1}", new Object[] {lra.lraStatus().get(), lra.lraId()});
                     lra.tryForget();
                     lra.tryAfter();
                 }
@@ -387,39 +427,18 @@ public class CoordinatorService implements Service {
         completedRecovery.getAndSet(new CompletableFuture<>()).complete(null);
     }
 
-    LazyValue<URI> getCoordinatorURL() {
-        return coordinatorURL;
-    }
-
-    private Single<Void> nextRecoveryCycle() {
-        return Single.create(completedRecovery.get(), true)
-                //wait for the second one, as first could have been in progress
-                .onCompleteResumeWith(Single.create(completedRecovery.get(), true))
-                .ignoreElements();
+    private void nextRecoveryCycle() {
+        try {
+            completedRecovery.get().get(1, TimeUnit.SECONDS);
+            //wait for the second one, as first could have been in progress
+            completedRecovery.get().get(1, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            LOGGER.log(Level.TRACE, "Failed to get recovery cycle result, ignoring", e);
+        }
     }
 
     private URI coordinatorUriWithPath(String additionalPath) {
         return URI.create(coordinatorURL.get().toASCIIString() + "/" + additionalPath);
-    }
-
-    /**
-     * Create a new Lra coordinator.
-     *
-     * @return coordinator
-     */
-    public static CoordinatorService create() {
-        return builder()
-                .config(Config.create().get(CoordinatorService.CONFIG_PREFIX))
-                .build();
-    }
-
-    /**
-     * Create a new fluent API builder.
-     *
-     * @return a new builder
-     */
-    public static Builder builder() {
-        return new Builder();
     }
 
     /**
@@ -430,8 +449,8 @@ public class CoordinatorService implements Service {
         private Config config;
         private LraPersistentRegistry lraPersistentRegistry;
         private Supplier<URI> uriSupplier = () -> URI.create(config.get(COORDINATOR_URL_KEY)
-                .asString()
-                .orElse(DEFAULT_COORDINATOR_URL));
+                                                                     .asString()
+                                                                     .orElse(DEFAULT_COORDINATOR_URL));
 
         /**
          * Configuration needed for configuring coordinator.
@@ -441,18 +460,6 @@ public class CoordinatorService implements Service {
          */
         public Builder config(Config config) {
             this.config = config;
-            return this;
-        }
-
-        /**
-         * Custom persistent registry for saving and loading the state of the coordinator.
-         * Coordinator is not persistent by default.
-         *
-         * @param lraPersistentRegistry custom persistent registry
-         * @return this builder
-         */
-        public Builder persistentRegistry(LraPersistentRegistry lraPersistentRegistry) {
-            this.lraPersistentRegistry = lraPersistentRegistry;
             return this;
         }
 
@@ -471,12 +478,24 @@ public class CoordinatorService implements Service {
         @Override
         public CoordinatorService build() {
             if (config == null) {
-                config = Config.create().get(CoordinatorService.CONFIG_PREFIX);
+                config = Config.empty();
             }
             if (lraPersistentRegistry == null) {
                 lraPersistentRegistry = new LraDatabasePersistentRegistry(config);
             }
             return new CoordinatorService(lraPersistentRegistry, uriSupplier, config);
+        }
+
+        /**
+         * Custom persistent registry for saving and loading the state of the coordinator.
+         * Coordinator is not persistent by default.
+         *
+         * @param lraPersistentRegistry custom persistent registry
+         * @return this builder
+         */
+        Builder persistentRegistry(LraPersistentRegistry lraPersistentRegistry) {
+            this.lraPersistentRegistry = lraPersistentRegistry;
+            return this;
         }
     }
 }

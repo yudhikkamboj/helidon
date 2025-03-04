@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,18 +21,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.logging.Logger;
 
 import io.helidon.config.spi.ConfigMapper;
 
 /**
- * Abstract common implementation of {@link Config} extended by appropriate Config node types:
- * {@link ConfigListImpl}, {@link ConfigMissingImpl}, {@link ConfigObjectImpl}, {@link ConfigLeafImpl}.
+ * Abstract common implementation of {@link io.helidon.config.Config} extended by appropriate Config node types:
+ * {@link io.helidon.config.ConfigListImpl}, {@link io.helidon.config.ConfigMissingImpl}, {@link io.helidon.config.ConfigObjectImpl},
+ * {@link io.helidon.config.ConfigLeafImpl}.
  */
 abstract class AbstractConfigImpl implements Config {
-
-    public static final Logger LOGGER = Logger.getLogger(AbstractConfigImpl.class.getName());
-
     private final ConfigKeyImpl prefix;
     private final ConfigKeyImpl key;
     private final ConfigKeyImpl realKey;
@@ -43,7 +40,8 @@ abstract class AbstractConfigImpl implements Config {
 
     /**
      * Initializes Config implementation.
-     *  @param type    a type of config node.
+     *
+     * @param type    a type of config node.
      * @param prefix  prefix key for the new config node.
      * @param key     a key to this config.
      * @param factory a config factory.
@@ -110,6 +108,11 @@ abstract class AbstractConfigImpl implements Config {
     @Override
     public <T> T convert(Class<T> type, String value) throws ConfigMappingException {
         return mapperManager.map(value, type, key().toString());
+    }
+
+    @Override
+    public Config root() {
+        return factory.config(prefix, ConfigKeyImpl.of());
     }
 
     @Override

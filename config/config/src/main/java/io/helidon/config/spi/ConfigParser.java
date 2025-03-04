@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 
-import io.helidon.config.ConfigParsers;
+import io.helidon.common.media.type.MediaType;
 import io.helidon.config.spi.ConfigNode.ObjectNode;
+import io.helidon.service.registry.Service;
 
 /**
  * Transforms config {@link io.helidon.config.spi.ConfigParser.Content} into a {@link ConfigNode.ObjectNode} that
@@ -40,22 +41,17 @@ import io.helidon.config.spi.ConfigNode.ObjectNode;
  * given {@code Builder} by invoking
  * {@link io.helidon.config.Config.Builder#disableParserServices()}.
  * <p>
- * A parser can specify a {@link jakarta.annotation.Priority}. If no priority is
- * explicitly assigned, the value of {@value PRIORITY} is assumed.
+ * A parser can specify a {@link io.helidon.common.Weight}. If no weight is
+ * explicitly assigned, the value of {@value io.helidon.common.Weighted#DEFAULT_WEIGHT} is assumed.
  * <p>
  * Parser is used by the config system and a config source provides data as an input stream.
  *
  * @see io.helidon.config.Config.Builder#addParser(ConfigParser)
  * @see io.helidon.config.spi.ParsableSource
- * @see ConfigParsers ConfigParsers - access built-in implementations.
+ * @see io.helidon.config.ConfigParsers ConfigParsers - access built-in implementations.
  */
+@Service.Contract
 public interface ConfigParser {
-
-    /**
-     * Default priority of the parser if registered by {@link io.helidon.config.Config.Builder} automatically.
-     */
-    int PRIORITY = 100;
-
     /**
      * Returns set of supported media types by the parser.
      * <p>
@@ -64,11 +60,11 @@ public interface ConfigParser {
      * <p>
      * {@link io.helidon.config.spi.ParsableSource} implementations can use {@link io.helidon.common.media.type.MediaTypes}
      * to probe for media type of content to provide it to config system through
-     * {@link io.helidon.config.spi.ConfigParser.Content.Builder#mediaType(String)}.
+     * {@link io.helidon.config.spi.ConfigParser.Content.Builder#mediaType(io.helidon.common.media.type.MediaType)}.
      *
      * @return supported media types by the parser
      */
-    Set<String> supportedMediaTypes();
+    Set<MediaType> supportedMediaTypes();
 
     /**
      * Parses a specified {@link ConfigContent} into a {@link ObjectNode hierarchical configuration representation}.
@@ -123,7 +119,7 @@ public interface ConfigParser {
          *
          * @return content media type if known, {@code empty} otherwise
          */
-        Optional<String> mediaType();
+        Optional<MediaType> mediaType();
 
         /**
          * Data of this config source.
@@ -157,7 +153,7 @@ public interface ConfigParser {
          * @param stamp stamp of the content
          * @return content built from provided information
          */
-        static Content create(InputStream data, String mediaType, Object stamp) {
+        static Content create(InputStream data, MediaType mediaType, Object stamp) {
             return builder().data(data)
                     .mediaType(mediaType)
                     .stamp(stamp)
@@ -169,7 +165,7 @@ public interface ConfigParser {
          */
         class Builder extends ConfigContent.Builder<Builder> implements io.helidon.common.Builder<Builder, Content> {
             private InputStream data;
-            private String mediaType;
+            private MediaType mediaType;
             private Charset charset = StandardCharsets.UTF_8;
 
             private Builder() {
@@ -195,7 +191,7 @@ public interface ConfigParser {
              * @param mediaType media type of the content as understood by the config source
              * @return updated builder instance
              */
-            public Builder mediaType(String mediaType) {
+            public Builder mediaType(MediaType mediaType) {
                 Objects.requireNonNull(mediaType, "Media type must be provided, or this method should not be called");
                 this.mediaType = mediaType;
                 return this;
@@ -208,7 +204,7 @@ public interface ConfigParser {
              * @param mediaType optional of media type
              * @return updated builder instance
              */
-            public Builder mediaType(Optional<String> mediaType) {
+            public Builder mediaType(Optional<MediaType> mediaType) {
                 mediaType.ifPresent(this::mediaType);
                 return this;
             }
@@ -229,7 +225,7 @@ public interface ConfigParser {
                 return data;
             }
 
-            String mediaType() {
+            MediaType mediaType() {
                 return mediaType;
             }
 

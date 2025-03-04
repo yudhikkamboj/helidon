@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,13 +12,11 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
-
 package io.helidon.microprofile.lra;
 
 import java.net.URI;
-import java.util.Arrays;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -30,6 +28,27 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
+
+import io.helidon.common.context.Contexts;
+import io.helidon.http.HeaderName;
+import io.helidon.http.HeaderNames;
+import io.helidon.http.Method;
+import io.helidon.http.Status;
+import io.helidon.lra.coordinator.client.CoordinatorClient;
+import io.helidon.lra.coordinator.client.PropagatedHeaders;
+import io.helidon.microprofile.config.ConfigCdiExtension;
+import io.helidon.microprofile.lra.resources.Work;
+import io.helidon.microprofile.server.JaxRsCdiExtension;
+import io.helidon.microprofile.server.RoutingPath;
+import io.helidon.microprofile.server.ServerCdiExtension;
+import io.helidon.microprofile.testing.junit5.AddBean;
+import io.helidon.microprofile.testing.junit5.AddConfig;
+import io.helidon.microprofile.testing.junit5.AddExtension;
+import io.helidon.microprofile.testing.junit5.DisableDiscovery;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
+import io.helidon.webclient.http1.Http1Client;
+import io.helidon.webclient.http1.Http1ClientResponse;
+import io.helidon.webserver.http.HttpService;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -48,24 +67,6 @@ import jakarta.ws.rs.client.WebTarget;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
-
-import io.helidon.common.context.Contexts;
-import io.helidon.common.reactive.Multi;
-import io.helidon.lra.coordinator.client.CoordinatorClient;
-import io.helidon.lra.coordinator.client.PropagatedHeaders;
-import io.helidon.microprofile.config.ConfigCdiExtension;
-import io.helidon.microprofile.lra.resources.Work;
-import io.helidon.microprofile.server.JaxRsCdiExtension;
-import io.helidon.microprofile.server.RoutingPath;
-import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.microprofile.tests.junit5.AddBean;
-import io.helidon.microprofile.tests.junit5.AddConfig;
-import io.helidon.microprofile.tests.junit5.AddExtension;
-import io.helidon.microprofile.tests.junit5.DisableDiscovery;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
-import io.helidon.webclient.WebClient;
-import io.helidon.webserver.Service;
-
 import org.eclipse.microprofile.lra.annotation.AfterLRA;
 import org.eclipse.microprofile.lra.annotation.Compensate;
 import org.eclipse.microprofile.lra.annotation.Complete;
@@ -107,6 +108,7 @@ class CoordinatorHeaderPropagationTest {
     private static final String PROPAGATED_HEADER = "xxx-tmm-propagated-header";
     private static final String EXTRA_COORDINATOR_PROPAGATED_HEADER = "xBb-tmm-extra-start-header";
     private static final String NOT_PROPAGATED_HEADER = "non-propagated-header";
+    private static final HeaderName LRA_HTTP_CONTEXT_HEADER_NAME = HeaderNames.create(LRA_HTTP_CONTEXT_HEADER);
 
     private static volatile int port = -1;
 
@@ -133,21 +135,21 @@ class CoordinatorHeaderPropagationTest {
     @Produces
     @ApplicationScoped
     @RoutingPath("/lra-coordinator")
-    Service mockCoordinator() {
+    HttpService mockCoordinator() {
         return rules -> rules
                 .post("/start", (req, res) -> {
                     startHeadersCoordinator.putAll(req.headers().toMap());
                     String lraId = URI.create("http://localhost:"
-                            + port
-                            + "/lra-coordinator/xxx-xxx-"
-                            + lraIndex.incrementAndGet()).toASCIIString();
+                                                      + port
+                                                      + "/lra-coordinator/xxx-xxx-"
+                                                      + lraIndex.incrementAndGet()).toASCIIString();
 
                     lraMap.put(lraId, new ConcurrentHashMap<>());
 
-                    res.status(201)
-                            .addHeader(LRA_HTTP_CONTEXT_HEADER, lraId)
-                            .addHeader(NOT_PROPAGATED_HEADER, "not this extra one!")
-                            .addHeader(EXTRA_COORDINATOR_PROPAGATED_HEADER, "yes extra start header!")
+                    res.status(Status.CREATED_201)
+                            .header(LRA_HTTP_CONTEXT_HEADER_NAME, lraId)
+                            .header(NOT_PROPAGATED_HEADER, "not this extra one!")
+                            .header(EXTRA_COORDINATOR_PROPAGATED_HEADER, "yes extra start header!")
                             .send();
                 })
                 .put("/{lraId}/remove", (req, res) -> {
@@ -156,26 +158,28 @@ class CoordinatorHeaderPropagationTest {
                 })
                 .put("/{lraId}/close", (req, res) -> {
                     closeHeadersCoordinator.putAll(req.headers().toMap());
-                    String lraId = "http://localhost:" + port + "/lra-coordinator/" + req.path().param("lraId");
+                    String lraId = "http://localhost:" + port + "/lra-coordinator/" + req.path()
+                            .pathParameters()
+                            .get("lraId");
                     if (lraMap.get(lraId).get("complete") == null) {
                         //no complete resource
                         // after lra
                         if (lraMap.get(lraId).get("after") != null) {
-                            WebClient.builder()
+                            try (Http1ClientResponse clientResponse = Http1Client.builder()
                                     .baseUri(lraMap.get(lraId).get("after").toASCIIString())
                                     .build()
-                                    .put()
-                                    .addHeader(LRA_HTTP_CONTEXT_HEADER, lraId)
+                                    .method(Method.PUT)
+                                    .header(LRA_HTTP_CONTEXT_HEADER_NAME, lraId)
                                     .headers(reqHeaders -> {
                                         // relay all incoming headers
-                                        req.headers().toMap().forEach(reqHeaders::add);
-                                        return reqHeaders;
+                                        req.headers().forEach(reqHeaders::add);
                                     })
-                                    .submit(LRAStatus.Closing.name())
-                                    .onError(res::send)
-                                    .forSingle(wcr2 -> {
-                                        res.send();
-                                    });
+                                    .submit(LRAStatus.Closing.name())) {
+                                if (clientResponse.status().family() != Status.Family.SUCCESSFUL) {
+                                    res.status(clientResponse.status());
+                                }
+                                res.send();
+                            }
                         } else {
                             res.send();
                         }
@@ -183,55 +187,62 @@ class CoordinatorHeaderPropagationTest {
                         return;
                     }
 
-                    WebClient.builder()
+                    try (Http1ClientResponse clientResponse = Http1Client.builder()
                             .baseUri(lraMap.get(lraId).get("complete").toASCIIString())
                             .build()
-                            .put()
-                            .addHeader(LRA_HTTP_CONTEXT_HEADER, lraId)
+                            .method(Method.PUT)
+                            .header(LRA_HTTP_CONTEXT_HEADER_NAME, lraId)
                             .headers(reqHeaders -> {
                                 // relay all incoming headers
-                                req.headers().toMap().forEach(reqHeaders::add);
-                                return reqHeaders;
+                                req.headers().forEach(reqHeaders::add);
                             })
-                            .submit()
-                            .onError(res::send)
-                            .forSingle(wcr1 -> res.send());
+                            .request()) {
+                        if (clientResponse.status().family() != Status.Family.SUCCESSFUL) {
+                            res.status(clientResponse.status());
+                        }
+                        res.send();
+                    }
                 })
                 .put("/{lraId}/cancel", (req, res) -> {
                     closeHeadersCoordinator.putAll(req.headers().toMap());
-                    String lraId = "http://localhost:" + port + "/lra-coordinator/" + req.path().param("lraId");
-                    WebClient.builder()
+                    String lraId = "http://localhost:" + port + "/lra-coordinator/" + req.path()
+                            .pathParameters()
+                            .get("lraId");
+
+                    try (Http1ClientResponse clientResponse = Http1Client.builder()
                             .baseUri(lraMap.get(lraId).get("compensate").toASCIIString())
                             .build()
-                            .put()
-                            .addHeader(LRA_HTTP_CONTEXT_HEADER, lraId)
+                            .method(Method.PUT)
+                            .header(LRA_HTTP_CONTEXT_HEADER_NAME, lraId)
                             .headers(reqHeaders -> {
                                 // relay all incoming headers
-                                req.headers().toMap().forEach(reqHeaders::add);
-                                return reqHeaders;
+                                req.headers().forEach(reqHeaders::add);
                             })
-                            .submit()
-                            .onError(res::send)
-                            .forSingle(wcResponse -> res.send());
+                            .request()) {
+                        if (clientResponse.status().family() != Status.Family.SUCCESSFUL) {
+                            res.status(clientResponse.status());
+                        }
+                        res.send();
+                    }
                 })
                 //join
                 .put("/{lraId}", (req, res) -> {
                     joinHeadersCoordinator.putAll(req.headers().toMap());
-                    String lraId = "http://localhost:" + port + "/lra-coordinator/" + req.path().param("lraId");
-                    req.content()
-                            .as(String.class)
-                            .flatMap(s -> Multi.create(Arrays.stream(s.split(","))))
-                            .peek(s -> {
-                                String[] split = s.split(";");
-                                URI uri = URI.create(split[0]
-                                        .replaceAll("^<", "")
-                                        .replaceAll(">$", ""));
-                                String uriType = split[1].replaceAll("rel=\"([a-z]+)\"", "$1");
-                                lraMap.get(lraId).put(uriType.trim(), uri);
-                            })
-                            .onComplete(res::send)
-                            .onError(res::send)
-                            .ignoreElements();
+                    String lraId = "http://localhost:" + port + "/lra-coordinator/" + req.path()
+                            .pathParameters()
+                            .get("lraId");
+                    String content = req.content().as(String.class);
+
+                    for (String part : content.split(",")) {
+                        String[] split = part.split(";");
+                        URI uri = URI.create(split[0]
+                                                     .replaceAll("^<", "")
+                                                     .replaceAll(">$", ""));
+                        String uriType = split[1].replaceAll("rel=\"([a-z]+)\"", "$1");
+                        lraMap.get(lraId).put(uriType.trim(), uri);
+
+                    }
+                    res.send();
                 });
     }
 
@@ -241,6 +252,7 @@ class CoordinatorHeaderPropagationTest {
             @Initialized(ApplicationScoped.class) Object event,
             BeanManager bm) {
         port = bm.getExtension(ServerCdiExtension.class).port();
+
         // Provide LRA client with coordinator loadbalancer url
         coordinatorLocatorService.overrideCoordinatorUriSupplier(() ->
                 URI.create("http://localhost:" + port + "/lra-coordinator"));
@@ -330,6 +342,8 @@ class CoordinatorHeaderPropagationTest {
         assertThat(closeHeadersCoordinator, hasEntry(PROPAGATED_HEADER, List.of("yes me!")));
         assertThat(closeHeadersCoordinator, not(hasEntry(NOT_PROPAGATED_HEADER, List.of("not me!"))));
 
+        // TODO this is a bad fix for an intermittent failure, requires better fix
+        Thread.sleep(Duration.ofMillis(100));
         // test after
         assertThat(afterHeadersParticipant, hasEntry(PROPAGATED_HEADER, List.of("yes me!")));
         assertThat(afterHeadersParticipant, not(hasEntry(NOT_PROPAGATED_HEADER, List.of("not me!"))));

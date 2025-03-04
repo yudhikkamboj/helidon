@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,11 @@ package io.helidon.webclient.metrics;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ListIterator;
 
-import io.helidon.common.reactive.Single;
-import io.helidon.config.Config;
-import io.helidon.webclient.WebClientException;
-import io.helidon.webclient.WebClientRequestBuilder;
-import io.helidon.webclient.WebClientServiceRequest;
-import io.helidon.webclient.WebClientServiceResponse;
+import io.helidon.common.config.Config;
+import io.helidon.webclient.api.WebClientServiceRequest;
+import io.helidon.webclient.api.WebClientServiceResponse;
 import io.helidon.webclient.spi.WebClientService;
 
 /**
@@ -81,41 +79,35 @@ public class WebClientMetrics implements WebClientService {
      */
     public static WebClientMetrics create(Config config) {
         WebClientMetrics.Builder builder = new Builder();
-        config.asNodeList().ifPresent(configs -> {
-            configs.forEach(metricConfig -> builder.register(processClientMetric(metricConfig)));
-        });
+        config.asNodeList().ifPresent(configs ->
+                configs.forEach(metricConfig ->
+                        builder.register(processClientMetric(metricConfig))));
         return builder.build();
     }
 
     private static WebClientMetric processClientMetric(Config metricConfig) {
         String type = metricConfig.get("type").asString().orElse("COUNTER");
-        switch (type) {
-        case "COUNTER":
-            return counter().config(metricConfig).build();
-        case "METER":
-            return meter().config(metricConfig).build();
-        case "TIMER":
-            return timer().config(metricConfig).build();
-        case "GAUGE_IN_PROGRESS":
-            return gaugeInProgress().config(metricConfig).build();
-        default:
-            throw new WebClientException("Metrics type " + type + " is not supported through service loader");
+        return switch (type) {
+            case "COUNTER" -> counter().config(metricConfig).build();
+            case "METER" -> meter().config(metricConfig).build();
+            case "TIMER" -> timer().config(metricConfig).build();
+            case "GAUGE_IN_PROGRESS" -> gaugeInProgress().config(metricConfig).build();
+            default -> throw new IllegalStateException(String.format(
+                    "Metrics type %s is not supported through service loader",
+                    type));
+        };
+    }
+
+    @Override
+    public WebClientServiceResponse handle(Chain chain, WebClientServiceRequest request) {
+        Chain last = chain;
+        ListIterator<WebClientMetric> serviceIterator = metrics.listIterator(metrics.size());
+        while (serviceIterator.hasPrevious()) {
+            Chain next = last;
+            WebClientMetric service = serviceIterator.previous();
+            last = clientRequest -> service.handle(next, clientRequest);
         }
-    }
-
-    @Override
-    public Single<WebClientServiceRequest> request(WebClientServiceRequest request) {
-        metrics.forEach(clientMetric -> clientMetric.request(request));
-
-        return Single.just(request);
-    }
-
-    @Override
-    public Single<WebClientServiceResponse> response(WebClientRequestBuilder.ClientRequest request,
-                                                              WebClientServiceResponse response) {
-        metrics.forEach(clientMetric -> clientMetric.response(request, response));
-
-        return Single.just(response);
+        return last.proceed(request);
     }
 
     private static final class Builder implements io.helidon.common.Builder<Builder, WebClientMetrics> {
@@ -125,9 +117,8 @@ public class WebClientMetrics implements WebClientService {
         private Builder() {
         }
 
-        private Builder register(WebClientMetric clientMetric) {
+        private void register(WebClientMetric clientMetric) {
             metrics.add(clientMetric);
-            return this;
         }
 
         @Override

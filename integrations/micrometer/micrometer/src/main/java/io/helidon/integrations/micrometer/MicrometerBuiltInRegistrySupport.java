@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.integrations.micrometer;
 
 import java.util.Collections;
@@ -20,10 +21,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
-import io.helidon.config.Config;
-import io.helidon.config.ConfigValue;
-import io.helidon.webserver.Handler;
-import io.helidon.webserver.ServerRequest;
+import io.helidon.common.config.Config;
+import io.helidon.common.config.ConfigValue;
+import io.helidon.webserver.http.Handler;
+import io.helidon.webserver.http.ServerRequest;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.config.MeterRegistryConfig;
@@ -33,7 +34,6 @@ import io.micrometer.prometheus.PrometheusConfig;
  * Framework for supporting Micrometer registry types.
  */
 abstract class MicrometerBuiltInRegistrySupport {
-
     abstract static class AbstractMeterRegistryConfig implements MeterRegistryConfig {
         private final Map<String, String> settings;
 
@@ -93,7 +93,10 @@ abstract class MicrometerBuiltInRegistrySupport {
 
     abstract MeterRegistry createRegistry(MeterRegistryConfig meterRegistryConfig);
 
-    abstract Function<ServerRequest, Optional<Handler>> requestToHandlerFn(MeterRegistry registry);
+    abstract Function<ServerRequest,
+            Optional<Handler>> requestToHandlerFn(
+            MeterRegistry meterRegistry);
+
 
     MeterRegistry registry() {
         return registry;

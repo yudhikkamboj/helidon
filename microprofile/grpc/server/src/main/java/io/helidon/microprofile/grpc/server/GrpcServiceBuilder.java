@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,40 +25,35 @@ import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 import io.helidon.common.Builder;
-import io.helidon.common.serviceloader.HelidonServiceLoader;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.grpc.api.Grpc;
 import io.helidon.grpc.core.ContextKeys;
 import io.helidon.grpc.core.MethodHandler;
-import io.helidon.grpc.server.MethodDescriptor;
-import io.helidon.grpc.server.ServiceDescriptor;
 import io.helidon.microprofile.grpc.core.AbstractServiceBuilder;
 import io.helidon.microprofile.grpc.core.AnnotatedMethod;
 import io.helidon.microprofile.grpc.core.AnnotatedMethodList;
-import io.helidon.microprofile.grpc.core.GrpcInterceptor;
-import io.helidon.microprofile.grpc.core.GrpcInterceptorBinding;
-import io.helidon.microprofile.grpc.core.GrpcInterceptors;
-import io.helidon.microprofile.grpc.core.GrpcMarshaller;
-import io.helidon.microprofile.grpc.core.GrpcMethod;
-import io.helidon.microprofile.grpc.core.Instance;
+import io.helidon.microprofile.grpc.core.InstanceSupplier;
 import io.helidon.microprofile.grpc.core.ModelHelper;
+import io.helidon.webserver.grpc.GrpcMethodDescriptor;
+import io.helidon.webserver.grpc.GrpcServiceDescriptor;
 
 import io.grpc.ServerInterceptor;
 import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.spi.BeanManager;
 
+import static java.lang.System.Logger.Level;
+
 /**
- * A builder for constructing a {@link ServiceDescriptor}
+ * A builder for constructing a {@link GrpcServiceDescriptor}
  * instances from an annotated POJOs.
  */
 public class GrpcServiceBuilder
         extends AbstractServiceBuilder
-        implements Builder<GrpcServiceBuilder, ServiceDescriptor> {
+        implements Builder<GrpcServiceBuilder, GrpcServiceDescriptor> {
 
-    private static final Logger LOGGER = Logger.getLogger(GrpcServiceBuilder.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(GrpcServiceBuilder.class.getName());
 
     private final BeanManager beanManager;
 
@@ -66,37 +61,37 @@ public class GrpcServiceBuilder
      * Create a new introspection modeller for a given gRPC service class.
      *
      * @param serviceClass gRPC service (handler) class.
-     * @param instance     the target instance to call gRPC handler methods on
-     * @param beanManager  the {@link jakarta.enterprise.inject.spi.BeanManager} to use
-     *                     to look-up CDI beans.
-     * @throws java.lang.NullPointerException if the service or instance parameters are null
+     * @param instanceSupplier the target instanceSupplier to call gRPC handler methods on
+     * @param beanManager the {@link jakarta.enterprise.inject.spi.BeanManager} to use
+     * to look-up CDI beans.
+     * @throws java.lang.NullPointerException if the service or instanceSupplier parameters are null
      */
-    private GrpcServiceBuilder(Class<?> serviceClass, Supplier<?> instance, BeanManager beanManager) {
-        super(serviceClass, instance);
+    private GrpcServiceBuilder(Class<?> serviceClass, Supplier<?> instanceSupplier, BeanManager beanManager) {
+        super(serviceClass, instanceSupplier);
         this.beanManager = beanManager;
     }
 
     /**
      * Create a new introspection modeller for a given gRPC service.
      *
-     * @param service      the service to call gRPC handler methods on
-     * @param beanManager  the {@link jakarta.enterprise.inject.spi.BeanManager} to use
-     *                     to look-up CDI beans.
-     * @throws java.lang.NullPointerException if the service is null
+     * @param service the service to call gRPC handler methods on
+     * @param beanManager the {@link jakarta.enterprise.inject.spi.BeanManager} to use
+     * to look-up CDI beans.
      * @return a {@link GrpcServiceBuilder}
+     * @throws java.lang.NullPointerException if the service is null
      */
     public static GrpcServiceBuilder create(Object service, BeanManager beanManager) {
-        return new GrpcServiceBuilder(service.getClass(), Instance.singleton(service), beanManager);
+        return new GrpcServiceBuilder(service.getClass(), InstanceSupplier.singleton(service), beanManager);
     }
 
     /**
      * Create a new introspection modeller for a given gRPC service class.
      *
      * @param serviceClass gRPC service (handler) class.
-     * @param beanManager  the {@link jakarta.enterprise.inject.spi.BeanManager} to use
-     *                     to look-up CDI beans.
-     * @throws java.lang.NullPointerException if the service class is null
+     * @param beanManager the {@link jakarta.enterprise.inject.spi.BeanManager} to use
+     * to look-up CDI beans.
      * @return a {@link GrpcServiceBuilder}
+     * @throws java.lang.NullPointerException if the service class is null
      */
     public static GrpcServiceBuilder create(Class<?> serviceClass, BeanManager beanManager) {
         return new GrpcServiceBuilder(Objects.requireNonNull(serviceClass), createInstanceSupplier(serviceClass), beanManager);
@@ -106,30 +101,30 @@ public class GrpcServiceBuilder
      * Create a {@link GrpcServiceBuilder} for a given gRPC service class.
      *
      * @param serviceClass gRPC service (handler) class.
-     * @param instance     the target instance to call gRPC handler methods on
-     * @param beanManager  the {@link jakarta.enterprise.inject.spi.BeanManager} to use
-     *                     to look-up CDI beans.
-     * @throws java.lang.NullPointerException if the service or instance parameters are null
+     * @param instanceSupplier the target instanceSupplier to call gRPC handler methods on
+     * @param beanManager the {@link jakarta.enterprise.inject.spi.BeanManager} to use
+     * to look-up CDI beans.
      * @return a {@link GrpcServiceBuilder}
+     * @throws java.lang.NullPointerException if the service or instanceSupplier parameters are null
      */
-    public static GrpcServiceBuilder create(Class<?> serviceClass, Supplier<?> instance, BeanManager beanManager) {
-        return new GrpcServiceBuilder(serviceClass, instance, beanManager);
+    public static GrpcServiceBuilder create(Class<?> serviceClass, Supplier<?> instanceSupplier, BeanManager beanManager) {
+        return new GrpcServiceBuilder(serviceClass, instanceSupplier, beanManager);
     }
 
     /**
-     * Create a {@link ServiceDescriptor.Builder} introspected class.
+     * Create a {@link GrpcServiceDescriptor.Builder} introspected class.
      *
-     * @return a {@link ServiceDescriptor.Builder} for the introspected class.
+     * @return a {@link GrpcServiceDescriptor.Builder} for the introspected class.
      */
     @Override
-    public ServiceDescriptor build() {
+    public GrpcServiceDescriptor build() {
         checkForNonPublicMethodIssues();
 
         Class<?> annotatedServiceClass = annotatedServiceClass();
         AnnotatedMethodList methodList = AnnotatedMethodList.create(annotatedServiceClass);
         String name = determineServiceName(annotatedServiceClass);
 
-        ServiceDescriptor.Builder builder = ServiceDescriptor.builder(serviceClass(), name)
+        GrpcServiceDescriptor.Builder builder = GrpcServiceDescriptor.builder(serviceClass(), name)
                 .marshallerSupplier(getMarshallerSupplier());
 
         addServiceMethods(builder, methodList, beanManager);
@@ -144,40 +139,41 @@ public class GrpcServiceBuilder
     }
 
     /**
-     * Add methods to the {@link ServiceDescriptor.Builder}.
+     * Add methods to the {@link GrpcServiceDescriptor.Builder}.
      *
-     * @param builder      the {@link ServiceDescriptor.Builder} to add the method to
-     * @param methodList   the list of methods to add
-     * @param beanManager  the {@link jakarta.enterprise.inject.spi.BeanManager} to use
-     *                     to look-up CDI beans.
+     * @param builder the {@link GrpcServiceDescriptor.Builder} to add the method to
+     * @param methodList the list of methods to add
+     * @param beanManager the {@link jakarta.enterprise.inject.spi.BeanManager} to use
+     * to look-up CDI beans.
      */
-    private void addServiceMethods(ServiceDescriptor.Builder builder, AnnotatedMethodList methodList, BeanManager beanManager) {
-        for (AnnotatedMethod am : methodList.withAnnotation(GrpcMethod.class)) {
+    private void addServiceMethods(GrpcServiceDescriptor.Builder builder, AnnotatedMethodList methodList,
+                                   BeanManager beanManager) {
+        for (AnnotatedMethod am : methodList.withAnnotation(Grpc.GrpcMethod.class)) {
             addServiceMethod(builder, am, beanManager);
         }
-        for (AnnotatedMethod am : methodList.withMetaAnnotation(GrpcMethod.class)) {
+        for (AnnotatedMethod am : methodList.withMetaAnnotation(Grpc.GrpcMethod.class)) {
             addServiceMethod(builder, am, beanManager);
         }
     }
 
     /**
-     * Add a method to the {@link ServiceDescriptor.Builder}.
+     * Add a method to the {@link GrpcServiceDescriptor.Builder}.
      * <p>
      * The method configuration will be determined by the annotations present on the
      * method and the method signature.
      *
-     * @param builder  the {@link ServiceDescriptor.Builder} to add the method to
-     * @param method   the {@link AnnotatedMethod} representing the method to add
-     * @param beanManager  the {@link jakarta.enterprise.inject.spi.BeanManager} to use
-     *                     to look-up CDI beans.
+     * @param builder the {@link GrpcServiceDescriptor.Builder} to add the method to
+     * @param method the {@link AnnotatedMethod} representing the method to add
+     * @param beanManager the {@link jakarta.enterprise.inject.spi.BeanManager} to use
+     * to look-up CDI beans.
      */
     @SuppressWarnings("unchecked")
-    private void addServiceMethod(ServiceDescriptor.Builder builder, AnnotatedMethod method, BeanManager beanManager) {
-        GrpcMethod annotation = method.firstAnnotationOrMetaAnnotation(GrpcMethod.class);
+    private void addServiceMethod(GrpcServiceDescriptor.Builder builder, AnnotatedMethod method, BeanManager beanManager) {
+        Grpc.GrpcMethod annotation = method.firstAnnotationOrMetaAnnotation(Grpc.GrpcMethod.class);
         String name = determineMethodName(method, annotation);
         Supplier<?> instanceSupplier = instanceSupplier();
 
-        MethodHandler handler = handlerSuppliers().stream()
+        MethodHandler<?, ?> handler = handlerSuppliers().stream()
                 .filter(supplier -> supplier.supplies(method))
                 .findFirst()
                 .map(supplier -> supplier.get(name, method, instanceSupplier))
@@ -187,7 +183,7 @@ public class GrpcServiceBuilder
         Class<?> responseType = handler.getResponseType();
         List<ServerInterceptor> interceptors = lookupMethodInterceptors(beanManager, method);
 
-        GrpcInterceptors grpcInterceptors = method.getAnnotation(GrpcInterceptors.class);
+        Grpc.GrpcInterceptors grpcInterceptors = method.getAnnotation(Grpc.GrpcInterceptors.class);
 
         if (grpcInterceptors != null) {
             for (Class<?> interceptorClass : grpcInterceptors.value()) {
@@ -203,7 +199,7 @@ public class GrpcServiceBuilder
                                                                              responseType,
                                                                              interceptors);
 
-        switch (annotation.type()) {
+        switch (annotation.value()) {
         case UNARY:
             builder.unary(name, handler, configurer);
             break;
@@ -218,11 +214,11 @@ public class GrpcServiceBuilder
             break;
         case UNKNOWN:
         default:
-            LOGGER.log(Level.SEVERE, () -> "Unrecognized method type " + annotation.type());
+            LOGGER.log(Level.ERROR, () -> "Unrecognized method type " + annotation.value());
         }
     }
 
-    private void configureServiceInterceptors(ServiceDescriptor.Builder builder, BeanManager beanManager) {
+    private void configureServiceInterceptors(GrpcServiceDescriptor.Builder builder, BeanManager beanManager) {
         if (beanManager != null) {
             Class<?> serviceClass = serviceClass();
             Class<?> annotatedClass = annotatedServiceClass();
@@ -235,15 +231,15 @@ public class GrpcServiceBuilder
         }
     }
 
-    private void configureServiceInterceptors(ServiceDescriptor.Builder builder, BeanManager beanManager, Class<?> cls) {
+    private void configureServiceInterceptors(GrpcServiceDescriptor.Builder builder, BeanManager beanManager, Class<?> cls) {
         if (beanManager != null) {
             for (Annotation annotation : cls.getAnnotations()) {
-                if (annotation.annotationType().isAnnotationPresent(GrpcInterceptorBinding.class)) {
+                if (annotation.annotationType().isAnnotationPresent(Grpc.GrpcInterceptorBinding.class)) {
                     builder.intercept(lookupInterceptor(annotation, beanManager));
                 }
             }
 
-            GrpcInterceptors grpcInterceptors = cls.getAnnotation(GrpcInterceptors.class);
+            Grpc.GrpcInterceptors grpcInterceptors = cls.getAnnotation(Grpc.GrpcInterceptors.class);
             if (grpcInterceptors != null) {
                 for (Class<?> interceptorClass : grpcInterceptors.value()) {
                     if (ServerInterceptor.class.isAssignableFrom(interceptorClass)) {
@@ -264,7 +260,7 @@ public class GrpcServiceBuilder
 
         List<ServerInterceptor> interceptors = new ArrayList<>();
         for (Annotation annotation : method.getAnnotations()) {
-            if (annotation.annotationType().isAnnotationPresent(GrpcInterceptorBinding.class)) {
+            if (annotation.annotationType().isAnnotationPresent(Grpc.GrpcInterceptorBinding.class)) {
                 interceptors.add(lookupInterceptor(annotation, beanManager));
             }
         }
@@ -273,22 +269,21 @@ public class GrpcServiceBuilder
 
     private ServerInterceptor lookupInterceptor(Annotation annotation, BeanManager beanManager) {
         jakarta.enterprise.inject.Instance<ServerInterceptor> instance;
-        instance = beanManager.createInstance()
-                .select(ServerInterceptor.class, GrpcInterceptor.Literal.INSTANCE);
+        instance = beanManager.createInstance().select(ServerInterceptor.class);
 
         List<ServerInterceptor> interceptors = instance.stream()
                 .filter(interceptor -> hasAnnotation(interceptor, annotation))
-                .collect(Collectors.toList());
+                .toList();
 
         if (interceptors.size() == 1) {
             return interceptors.get(0);
         } else if (interceptors.size() > 1) {
             throw new IllegalStateException("gRPC interceptor annotation"
-                                            + "resolves to ambiguous interceptor implementations "
-                                            + annotation);
+                                                    + "resolves to ambiguous interceptor implementations "
+                                                    + annotation);
         } else {
             throw new IllegalStateException("Cannot resolve a gRPC interceptor bean for annotation"
-                                            + annotation);
+                                                    + annotation);
         }
     }
 
@@ -325,13 +320,14 @@ public class GrpcServiceBuilder
         }
         return cls;
     }
+
     /**
-     * A {@link Consumer} of {@link MethodDescriptor.Rules} that
+     * A {@link Consumer} of {@link GrpcMethodDescriptor.Rules} that
      * applies configuration changes based on annotations present
      * on the gRPC method.
      */
     private static class AnnotatedMethodConfigurer
-            implements MethodDescriptor.Configurer {
+            implements GrpcMethodDescriptor.Configurer {
 
         private final AnnotatedMethod method;
         private final Class<?> requestType;
@@ -349,13 +345,13 @@ public class GrpcServiceBuilder
         }
 
         @Override
-        public void configure(MethodDescriptor.Rules rules) {
+        public void configure(GrpcMethodDescriptor.Rules rules) {
             rules.addContextValue(ContextKeys.SERVICE_METHOD, method.declaredMethod())
-                  .requestType(requestType)
-                  .responseType(responseType);
+                    .requestType(requestType)
+                    .responseType(responseType);
 
-            if (method.isAnnotationPresent(GrpcMarshaller.class)) {
-                rules.marshallerSupplier(ModelHelper.getMarshallerSupplier(method.getAnnotation(GrpcMarshaller.class)));
+            if (method.isAnnotationPresent(Grpc.GrpcMarshaller.class)) {
+                rules.marshallerSupplier(ModelHelper.getMarshallerSupplier(method.getAnnotation(Grpc.GrpcMarshaller.class)));
             }
 
             interceptors.forEach(rules::intercept);

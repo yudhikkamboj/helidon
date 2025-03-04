@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 
 package io.helidon.grpc.core;
-
-import io.helidon.common.http.Http;
 
 import io.grpc.Status;
 import io.grpc.StatusException;
@@ -46,7 +44,7 @@ public final class GrpcHelper {
     }
 
     /**
-     * Extract the name prefix from from a method full name.
+     * Extract the name prefix from a method full name.
      * <p>
      * The prefix is everything upto the but not including the last
      * '/' character in the full name.
@@ -73,82 +71,48 @@ public final class GrpcHelper {
     }
 
     /**
-     * Convert a gRPC {@link StatusException} to a {@link Http.ResponseStatus}.
+     * Convert a gRPC {@link StatusException} to a {@link io.helidon.http.Status}.
      *
      * @param ex  the gRPC {@link StatusException} to convert
      *
-     * @return  the gRPC {@link StatusException} converted to a {@link Http.ResponseStatus}
+     * @return  the gRPC {@link StatusException} converted to a {@link io.helidon.http.Status}
      */
-    public static Http.ResponseStatus toHttpResponseStatus(StatusException ex) {
+    public static io.helidon.http.Status toHttpResponseStatus(StatusException ex) {
         return toHttpResponseStatus(ex.getStatus());
     }
 
     /**
-     * Convert a gRPC {@link StatusRuntimeException} to a {@link Http.ResponseStatus}.
+     * Convert a gRPC {@link StatusRuntimeException} to a {@link io.helidon.http.Status}.
      *
      * @param ex  the gRPC {@link StatusRuntimeException} to convert
      *
-     * @return  the gRPC {@link StatusRuntimeException} converted to a {@link Http.ResponseStatus}
+     * @return  the gRPC {@link StatusRuntimeException} converted to a {@link io.helidon.http.Status}
      */
-    public static Http.ResponseStatus toHttpResponseStatus(StatusRuntimeException ex) {
+    public static io.helidon.http.Status toHttpResponseStatus(StatusRuntimeException ex) {
         return toHttpResponseStatus(ex.getStatus());
     }
 
     /**
-     * Convert a gRPC {@link Status} to a {@link Http.ResponseStatus}.
+     * Convert a gRPC {@link Status} to a {@link io.helidon.http.Status}.
      *
      * @param status  the gRPC {@link Status} to convert
      *
-     * @return  the gRPC {@link Status} converted to a {@link Http.ResponseStatus}
+     * @return  the gRPC {@link Status} converted to a {@link io.helidon.http.Status}
      */
-    public static Http.ResponseStatus toHttpResponseStatus(Status status) {
-        Http.ResponseStatus httpStatus;
-
-        switch (status.getCode()) {
-        case OK:
-            httpStatus = Http.ResponseStatus.create(200, status.getDescription());
-            break;
-        case INVALID_ARGUMENT:
-            httpStatus = Http.ResponseStatus.create(400, status.getDescription());
-            break;
-        case DEADLINE_EXCEEDED:
-            httpStatus = Http.ResponseStatus.create(408, status.getDescription());
-            break;
-        case NOT_FOUND:
-            httpStatus = Http.ResponseStatus.create(404, status.getDescription());
-            break;
-        case ALREADY_EXISTS:
-            httpStatus = Http.ResponseStatus.create(412, status.getDescription());
-            break;
-        case PERMISSION_DENIED:
-            httpStatus = Http.ResponseStatus.create(403, status.getDescription());
-            break;
-        case FAILED_PRECONDITION:
-            httpStatus = Http.ResponseStatus.create(412, status.getDescription());
-            break;
-        case OUT_OF_RANGE:
-            httpStatus = Http.ResponseStatus.create(400, status.getDescription());
-            break;
-        case UNIMPLEMENTED:
-            httpStatus = Http.ResponseStatus.create(501, status.getDescription());
-            break;
-        case UNAVAILABLE:
-            httpStatus = Http.ResponseStatus.create(503, status.getDescription());
-            break;
-        case UNAUTHENTICATED:
-            httpStatus = Http.ResponseStatus.create(401, status.getDescription());
-            break;
-        case ABORTED:
-        case CANCELLED:
-        case DATA_LOSS:
-        case INTERNAL:
-        case RESOURCE_EXHAUSTED:
-        case UNKNOWN:
-        default:
-            httpStatus = Http.ResponseStatus.create(500, status.getDescription());
-        }
-
-        return httpStatus;
+    public static io.helidon.http.Status toHttpResponseStatus(Status status) {
+        return switch (status.getCode()) {
+            case OK -> io.helidon.http.Status.create(200, status.getDescription());
+            case INVALID_ARGUMENT, OUT_OF_RANGE -> io.helidon.http.Status.create(400, status.getDescription());
+            case DEADLINE_EXCEEDED -> io.helidon.http.Status.create(408, status.getDescription());
+            case NOT_FOUND -> io.helidon.http.Status.create(404, status.getDescription());
+            case ALREADY_EXISTS -> io.helidon.http.Status.create(412, status.getDescription());
+            case PERMISSION_DENIED -> io.helidon.http.Status.create(403, status.getDescription());
+            case FAILED_PRECONDITION -> io.helidon.http.Status.create(412, status.getDescription());
+            case UNIMPLEMENTED -> io.helidon.http.Status.create(501, status.getDescription());
+            case UNAVAILABLE -> io.helidon.http.Status.create(503, status.getDescription());
+            case UNAUTHENTICATED -> io.helidon.http.Status.create(401, status.getDescription());
+            default -> io.helidon.http.Status.create(500, status.getDescription());
+        };
     }
 
     /**
@@ -181,8 +145,7 @@ public final class GrpcHelper {
     public static StatusRuntimeException ensureStatusRuntimeException(Throwable thrown, Status status) {
         if (thrown instanceof StatusRuntimeException) {
             return (StatusRuntimeException) thrown;
-        } else if (thrown instanceof StatusException) {
-            StatusException ex = (StatusException) thrown;
+        } else if (thrown instanceof StatusException ex) {
             return new StatusRuntimeException(ex.getStatus(), ex.getTrailers());
         } else {
             return status.withCause(thrown).asRuntimeException();

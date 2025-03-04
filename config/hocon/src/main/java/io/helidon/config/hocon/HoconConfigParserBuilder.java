@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import com.typesafe.config.ConfigResolveOptions;
  * <p>
  * {@link Config#resolve() HOCON resolving substitutions support} is by default enabled.
  * {@link ConfigResolveOptions#defaults()} is used to resolve loaded configuration.
- * It is possible to {@link #disableResolving() disable resolving} feature
+ * It is possible to {@link #resolvingEnabled(boolean)}} to disable this feature
  * or specify custom {@link #resolveOptions(ConfigResolveOptions) ConfigResolveOptions} instance.
  */
 public final class HoconConfigParserBuilder implements Builder<HoconConfigParserBuilder, ConfigParser> {
@@ -41,18 +41,22 @@ public final class HoconConfigParserBuilder implements Builder<HoconConfigParser
     private HoconConfigIncluder configIncluder;
 
     HoconConfigParserBuilder() {
-        resolvingEnabled = true;
+        resolvingEnabled = false;
         resolveOptions = ConfigResolveOptions.defaults();
         parseOptions = ConfigParseOptions.defaults();
     }
 
     /**
-     * Disables HOCON resolving substitutions support.
+     * Enables/disables HOCON resolving substitutions support. Default is {@code false}.
+     * <p>
+     * Note: Even if you disable substitution at HOCON parsing time, values can still be resolved at a later time by the
+     * Helidon Config system.
      *
+     * @param enabled use to enable or disable substitution
      * @return modified builder instance
      */
-    public HoconConfigParserBuilder disableResolving() {
-        resolvingEnabled = false;
+    public HoconConfigParserBuilder resolvingEnabled(boolean enabled) {
+        this.resolvingEnabled = enabled;
         return this;
     }
 

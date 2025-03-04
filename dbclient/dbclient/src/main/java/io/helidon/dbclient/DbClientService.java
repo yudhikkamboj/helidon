@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package io.helidon.dbclient;
 
-import io.helidon.common.reactive.Single;
-
 /**
  * Services can modify the data used to execute a statement as well as
  * react on a statement result.
@@ -28,14 +26,14 @@ import io.helidon.common.reactive.Single;
  */
 @FunctionalInterface
 public interface DbClientService {
+
     /**
      * Statement execution to be intercepted.
      * This method is called before the statement execution starts.
-     * If there is no need to modify the context and you do not block,
-     * return {@link Single#just(Object) Single.just(context)}.
      *
-     * @param context Context to access data needed to process an interceptor
-     * @return single that completes when this service is finished
+     * @param context interceptor context
+     * @return updated interceptor context
      */
-    Single<DbClientServiceContext> statement(DbClientServiceContext context);
+    DbClientServiceContext statement(DbClientServiceContext context);
+
 }

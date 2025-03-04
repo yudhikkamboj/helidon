@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package io.helidon.microprofile.accesslog;
 import io.helidon.config.Config;
 import io.helidon.microprofile.cdi.RuntimeStart;
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.webserver.accesslog.AccessLogSupport;
+import io.helidon.webserver.accesslog.AccessLogFeature;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.event.Observes;
@@ -31,13 +31,23 @@ import static jakarta.interceptor.Interceptor.Priority.PLATFORM_BEFORE;
  * Extension of MicroProfile to add support for access log.
  */
 public class AccessLogCdiExtension implements Extension {
+    private static final System.Logger LOGGER = System.getLogger(AccessLogCdiExtension.class.getName());
+
     private void setUpAccessLog(@Observes @Priority(PLATFORM_BEFORE + 10) @RuntimeStart Config config,
                                 BeanManager beanManager) {
         Config alConfig = config.get("server.access-log");
-        AccessLogSupport accessLogSupport = AccessLogSupport.create(alConfig);
+        Config newAlConfig = config.get("server.features.access-log");
 
+        if (!alConfig.exists() && newAlConfig.exists()) {
+            // do nothing, server will pick it up automatically
+            return;
+        }
+        // default to old behavior
+        if (alConfig.exists()) {
+            LOGGER.log(System.Logger.Level.WARNING, "Configuration key server.access-log is deprecated,"
+                    + " please use server.features.access-log instead");
+        }
         beanManager.getExtension(ServerCdiExtension.class)
-                .serverRoutingBuilder()
-                .register(accessLogSupport);
+                .addFeature(AccessLogFeature.create(alConfig));
     }
 }

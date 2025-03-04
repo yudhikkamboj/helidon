@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package io.helidon.microprofile.arquillian;
 
+import java.lang.reflect.Method;
+
 import jakarta.enterprise.context.control.RequestContextController;
 import jakarta.enterprise.context.spi.CreationalContext;
 import jakarta.enterprise.inject.se.SeContainer;
@@ -26,6 +28,7 @@ import org.jboss.arquillian.container.test.spi.client.protocol.Protocol;
 import org.jboss.arquillian.core.spi.LoadableExtension;
 import org.jboss.arquillian.test.spi.TestEnricher;
 import org.jboss.arquillian.testenricher.cdi.CDIInjectionEnricher;
+import org.testng.annotations.Test;
 
 /**
  * An arquillian LoadableExtension defining the {@link HelidonDeployableContainer}.
@@ -41,6 +44,8 @@ class HelidonContainerExtension implements LoadableExtension {
      */
     static class HelidonCDIInjectionEnricher extends CDIInjectionEnricher {
 
+        private static final String ARQUILLIAN_DATA_PROVIDER = "ARQUILLIAN_DATA_PROVIDER";
+        private static final Object[] EMPTY = new Object[0];
         private BeanManager beanManager;
         private RequestContextController requestContextController;
 
@@ -71,6 +76,15 @@ class HelidonContainerExtension implements LoadableExtension {
                 }
             }
             return requestContextController;
+        }
+
+        @Override
+        public Object[] resolve(Method method) {
+            Test test = method.getAnnotation(org.testng.annotations.Test.class);
+            if (test != null && !ARQUILLIAN_DATA_PROVIDER.equals(test.dataProvider())) {
+                return EMPTY;
+            }
+            return super.resolve(method);
         }
 
         private static CDI<Object> cdi() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,12 @@ package io.helidon.microprofile.tracing;
 import java.util.Optional;
 
 import io.helidon.common.context.Contexts;
+import io.helidon.tracing.Span;
+import io.helidon.tracing.SpanContext;
+import io.helidon.tracing.Tracer;
 import io.helidon.tracing.jersey.client.internal.TracingContext;
-import io.helidon.webserver.ServerRequest;
+import io.helidon.webserver.http.ServerRequest;
 
-import io.opentracing.SpanContext;
-import io.opentracing.Tracer;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Provider;
@@ -47,17 +48,25 @@ import org.eclipse.microprofile.config.ConfigProvider;
 @Priority(Integer.MIN_VALUE)
 @ApplicationScoped
 public class MpTracingContextFilter implements ContainerRequestFilter {
-    @Context
-    private Provider<ServerRequest> request;
+    private final Provider<ServerRequest> request;
 
     private final Config config = ConfigProvider.getConfig();
+
+    /**
+     * Constructor to be used by JAX-RS implementation.
+     *
+     * @param request injected by JAX-RS
+     */
+    public MpTracingContextFilter(@Context Provider<ServerRequest> request) {
+        this.request = request;
+    }
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
         ServerRequest serverRequest = this.request.get();
 
-        Tracer tracer = serverRequest.tracer();
-        Optional<SpanContext> parentSpan = serverRequest.spanContext();
+        Tracer tracer = serverRequest.context().get(Tracer.class).orElseGet(Tracer::global);
+        Optional<SpanContext> parentSpan = Span.current().map(Span::context);
 
         boolean clientEnabled = config.getOptionalValue("tracing.client.enabled", Boolean.class).orElse(true);
         TracingContext tracingContext = TracingContext.create(tracer, serverRequest.headers().toMap(), clientEnabled);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,15 +19,10 @@ package io.helidon.health.checks;
 import java.util.Formatter;
 import java.util.Locale;
 
-import io.helidon.config.Config;
-import io.helidon.health.common.BuiltInHealthCheck;
-
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.health.HealthCheck;
-import org.eclipse.microprofile.health.HealthCheckResponse;
-import org.eclipse.microprofile.health.Liveness;
+import io.helidon.common.config.Config;
+import io.helidon.health.HealthCheck;
+import io.helidon.health.HealthCheckResponse;
+import io.helidon.health.HealthCheckType;
 
 /**
  * A health check that verifies whether the server is running out of Java heap space. If heap usage exceeds a
@@ -45,12 +40,8 @@ import org.eclipse.microprofile.health.Liveness;
  * <p>
  * This health check can be referred to in properties as {@code heapMemory}. So for example, to exclude this
  * health check from being exposed, use {@code helidon.health.exclude: heapMemory}.
- * </p>
  */
-@Liveness
-@ApplicationScoped // this will be ignored if not within CDI
-@BuiltInHealthCheck
-public final class HeapMemoryHealthCheck implements HealthCheck {
+public class HeapMemoryHealthCheck implements HealthCheck {
     /**
      * Default threshold percentage.
      */
@@ -70,13 +61,9 @@ public final class HeapMemoryHealthCheck implements HealthCheck {
     private final Runtime rt;
     private final double thresholdPercent;
 
-    // this will be ignored if not within CDI
-    @Inject
-    HeapMemoryHealthCheck(
-            Runtime runtime,
-            @ConfigProperty(name = CONFIG_KEY_THRESHOLD_PERCENT, defaultValue = "98") double threshold) {
-        this.thresholdPercent = threshold;
+    HeapMemoryHealthCheck(Runtime runtime, double thresholdPercent) {
         this.rt = runtime;
+        this.thresholdPercent = thresholdPercent;
     }
 
     private HeapMemoryHealthCheck(Builder builder) {
@@ -96,12 +83,26 @@ public final class HeapMemoryHealthCheck implements HealthCheck {
     /**
      * Create a new heap memory health check with default configuration.
      *
-     * @return a new health check to register with
-     *         {@link io.helidon.health.HealthSupport.Builder#addLiveness(org.eclipse.microprofile.health.HealthCheck...)}
+     * @return a new health check
      * @see #DEFAULT_THRESHOLD
      */
     public static HeapMemoryHealthCheck create() {
         return builder().build();
+    }
+
+    @Override
+    public HealthCheckType type() {
+        return HealthCheckType.LIVENESS;
+    }
+
+    @Override
+    public String name() {
+        return "heapMemory";
+    }
+
+    @Override
+    public String path() {
+        return "heapmemory";
     }
 
     @Override
@@ -113,21 +114,21 @@ public final class HeapMemoryHealthCheck implements HealthCheck {
         final long maxMemory = rt.maxMemory();
         final long usedMemory = totalMemory - freeMemory;
         final long threshold = (long) ((thresholdPercent / 100) * maxMemory);
-        return HealthCheckResponse.named("heapMemory")
+        return HealthCheckResponse.builder()
                 .status(threshold >= usedMemory)
-                .withData("percentFree",
+                .detail("percentFree",
                           formatter.format("%.2f%%", 100 * ((double) (maxMemory - usedMemory) / maxMemory)).toString())
-                .withData("free", DiskSpaceHealthCheck.format(freeMemory))
-                .withData("freeBytes", freeMemory)
-                .withData("max", DiskSpaceHealthCheck.format(maxMemory))
-                .withData("maxBytes", maxMemory)
-                .withData("total", DiskSpaceHealthCheck.format(totalMemory))
-                .withData("totalBytes", totalMemory)
+                .detail("free", DiskSpaceHealthCheck.format(freeMemory))
+                .detail("freeBytes", freeMemory)
+                .detail("max", DiskSpaceHealthCheck.format(maxMemory))
+                .detail("maxBytes", maxMemory)
+                .detail("total", DiskSpaceHealthCheck.format(totalMemory))
+                .detail("totalBytes", totalMemory)
                 .build();
     }
 
     /**
-     * Fluent API builder for {@link io.helidon.health.checks.HeapMemoryHealthCheck}.
+     * Fluent API builder for {@link HeapMemoryHealthCheck}.
      */
     public static final class Builder implements io.helidon.common.Builder<Builder, HeapMemoryHealthCheck> {
         private double threshold = DEFAULT_THRESHOLD;
@@ -175,7 +176,7 @@ public final class HeapMemoryHealthCheck implements HealthCheck {
          * @return updated builder instance
          */
         public Builder config(Config config) {
-            config.get(CONFIG_KEY_THRESHOLD_PERCENT_SUFFIX)
+            config.get(CONFIG_KEY_THRESHOLD_PERCENT)
                     .asDouble()
                     .ifPresent(this::thresholdPercent);
 

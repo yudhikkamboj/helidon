@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+    Copyright (c) 2019, 2023 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,42 +21,9 @@
         xsi:schemaLocation="https://github.com/spotbugs/filter/3.0.0 https://raw.githubusercontent.com/spotbugs/spotbugs/3.1.0/spotbugs/etc/findbugsfilter.xsd">
 
     <Match>
-        <!-- False positive. See https://github.com/spotbugs/spotbugs/issues/756 -->
-        <Class name="io.helidon.dbclient.jdbc.JdbcStatementQuery"/>
-        <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE"/>
-    </Match>
-    <Match>
-        <!-- False positive. See https://github.com/spotbugs/spotbugs/issues/756 -->
-        <Class name="io.helidon.dbclient.jdbc.JdbcStatementQuery$RowPublisher"/>
-        <Bug pattern="RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE"/>
-    </Match>
-
-    <Match>
-        <!-- Random used for balancing load, not for cryptology -->
-        <Class name="io.helidon.dbclient.jdbc.JdbcQueryExecutor"/>
-        <Bug pattern="PREDICTABLE_RANDOM"/>
-    </Match>
-
-    <Match>
         <!-- Doesn't construct SQL string. It converts string to statement -->
         <Class name="io.helidon.dbclient.jdbc.JdbcStatement"/>
         <Method name="prepareStatement"/>
         <Bug pattern="SQL_INJECTION_JDBC"/>
     </Match>
-
-    <Match>
-        <!-- Doesn't construct SQL string. It converts string to statement -->
-        <Class name="io.helidon.dbclient.jdbc.JdbcStatement"/>
-        <Method name="prepareNamedStatement"/>
-        <Bug pattern="SQL_INJECTION_JDBC"/>
-    </Match>
-
-    <Match>
-        <!-- Doesn't construct SQL string. It converts string to statement -->
-        <Class name="io.helidon.dbclient.jdbc.JdbcStatement"/>
-        <Method name="prepareIndexedStatement"/>
-        <Bug pattern="SQL_INJECTION_JDBC"/>
-    </Match>
-
-
 </FindBugsFilter>

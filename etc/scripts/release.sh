@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+# Copyright (c) 2018, 2024 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,14 +15,31 @@
 # limitations under the License.
 #
 
+set -o pipefail || true  # trace ERR through pipes
+set -o errtrace || true # trace ERR through commands and functions
+set -o errexit || true  # exit the script if any statement returns a non-true return value
+
+on_error(){
+  CODE="${?}" && \
+  set +x && \
+  printf "[ERROR] Error(code=%s) occurred at %s:%s command: %s\n" \
+    "${CODE}" "${BASH_SOURCE[0]}" "${LINENO}" "${BASH_COMMAND}" >&2
+}
+trap on_error ERR
+
 # Path to this script
-[ -h "${0}" ] && readonly SCRIPT_PATH="$(readlink "${0}")" || readonly SCRIPT_PATH="${0}"
+if [ -h "${0}" ] ; then
+  SCRIPT_PATH="$(readlink "${0}")"
+else
+  # shellcheck disable=SC155
+  SCRIPT_PATH="${0}"
+fi
+readonly SCRIPT_PATH
 
-# Load pipeline environment setup and define WS_DIR
-. $(dirname -- "${SCRIPT_PATH}")/includes/pipeline-env.sh "${SCRIPT_PATH}" '../..'
-
-# Setup error handling using default settings (defined in includes/error_handlers.sh)
-error_trap_setup
+# Path to the root of the workspace
+# shellcheck disable=SC2046
+WS_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; cd ../.. ; pwd -P)
+readonly WS_DIR
 
 usage(){
     cat <<EOF
@@ -31,11 +48,10 @@ DESCRIPTION: Helidon Release Script
 
 USAGE:
 
-$(basename ${0}) [ --build-number=N ] CMD
+$(basename "${0}") --version=V CMD
 
   --version=V
-        Override the version to use.
-        This trumps --build-number=N
+        The version to use.
 
   --help
         Prints the usage and exits.
@@ -45,200 +61,193 @@ $(basename ${0}) [ --build-number=N ] CMD
     update_version
         Update the version in the workspace
 
-    release_build
-        Perform a release build
-        This will create a local branch, deploy artifacts and push a tag
+    get_version
+        Get the current version
 
+    create_tag
+        Create and and push a release tag
 EOF
 }
 
 # parse command line args
-ARGS=( "${@}" )
-for ((i=0;i<${#ARGS[@]};i++))
-{
-    ARG=${ARGS[${i}]}
-    case ${ARG} in
-    "--version="*)
-        VERSION=${ARG#*=}
-        ;;
-    "--help")
-        usage
-        exit 0
-        ;;
-    *)
-        if [ "${ARG}" = "update_version" ] || [ "${ARG}" = "release_build" ] ; then
-            readonly COMMAND="${ARG}"
-        else
-            echo "ERROR: unknown argument: ${ARG}"
-            exit 1
-        fi
-        ;;
-    esac
-}
+ARGS=( )
+while (( ${#} > 0 )); do
+  case ${1} in
+  "--version="*)
+    VERSION=${1#*=}
+    shift
+    ;;
+  "--help")
+    usage
+    exit 0
+    ;;
+  "update_version"|"create_tag"|"get_version")
+    COMMAND="${1}"
+    shift
+    ;;
+  *)
+    ARGS+=( "${1}" )
+    shift
+    ;;
+  esac
+done
+readonly ARGS
+readonly COMMAND
 
-if [ -z "${COMMAND}" ] ; then
-    echo "ERROR: no command provided"
+# copy stdout as fd 6 and redirect stdout to stderr
+# this allows us to use fd 6 for returning data
+exec 6>&1 1>&2
+
+if [ -z "${COMMAND+x}" ] ; then
+  echo "ERROR: no command provided"
+  exit 1
+fi
+
+case ${COMMAND} in
+"update_version")
+  if [ -z "${VERSION}" ] ; then
+    echo "ERROR: version required" >&2
     usage
     exit 1
-fi
+  fi
+  ;;
+"create_tag"|"get_version")
+  # no-op
+  ;;
+"")
+  echo "ERROR: no command provided" >&2
+  usage
+  exit 1
+  ;;
+*)
+  echo "ERROR: unknown command ${COMMAND}" >&2
+  usage
+  exit 1
+  ;;
+esac
 
-# Hooks for version substitution work
-readonly PREPARE_HOOKS=( )
+current_version() {
+  awk 'BEGIN {FS="[<>]"} ; /<version>/ {print $3; exit 0}' "${WS_DIR}"/pom.xml
+}
 
-# Hooks for deployment work
-readonly PERFORM_HOOKS=( )
+# arg1: pattern
+# arg2: include pattern
+search() {
+  set +o pipefail
+  grep "${1}" -Er . --include "${2}" | cut -d ':' -f 1 | xargs git ls-files | sort | uniq
+}
 
-# Resolve FULL_VERSION
-if [ -z "${VERSION+x}" ]; then
+replace() {
+  local pattern value replace include
+  while (( ${#} > 0 )); do
+    case ${1} in
+    "--pattern="*)
+      pattern=${1#*=}
+      shift
+      ;;
+    "--include="*)
+      include=${1#*=}
+      shift
+      ;;
+    "--replace="*)
+      replace=${1#*=}
+      shift
+      ;;
+    "--value="*)
+      value=${1#*=}
+      shift
+      ;;
+    *)
+      echo "Unsupported argument: ${1}" >&2
+      return 1
+      ;;
+    esac
+  done
 
-    # get maven version
-    MVN_VERSION=$(mvn ${MAVEN_ARGS} \
-        -q \
-        -f ${WS_DIR}/pom.xml \
-        -Dexec.executable="echo" \
-        -Dexec.args="\${project.version}" \
-        --non-recursive \
-        org.codehaus.mojo:exec-maven-plugin:1.3.1:exec)
+  if [ -z "${replace}" ] && [ -n "${value}" ] ; then
+    replace=${pattern/\.\*/${value}}
+  fi
 
-    # strip qualifier
-    readonly VERSION="${MVN_VERSION%-*}"
-    readonly FULL_VERSION="${VERSION}"
-else
-    readonly FULL_VERSION="${VERSION}"
-fi
-
-export FULL_VERSION
-printf "\n%s: FULL_VERSION=%s\n\n" "$(basename ${0})" "${FULL_VERSION}"
+  for file in $(search "${pattern}" "${include}"); do
+    echo "Updating ${file}"
+    sed -e s@"${pattern}"@"${replace}"@g "${file}" > "${file}.tmp"
+    mv "${file}.tmp" "${file}"
+  done
+}
 
 update_version(){
-    # Update version
-    mvn ${MAVEN_ARGS} -f ${WS_DIR}/parent/pom.xml versions:set versions:set-property \
-        -DgenerateBackupPoms=false \
-        -DnewVersion="${FULL_VERSION}" \
-        -Dproperty=helidon.version \
-        -DprocessAllModules=true
+  local version current_version is_release
 
-    # Hack to update helidon.version
-    for pom in `egrep "<helidon.version>.*</helidon.version>" -r . --include pom.xml | cut -d ':' -f 1 | sort | uniq `
-    do
-        cat ${pom} | \
-            sed -e s@'<helidon.version>.*</helidon.version>'@"<helidon.version>${FULL_VERSION}</helidon.version>"@g \
-            > ${pom}.tmp
-        mv ${pom}.tmp ${pom}
-    done
+  version=${1-${VERSION}}
+  if [ -z "${version+x}" ] ; then
+    echo "ERROR: version required" >&2
+    usage
+    exit 1
+  fi
 
-    # Hack to update helidon.version in build.gradle files
-    for bfile in `egrep "helidonversion = .*" -r . --include build.gradle | cut -d ':' -f 1 | sort | uniq `
-    do
-        cat ${bfile} | \
-            sed -e s@'helidonversion = .*'@"helidonversion = \'${FULL_VERSION}\'"@g \
-            > ${bfile}.tmp
-        mv ${bfile}.tmp ${bfile}
-    done
+  if [[ "${version}" == *-SNAPSHOT ]]; then
+    is_release="false"
+  else
+    is_release="true"
+  fi
 
-    # Invoke prepare hook
-    if [ -n "${PREPARE_HOOKS}" ]; then
-        for prepare_hook in ${PREPARE_HOOKS} ; do
-            bash "${prepare_hook}"
-        done
-    fi
+  # find current version
+  current_version=$(current_version)
+
+  # update poms
+  replace \
+    --pattern="<version>${current_version}</version>" \
+    --replace="<version>${version}</version>" \
+    --include="pom.xml"
+
+  replace \
+    --pattern="<helidon.version>.*</helidon.version>" \
+    --value="${version}" \
+    --include="pom.xml"
+
+  # update docs
+  replace \
+    --pattern=":helidon-version: .*" \
+    --value="${version}" \
+    --include="attributes.adoc"
+
+  replace \
+    --pattern=":helidon-version-is-release: .*" \
+    --value="${is_release}" \
+    --include="attributes.adoc"
 }
 
-release_site(){
-    if [ -n "${STAGING_REPO_ID}" ] ; then
-        readonly MAVEN_REPO_URL="https://oss.sonatype.org/service/local/staging/deployByRepositoryId/${STAGING_REPO_ID}/"
-    else
-        readonly MAVEN_REPO_URL="https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-    fi
+create_tag() {
+  local git_branch version current_version
 
-    # Generate site
-    mvn ${MAVEN_ARGS} site
+  current_version=$(current_version)
+  version=${current_version%-SNAPSHOT}
+  git_branch="release/${version}"
 
-    # Sign site jar
-    gpg -ab ${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar
+  # Use a separate branch
+  git branch -D "${git_branch}" > /dev/null 2>&1 || true
+  git checkout -b "${git_branch}"
 
-    # Deploy site.jar and signature file explicitly using deploy-file
-    mvn ${MAVEN_ARGS} deploy:deploy-file \
-        -Dfile="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar" \
-        -Dfiles="${WS_DIR}/target/helidon-project-${FULL_VERSION}-site.jar.asc" \
-        -Dclassifier="site" \
-        -Dclassifiers="site" \
-        -Dtypes="jar.asc" \
-        -DgeneratePom="false" \
-        -DgroupId="io.helidon" \
-        -DartifactId="helidon-project" \
-        -Dversion="${FULL_VERSION}" \
-        -Durl="${MAVEN_REPO_URL}" \
-        -DrepositoryId="ossrh" \
-        -DretryFailedDeploymentCount="10"
+  # Invoke update_version
+  update_version "${version}"
+
+  # Git user info
+  git config user.email || git config --global user.email "info@helidon.io"
+  git config user.name || git config --global user.name "Helidon Robot"
+
+  # Commit version changes
+  git commit -a -m "Release ${version}"
+
+  # Create and push a git tag
+  git tag -f "${version}"
+  git push --force origin refs/tags/"${version}":refs/tags/"${version}"
+
+  echo "version=${version}" >&6
+  echo "tag=refs/tags/${version}" >&6
 }
 
-release_build(){
-    # Do the release work in a branch
-    local GIT_BRANCH="release/${FULL_VERSION}"
-    git branch -D "${GIT_BRANCH}" > /dev/null 2>&1 || true
-    git checkout -b "${GIT_BRANCH}"
-
-    # Invoke update_version
-    update_version
-
-    # Update scm/tag entry in the parent pom
-    cat parent/pom.xml | \
-        sed -e s@'<tag>HEAD</tag>'@"<tag>${FULL_VERSION}</tag>"@g \
-        > parent/pom.xml.tmp
-    mv parent/pom.xml.tmp parent/pom.xml
-
-    # Git user info
-    git config user.email || git config --global user.email "info@helidon.io"
-    git config user.name || git config --global user.name "Helidon Robot"
-
-    # Commit version changes
-    git commit -a -m "Release ${FULL_VERSION} [ci skip]"
-
-    # Create the nexus staging repository
-    local STAGING_DESC="Helidon v${FULL_VERSION}"
-    mvn ${MAVEN_ARGS} nexus-staging:rc-open \
-        -DstagingProfileId="6026dab46eed94" \
-        -DstagingDescription="${STAGING_DESC}"
-
-    export STAGING_REPO_ID=$(mvn ${MAVEN_ARGS} nexus-staging:rc-list | \
-        egrep "^[0-9:,]*[ ]?\[INFO\] iohelidon\-[0-9]+[ ]+OPEN[ ]+${STAGING_DESC}" | \
-        awk '{print $2" "$3}' | \
-        sed -e s@'\[INFO\] '@@g -e s@'OPEN'@@g | \
-        head -1)
-    echo "Nexus staging repository ID: ${STAGING_REPO_ID}"
-
-    # Perform deployment
-    mvn ${MAVEN_ARGS} clean deploy \
-       -Prelease,archetypes \
-      -DskipTests \
-      -DstagingRepositoryId="${STAGING_REPO_ID}" \
-      -DretryFailedDeploymentCount="10"
-
-    # Invoke perform hooks
-    if [ -n "${PERFORM_HOOKS}" ]; then
-      for perform_hook in ${PERFORM_HOOKS} ; do
-        bash "${perform_hook}"
-      done
-    fi
-
-    # Release site (documentation, javadocs)
-    release_site
-
-    # Close the nexus staging repository
-    mvn ${MAVEN_ARGS} nexus-staging:rc-close \
-      -DstagingRepositoryId="${STAGING_REPO_ID}" \
-      -DstagingDescription="${STAGING_DESC}"
-
-    # Create and push a git tag
-    local GIT_REMOTE=$(git config --get remote.origin.url | \
-        sed "s,https://\([^/]*\)/,git@\1:,")
-
-    git remote add release "${GIT_REMOTE}" > /dev/null 2>&1 || \
-    git remote set-url release "${GIT_REMOTE}"
-
-    git tag -f "${FULL_VERSION}"
-    git push --force release refs/tags/"${FULL_VERSION}":refs/tags/"${FULL_VERSION}"
+get_version() {
+  echo "version=$(current_version)" >&6
 }
 
 # Invoke command

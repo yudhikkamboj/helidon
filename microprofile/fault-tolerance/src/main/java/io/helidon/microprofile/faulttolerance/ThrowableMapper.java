@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,10 @@
 package io.helidon.microprofile.faulttolerance;
 
 import java.util.Arrays;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
+
+import io.helidon.faulttolerance.RetryTimeoutException;
 
 import org.eclipse.microprofile.faulttolerance.exceptions.BulkheadException;
 import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
@@ -48,13 +51,11 @@ class ThrowableMapper {
         if (t instanceof io.helidon.faulttolerance.BulkheadException) {
             return new BulkheadException(t.getMessage(), t.getCause());
         }
-        if (t instanceof io.helidon.faulttolerance.RetryTimeoutException) {
+        if (t instanceof RetryTimeoutException) {
             return t;       // the cause is handled elsewhere
         }
-        if (t instanceof java.util.concurrent.TimeoutException) {
-            return new TimeoutException(t.getMessage(), t.getCause());
-        }
-        if (t instanceof java.lang.InterruptedException) {
+        if (t instanceof io.helidon.faulttolerance.TimeoutException
+                || t instanceof java.lang.InterruptedException) {
             return new TimeoutException(t.getMessage(), t.getCause());
         }
         return t;
@@ -67,9 +68,9 @@ class ThrowableMapper {
      * @param types array of {@code Throwable}'s type to map.
      * @return mapped array.
      */
-    static Class<? extends Throwable>[] mapTypes(Class<? extends Throwable>[] types) {
+    static Set<Class<? extends Throwable>> mapTypes(Class<? extends Throwable>[] types) {
         if (types.length == 0) {
-            return types;
+            return Set.of();
         }
         Class<? extends Throwable>[] result = Arrays.copyOf(types, types.length);
         for (int i = 0; i < types.length; i++) {
@@ -79,11 +80,11 @@ class ThrowableMapper {
             } else if (t == CircuitBreakerOpenException.class) {
                 result[i] = io.helidon.faulttolerance.CircuitBreakerOpenException.class;
             } else if (t == TimeoutException.class) {
-                result[i] = java.util.concurrent.TimeoutException.class;
+                result[i] = io.helidon.faulttolerance.TimeoutException.class;
             } else {
                 result[i] = t;
             }
         }
-        return result;
+        return Set.of(result);
     }
 }

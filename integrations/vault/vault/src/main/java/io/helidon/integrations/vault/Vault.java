@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,20 @@
  */
 package io.helidon.integrations.vault;
 
+import java.lang.System.Logger.Level;
 import java.util.List;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.function.Consumer;
-import java.util.logging.Logger;
 
-import io.helidon.common.http.Http;
-import io.helidon.common.serviceloader.HelidonServiceLoader;
-import io.helidon.config.Config;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.config.Config;
 import io.helidon.faulttolerance.FaultTolerance;
 import io.helidon.faulttolerance.FtHandler;
+import io.helidon.http.Method;
 import io.helidon.integrations.common.rest.RestApi;
 import io.helidon.integrations.vault.spi.VaultAuth;
-import io.helidon.webclient.WebClient;
+import io.helidon.webclient.api.WebClientConfig;
 
 /**
  * Main entry point to Vault operations.
@@ -41,7 +41,7 @@ public interface Vault {
     /**
      * HTTP {@code LIST} method used by several Vault engines.
      */
-    Http.RequestMethod LIST = Http.RequestMethod.create("LIST");
+    Method LIST = Method.create("LIST");
 
     /**
      * Fluent API builder to construct new instances.
@@ -57,7 +57,7 @@ public interface Vault {
      *
      * @param config configuration
      * @return a new Vault
-     * @see io.helidon.integrations.vault.Vault.Builder#config(io.helidon.config.Config)
+     * @see Vault.Builder#config(io.helidon.config.Config)
      */
     static Vault create(Config config) {
         return builder()
@@ -69,22 +69,22 @@ public interface Vault {
      * Get access to secrets using the provided engine, using the default mount point of that engine.
      *
      * @param engine engine to use, such as {@code Kv2Secrets#ENGINE}
-     * @param <T> type of the {@link SecretsRx} the engine supports,
+     * @param <T> type of the {@link Secrets} the engine supports,
      *           such as {@code io.helidon.integrations.vault.Kv2Secrets}
-     * @return instance of {@link SecretsRx} specific to the used engine
+     * @return instance of {@link Secrets} specific to the used engine
      */
-    <T extends SecretsRx> T secrets(Engine<T> engine);
+    <T extends Secrets> T secrets(Engine<T> engine);
 
     /**
      * Get access to secrets using the provided engine, using a custom mount point.
      *
      * @param engine engine to use, such as {@code Kv2Secrets#ENGINE}
      * @param mount mount point for the engine (such as when the same engine is configured more than once in the Vault)
-     * @param <T> type of the {@link SecretsRx} the engine supports,
+     * @param <T> type of the {@link Secrets} the engine supports,
      *           such as {@code Kv2Secrets}
-     * @return instance of {@link SecretsRx} specific to the used engine
+     * @return instance of {@link Secrets} specific to the used engine
      */
-    <T extends SecretsRx> T secrets(Engine<T> engine, String mount);
+    <T extends Secrets> T secrets(Engine<T> engine, String mount);
 
     /**
      * Get access to authentication method.
@@ -118,7 +118,7 @@ public interface Vault {
      * Fluent API builder for {@link Vault}.
      */
     class Builder implements io.helidon.common.Builder<Builder, Vault> {
-        private static final Logger LOGGER = Logger.getLogger(Vault.class.getName());
+        private static final System.Logger LOGGER = System.getLogger(Vault.class.getName());
 
         private final HelidonServiceLoader.Builder<VaultAuth> vaultAuths
                 = HelidonServiceLoader.builder(ServiceLoader.load(VaultAuth.class));
@@ -128,7 +128,7 @@ public interface Vault {
         private String address;
         private String token;
         private String baseNamespace;
-        private Consumer<WebClient.Builder> webClientUpdater = it -> {};
+        private Consumer<WebClientConfig.Builder> webClientUpdater = it -> {};
 
         private Builder() {
         }
@@ -144,7 +144,7 @@ public interface Vault {
             for (VaultAuth vaultAuth : auths) {
                 Optional<RestApi> authenticate = vaultAuth.authenticate(config, this);
                 if (authenticate.isPresent()) {
-                    LOGGER.fine("Authenticated Vault " + address + " using " + vaultAuth.getClass().getName());
+                    LOGGER.log(Level.DEBUG, "Authenticated Vault " + address + " using " + vaultAuth.getClass().getName());
                     restAccess = authenticate.get();
                     authenticated = true;
                     break;
@@ -159,8 +159,8 @@ public interface Vault {
         }
 
         /**
-         * Add a {@link io.helidon.integrations.vault.spi.VaultAuth} to use with this Vault.
-         * Also all {@link io.helidon.integrations.vault.spi.VaultAuth VaultAuths} discovered by service loader are used.
+         * Add a {@link VaultAuth} to use with this Vault.
+         * Also all {@link VaultAuth VaultAuths} discovered by service loader are used.
          *
          * @param vaultAuth vault authentication mechanism to use
          * @return updated builder
@@ -193,7 +193,7 @@ public interface Vault {
         }
 
         /**
-         * An {@link io.helidon.faulttolerance.FtHandler} can be configured to be used by all calls to the
+         * An {@link FtHandler} can be configured to be used by all calls to the
          * Vault, to add support for retries, circuit breakers, bulkhead etc.
          *
          * @param faultTolerance fault tolerance handler to use
@@ -205,20 +205,20 @@ public interface Vault {
         }
 
         /**
-         * A consumer that updates {@link WebClient.Builder}.
+         * A consumer that updates {@link io.helidon.webclient.api.WebClientConfig.Builder}.
          * The consumer may be invoked multiple times, for example when a Vault authentication
          * must use an un-authenticated Vault to authenticate.
          *
          * @param updater update the web client builder
          * @return updated builder instance
          */
-        public Builder updateWebClient(Consumer<WebClient.Builder> updater) {
+        public Builder updateWebClient(Consumer<WebClientConfig.Builder> updater) {
             this.webClientUpdater = updater;
             return this;
         }
 
         /**
-         * Do not discover {@link io.helidon.integrations.vault.spi.VaultAuth} implementations
+         * Do not discover {@link VaultAuth} implementations
          * using a service loader.
          *
          * @return updated builder instance
@@ -304,7 +304,7 @@ public interface Vault {
          *
          * @return web client updater
          */
-        public Consumer<WebClient.Builder> webClientUpdater() {
+        public Consumer<WebClientConfig.Builder> webClientUpdater() {
             return webClientUpdater;
         }
     }

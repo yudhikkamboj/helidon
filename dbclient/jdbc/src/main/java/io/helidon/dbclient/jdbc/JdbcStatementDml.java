@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,65 +15,67 @@
  */
 package io.helidon.dbclient.jdbc;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.concurrent.CompletableFuture;
 
-import io.helidon.common.reactive.Single;
 import io.helidon.dbclient.DbClientServiceContext;
 import io.helidon.dbclient.DbStatementDml;
-import io.helidon.dbclient.common.DbStatementContext;
+import io.helidon.dbclient.DbStatementException;
+import io.helidon.dbclient.DbStatementType;
 
-class JdbcStatementDml extends JdbcStatement<DbStatementDml, Single<Long>> implements DbStatementDml {
+/**
+ * JDBC implementation of {@link DbStatementDml}.
+ */
+class JdbcStatementDml extends JdbcStatement<DbStatementDml> implements DbStatementDml {
 
-    JdbcStatementDml(JdbcExecuteContext executeContext,
-                     DbStatementContext statementContext) {
-        super(executeContext, statementContext);
+    private final DbStatementType type;
+
+    /**
+     * Create a new instance.
+     *
+     * @param connectionPool connection pool
+     * @param context        execution context
+     */
+    JdbcStatementDml(JdbcConnectionPool connectionPool, DbStatementType type, JdbcExecuteContext context) {
+        super(connectionPool, context);
+        this.type = type;
     }
 
     @Override
-    protected Single<Long> doExecute(Single<DbClientServiceContext> dbContextFuture,
-                                     CompletableFuture<Void> statementFuture,
-                                     CompletableFuture<Long> queryFuture) {
-
-        executeContext().addFuture(queryFuture);
-
-        // query and statement future must always complete either OK, or exceptionally
-        dbContextFuture.exceptionally(throwable -> {
-            statementFuture.completeExceptionally(throwable);
-            queryFuture.completeExceptionally(throwable);
-            return null;
-        });
-
-        return dbContextFuture
-                .flatMapSingle(dbContext -> doExecute(dbContext, statementFuture, queryFuture));
+    public DbStatementType statementType() {
+        return type;
     }
 
-    private Single<Long> doExecute(DbClientServiceContext dbContext,
-                                   CompletableFuture<Void> statementFuture,
-                                   CompletableFuture<Long> queryFuture) {
-
-        executorService().submit(() -> {
-            connection().thenAccept(conn -> callStatement(dbContext, conn, statementFuture, queryFuture));
+    @Override
+    public long execute() {
+        return doExecute((future, context) -> {
+            try {
+                return doExecute(this, future, context);
+            } finally {
+                closeConnection();
+            }
         });
-
-        // the query future is reused, as it completes with the number of updated records
-        return Single.create(queryFuture);
     }
 
-    private void callStatement(DbClientServiceContext dbContext,
-                               Connection connection,
-                               CompletableFuture<Void> statementFuture,
-                               CompletableFuture<Long> queryFuture) {
-        try {
-            PreparedStatement preparedStatement = build(connection, dbContext);
-            long count = preparedStatement.executeLargeUpdate();
-            statementFuture.complete(null);
-            queryFuture.complete(count);
-            preparedStatement.close();
-        } catch (Exception e) {
-            statementFuture.completeExceptionally(e);
-            queryFuture.completeExceptionally(e);
+    /**
+     * Execute the given statement.
+     *
+     * @param dbStmt  db statement
+     * @param future  query future
+     * @param context service context
+     * @return query result
+     */
+    static long doExecute(JdbcStatement<? extends DbStatementDml> dbStmt,
+                          CompletableFuture<Long> future,
+                          DbClientServiceContext context) {
+
+        try (PreparedStatement statement = dbStmt.prepareStatement(context)) {
+            long result = statement.executeUpdate();
+            future.complete(result);
+            return result;
+        } catch (SQLException ex) {
+            throw new DbStatementException("Failed to execute statement", dbStmt.context().statement(), ex);
         }
     }
 }

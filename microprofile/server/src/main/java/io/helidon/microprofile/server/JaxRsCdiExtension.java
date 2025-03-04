@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package io.helidon.microprofile.server;
 
+import java.lang.System.Logger.Level;
 import java.lang.annotation.Annotation;
 import java.util.Collection;
 import java.util.HashSet;
@@ -23,15 +24,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Supplier;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.jersey.JerseySupport;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -40,11 +33,7 @@ import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.spi.Extension;
 import jakarta.enterprise.inject.spi.ProcessManagedBean;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Application;
-import jakarta.ws.rs.core.Context;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
@@ -57,7 +46,7 @@ import static jakarta.interceptor.Interceptor.Priority.PLATFORM_BEFORE;
  * Configure Jersey related things.
  */
 public class JaxRsCdiExtension implements Extension {
-    private static final Logger LOGGER = Logger.getLogger(JaxRsCdiExtension.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(JaxRsCdiExtension.class.getName());
 
     private final List<JaxRsApplication> applicationMetas = new LinkedList<>();
 
@@ -65,6 +54,12 @@ public class JaxRsCdiExtension implements Extension {
     private final Set<Class<?>> resources = new HashSet<>();
     private final Set<Class<?>> providers = new HashSet<>();
     private final AtomicBoolean setInStone = new AtomicBoolean(false);
+
+    /**
+     * Default constructor is required by {@link java.util.ServiceLoader}.
+     */
+    public JaxRsCdiExtension() {
+    }
 
     private void collectApplications(@Observes ProcessManagedBean<? extends Application> processManagedBean) {
         applications.add(processManagedBean.getAnnotatedBeanClass().getJavaClass());
@@ -77,7 +72,7 @@ public class JaxRsCdiExtension implements Extension {
                 // we are only interested in classes - interface is most likely a REST client API
                 return;
             }
-            LOGGER.finest(() -> "Discovered resource class " + resourceClass.getName());
+            LOGGER.log(Level.TRACE, () -> "Discovered resource class " + resourceClass.getName());
             resources.add(resourceClass);
         }
     }
@@ -87,11 +82,11 @@ public class JaxRsCdiExtension implements Extension {
             Class<?> providerClass = processManagedBean.getAnnotatedBeanClass().getJavaClass();
             if (providerClass.isInterface()) {
                 // we are only interested in classes
-                LOGGER.finest(() -> "Discovered @Provider interface " + providerClass
+                LOGGER.log(Level.TRACE, () -> "Discovered @Provider interface " + providerClass
                         .getName() + ", ignored as we only support classes");
                 return;
             }
-            LOGGER.finest(() -> "Discovered @Provider class " + providerClass.getName());
+            LOGGER.log(Level.TRACE, () -> "Discovered @Provider class " + providerClass.getName());
             providers.add(providerClass);
         }
     }
@@ -136,7 +131,7 @@ public class JaxRsCdiExtension implements Extension {
                                                 .applicationClass(appClass)
                                                 .config(ResourceConfig.forApplicationClass(appClass, allClasses))
                                                 .build())
-                                        .collect(Collectors.toList()));
+                                        .toList());
 
         applications.clear();
         resources.clear();
@@ -272,33 +267,13 @@ public class JaxRsCdiExtension implements Extension {
                                           .build());
     }
 
-    JerseySupport toJerseySupport(Supplier<? extends ExecutorService> defaultExecutorService,
-                                  JaxRsApplication jaxRsApplication,
-                                  InjectionManager injectionManager) {
-        JerseySupport.Builder builder = JerseySupport.builder(jaxRsApplication.resourceConfig());
-        builder.config(((io.helidon.config.Config) ConfigProvider.getConfig()).get("server.jersey"));
-        builder.executorService(jaxRsApplication.executorService().orElseGet(defaultExecutorService));
-        builder.register(new CatchAllExceptionMapper());
-        builder.injectionManager(injectionManager);
-        return builder.build();
-    }
+    JaxRsService toJerseySupport(JaxRsApplication jaxRsApplication,
+                                 InjectionManager injectionManager) {
 
-    @Provider
-    private static class CatchAllExceptionMapper implements ExceptionMapper<Exception> {
+        ResourceConfig resourceConfig = jaxRsApplication.resourceConfig();
 
-        @Context
-        private ServerRequest serverRequest;
-
-        @Override
-        public Response toResponse(Exception exception) {
-            serverRequest.context().register("unmappedException", exception);
-            if (exception instanceof WebApplicationException) {
-                return ((WebApplicationException) exception).getResponse();
-            } else {
-                LOGGER.log(Level.WARNING, exception, () -> "Internal server error");
-                return Response.serverError().build();
-            }
-        }
+        return JaxRsService.create(resourceConfig,
+                                   injectionManager);
     }
 
     Optional<String> findContextRoot(io.helidon.config.Config config, JaxRsApplication jaxRsApplication) {

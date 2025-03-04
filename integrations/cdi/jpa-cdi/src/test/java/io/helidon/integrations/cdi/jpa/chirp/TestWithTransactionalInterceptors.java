@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,17 +42,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 @ApplicationScoped
 @DataSourceDefinition(
     name = "chirp",
     className = "org.h2.jdbcx.JdbcDataSource",
     url = "jdbc:h2:mem:TestWithTransactionalInterceptors;"
+        + "MODE=LEGACY;"
         + "INIT=SET TRACE_LEVEL_FILE=4\\;RUNSCRIPT FROM 'classpath:chirp.ddl'",
     serverName = "",
     properties = {
@@ -97,28 +97,28 @@ class TestWithTransactionalInterceptors {
 
     @BeforeEach
     void startCdiContainer() throws SQLException, SystemException {
-        assertNull(this.dataSource);
-        assertNull(this.em);
-        assertNull(this.tm);
-        assertNull(this.self);
+        assertThat(this.dataSource, nullValue());
+        assertThat(this.em, nullValue());
+        assertThat(this.tm, nullValue());
+        assertThat(this.self, nullValue());
 
         final SeContainerInitializer initializer = SeContainerInitializer.newInstance()
             .addBeanClasses(this.getClass());
-        assertNotNull(initializer);
+        assertThat(initializer, notNullValue());
         this.cdiContainer = initializer.initialize();
-        assertNotNull(this.cdiContainer);
+        assertThat(this.cdiContainer, notNullValue());
 
         this.self = this.cdiContainer.select(this.getClass()).get();
-        assertNotNull(this.self);
+        assertThat(this.self, notNullValue());
 
         this.em = this.self.getEntityManager();
-        assertNotNull(this.em);
+        assertThat(this.em, notNullValue());
 
         this.tm = this.self.getTransactionManager();
-        assertNotNull(this.tm);
+        assertThat(this.tm, notNullValue());
 
         this.dataSource = this.self.getDataSource();
-        assertNotNull(this.dataSource);
+        assertThat(this.dataSource, notNullValue());
 
         assertAuthorTableIsEmpty();
         assertNoTransaction();
@@ -188,10 +188,10 @@ class TestWithTransactionalInterceptors {
         try (final Connection connection = this.dataSource.getConnection();
              final Statement statement = connection.createStatement();
              final ResultSet resultSet = statement.executeQuery("SELECT ID FROM AUTHOR");) {
-            assertNotNull(resultSet);
-            assertTrue(resultSet.next());
-            assertEquals(1, resultSet.getInt(1));
-            assertFalse(resultSet.next());
+            assertThat(resultSet, notNullValue());
+            assertThat(resultSet.next(), is(true));
+            assertThat(resultSet.getInt(1), is(1));
+            assertThat(resultSet.next(), is(false));
         }
 
     }
@@ -211,16 +211,16 @@ class TestWithTransactionalInterceptors {
         // The transaction should have committed so is no longer
         // active.
         assertNoTransaction();
-        
+
         // Make sure the operation worked.
         try (final Connection connection = this.dataSource.getConnection();
              final Statement statement = connection.createStatement();
              final ResultSet resultSet = statement.executeQuery("SELECT ID, NAME FROM AUTHOR");) {
-            assertNotNull(resultSet);
-            assertTrue(resultSet.next());
-            assertEquals(1, resultSet.getInt(1));
-            assertEquals("Abe Lincoln", resultSet.getString(2));
-            assertFalse(resultSet.next());
+            assertThat(resultSet, notNullValue());
+            assertThat(resultSet.next(), is(true));
+            assertThat(resultSet.getInt(1), is(1));
+            assertThat(resultSet.getString(2), is("Abe Lincoln"));
+            assertThat(resultSet.next(), is(false));
         }
     }
 
@@ -240,17 +240,17 @@ class TestWithTransactionalInterceptors {
         // Persist an Author.
         final Author author = new Author("Abraham Lincoln");
         em.persist(author);
-        assertTrue(em.contains(author));
+        assertThat(em.contains(author), is(true));
     }
 
     @Transactional
     public void testFindAndUpdate() throws Exception {
         assertActiveTransaction();
         final Author author = this.em.find(Author.class, Integer.valueOf(1));
-        assertNotNull(author);
-        assertEquals(Integer.valueOf(1), author.getId());
-        assertEquals("Abraham Lincoln", author.getName());
-        assertTrue(this.em.contains(author));
+        assertThat(author, notNullValue());
+        assertThat(author.getId(), is(1));
+        assertThat(author.getName(), is("Abraham Lincoln"));
+        assertThat(this.em.contains(author), is(true));
         author.setName("Abe Lincoln");
     }
 
@@ -261,29 +261,29 @@ class TestWithTransactionalInterceptors {
 
 
     private void assertAuthorTableIsEmpty() throws SQLException {
-        assertNotNull(this.dataSource);
+        assertThat(this.dataSource, notNullValue());
         try (final Connection connection = this.dataSource.getConnection();
              final Statement statement = connection.createStatement();
              final ResultSet resultSet = statement.executeQuery("SELECT COUNT(*) FROM AUTHOR");) {
-            assertNotNull(resultSet);
-            assertTrue(resultSet.next());
-            assertEquals(0, resultSet.getInt(1));
-            assertFalse(resultSet.next());
+            assertThat(resultSet, notNullValue());
+            assertThat(resultSet.next(), is(true));
+            assertThat(resultSet.getInt(1), is(0));
+            assertThat(resultSet.next(), is(false));
         }
     }
 
     private void assertActiveTransaction() throws SystemException {
-        assertNotNull(this.tm);
-        assertEquals(Status.STATUS_ACTIVE, this.tm.getStatus());
-        assertNotNull(this.em);
-        assertTrue(this.em.isJoinedToTransaction());
+        assertThat(this.tm, notNullValue());
+        assertThat(this.tm.getStatus(), is(Status.STATUS_ACTIVE));
+        assertThat(this.em, notNullValue());
+        assertThat(this.em.isJoinedToTransaction(), is(true));
     }
 
     private void assertNoTransaction() throws SystemException {
-        assertNotNull(this.tm);
-        assertNotNull(this.em);
-        assertEquals(Status.STATUS_NO_TRANSACTION, this.tm.getStatus());
-        assertFalse(this.em.isJoinedToTransaction());
+        assertThat(this.tm, notNullValue());
+        assertThat(this.em, notNullValue());
+        assertThat(this.tm.getStatus(), is(Status.STATUS_NO_TRANSACTION));
+        assertThat(this.em.isJoinedToTransaction(), is(false));
     }
 
 }

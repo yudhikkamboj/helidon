@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,10 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 
-import io.helidon.common.pki.KeyConfig;
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
+import io.helidon.common.pki.Keys;
+import io.helidon.config.metadata.Configured;
+import io.helidon.config.metadata.ConfiguredOption;
 import io.helidon.security.SubjectType;
 
 /**
@@ -35,7 +37,7 @@ public class InboundClientDefinition {
     private final String principalName;
     private final SubjectType subjectType;
     private final String algorithm;
-    private final KeyConfig keyConfig;
+    private final Keys keyConfig;
     private final byte[] hmacSharedSecret;
 
     private InboundClientDefinition(Builder builder) {
@@ -130,7 +132,7 @@ public class InboundClientDefinition {
      *
      * @return Public key configuration to validate signature or empty optional if none configured
      */
-    public Optional<KeyConfig> keyConfig() {
+    public Optional<Keys> keyConfig() {
         return Optional.ofNullable(keyConfig);
     }
 
@@ -147,10 +149,11 @@ public class InboundClientDefinition {
      * Fluent API builder to create a new instance of {@link InboundClientDefinition}.
      * Use {@link #build()} to create the instance.
      */
+    @Configured
     public static final class Builder implements io.helidon.common.Builder<Builder, InboundClientDefinition> {
         private String keyId;
         private String algorithm;
-        private KeyConfig keyConfig;
+        private Keys keyConfig;
         private byte[] hmacSharedSecret;
         private String principalName;
         private SubjectType subjectType = SubjectType.SERVICE;
@@ -164,6 +167,7 @@ public class InboundClientDefinition {
          * @param name name of security principal
          * @return updated builder instance
          */
+        @ConfiguredOption
         public Builder principalName(String name) {
             this.principalName = name;
             return this;
@@ -175,6 +179,7 @@ public class InboundClientDefinition {
          * @param keyId key id as provided in inbound signature
          * @return updated builder instance
          */
+        @ConfiguredOption
         public Builder keyId(String keyId) {
             this.keyId = keyId;
             if (this.principalName == null) {
@@ -189,6 +194,7 @@ public class InboundClientDefinition {
          * @param type principal type
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "principal-type", value = "SERVICE")
         public Builder subjectType(SubjectType type) {
             this.subjectType = type;
             return this;
@@ -205,6 +211,7 @@ public class InboundClientDefinition {
          * @param algorithm algorithm used
          * @return updated builder instance
          */
+        @ConfiguredOption
         public Builder algorithm(String algorithm) {
             this.algorithm = algorithm;
             return this;
@@ -216,7 +223,8 @@ public class InboundClientDefinition {
          * @param keyConfig keys configured to access a public key to validate signature
          * @return updated builder instance
          */
-        public Builder publicKeyConfig(KeyConfig keyConfig) {
+        @ConfiguredOption(key = "public-key")
+        public Builder publicKeyConfig(Keys keyConfig) {
             if (null == algorithm) {
                 algorithm = HttpSignProvider.ALGORITHM_RSA;
             }
@@ -249,6 +257,7 @@ public class InboundClientDefinition {
          * @param secret shared secret to validate signature
          * @return updated builder instance
          */
+        @ConfiguredOption(key = "hmac.secret")
         public Builder hmacSecret(String secret) {
             return hmacSecret(secret.getBytes(StandardCharsets.UTF_8));
         }
@@ -268,7 +277,7 @@ public class InboundClientDefinition {
             keyId(config.get("key-id").asString().get());
             config.get("principal-name").asString().ifPresent(this::principalName);
             config.get("principal-type").asString().as(SubjectType::valueOf).ifPresent(this::subjectType);
-            config.get("public-key").as(KeyConfig::create).ifPresent(this::publicKeyConfig);
+            config.get("public-key").map(Keys::create).ifPresent(this::publicKeyConfig);
             config.get("hmac.secret").asString().ifPresent(this::hmacSecret);
             config.get("algorithm").asString().ifPresent(this::algorithm);
 

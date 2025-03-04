@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,43 +22,44 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import io.helidon.common.Weight;
+import io.helidon.common.Weighted;
+import io.helidon.common.media.type.MediaType;
+import io.helidon.common.media.type.MediaTypes;
 import io.helidon.config.ConfigException;
 import io.helidon.config.spi.ConfigNode.ListNode;
 import io.helidon.config.spi.ConfigNode.ObjectNode;
 import io.helidon.config.spi.ConfigParser;
 import io.helidon.config.spi.ConfigParserException;
 
-import jakarta.annotation.Priority;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
- * YAML {@link ConfigParser} implementation that supports {@value #MEDIA_TYPE_APPLICATION_YAML}.
+ * YAML {@link ConfigParser} implementation that supports {@link io.helidon.common.media.type.MediaTypes#APPLICATION_YAML}.
  * <p>
  * The parser implementation supports {@link java.util.ServiceLoader}, i.e. {@link io.helidon.config.Config.Builder}
  * can automatically load and register {@code YamlConfigParser} instance,
  * if not {@link io.helidon.config.Config.Builder#disableParserServices() disabled}.
  * And of course it can be {@link io.helidon.config.Config.Builder#addParser(ConfigParser) registered programmatically}.
  * <p>
- * Priority of the {@code YamlConfigParser} to be used by {@link io.helidon.config.Config.Builder},
- * if loaded automatically as a {@link java.util.ServiceLoader service}, is {@value PRIORITY}.
+ * Weight of the {@code YamlConfigParser} to be used by {@link io.helidon.config.Config.Builder},
+ * if loaded automatically as a {@link java.util.ServiceLoader service}, is {@value WEIGHT}.
  *
  * @see io.helidon.config.Config.Builder#addParser(ConfigParser)
  * @see io.helidon.config.Config.Builder#disableParserServices()
  */
-@Priority(YamlConfigParser.PRIORITY)
+@Weight(YamlConfigParser.WEIGHT)
 public class YamlConfigParser implements ConfigParser {
 
     /**
-     * A String constant representing {@value} media type.
-     */
-    public static final String MEDIA_TYPE_APPLICATION_YAML = "application/x-yaml";
-    /**
      * Priority of the parser used if registered by {@link io.helidon.config.Config.Builder} automatically.
      */
-    public static final int PRIORITY = ConfigParser.PRIORITY + 100;
+    public static final double WEIGHT = Weighted.DEFAULT_WEIGHT - 10;
 
-    private static final Set<String> SUPPORTED_MEDIA_TYPES = Set.of(MEDIA_TYPE_APPLICATION_YAML);
+    private static final Set<MediaType> SUPPORTED_MEDIA_TYPES = Set.of(MediaTypes.APPLICATION_YAML,
+                                                                       MediaTypes.APPLICATION_X_YAML);
     private static final List<String> SUPPORTED_SUFFIXES = List.of("yml", "yaml");
 
     /**
@@ -85,7 +86,7 @@ public class YamlConfigParser implements ConfigParser {
     }
 
     @Override
-    public Set<String> supportedMediaTypes() {
+    public Set<MediaType> supportedMediaTypes() {
         return SUPPORTED_MEDIA_TYPES;
     }
 
@@ -113,7 +114,7 @@ public class YamlConfigParser implements ConfigParser {
     static Map toMap(Reader reader) {
         // the default of Snake YAML is a Map, safe constructor makes sure we never deserialize into anything
         // harmful
-        Yaml yaml = new Yaml(new SafeConstructor());
+        Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         return (Map) yaml.loadAs(reader, Object.class);
     }
 
@@ -122,10 +123,10 @@ public class YamlConfigParser implements ConfigParser {
         if (map != null) {
             map.forEach((k, v) -> {
                 String strKey = k.toString();
-                if (v instanceof List) {
-                    builder.addList(strKey, fromList((List) v));
-                } else if (v instanceof Map) {
-                    builder.addObject(strKey, fromMap((Map) v));
+                if (v instanceof List listValue) {
+                    builder.addList(strKey, fromList(listValue));
+                } else if (v instanceof Map mapValue) {
+                    builder.addObject(strKey, fromMap(mapValue));
                 } else {
                     String strValue = v == null ? "" : v.toString();
                     builder.addValue(strKey, strValue);
@@ -138,10 +139,10 @@ public class YamlConfigParser implements ConfigParser {
     private static ListNode fromList(List<?> list) {
         ListNode.Builder builder = ListNode.builder();
         list.forEach(value -> {
-            if (value instanceof List) {
-                builder.addList(fromList((List) value));
-            } else if (value instanceof Map) {
-                builder.addObject(fromMap((Map) value));
+            if (value instanceof List listValue) {
+                builder.addList(fromList(listValue));
+            } else if (value instanceof Map mapValue) {
+                builder.addObject(fromMap(mapValue));
             } else {
                 String strValue = value == null ? "" : value.toString();
                 builder.addValue(strValue);

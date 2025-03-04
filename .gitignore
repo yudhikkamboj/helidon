@@ -21,6 +21,8 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+# Java Flight Recorder
+*.jfr
 
 # Maven
 target/
@@ -44,11 +46,12 @@ atlassian-ide-plugin.xml
 nbactions.xml
 nb-configuration.xml
 
-# Eclipse 
+# Eclipse
 .settings
 .settings/
 .project
 .classpath
+.factorypath
 
 # Asciidoctor
 .asciidoctor/
@@ -67,6 +70,9 @@ node/
 # Helidon CLI
 .helidon
 
+# Helidon examples repository
+helidon-examples
+
 # Other
 *~
 user.txt
@@ -74,3 +80,7 @@ ObjectStore/
 PutObjectStoreDirHere/
 package-lock.json
 RUNTIMEDB/
+docs/se/config/images
+
+# Baseline results for regression tests
+jmh-baseline.json

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 package io.helidon.webserver.accesslog;
 
-import io.helidon.webserver.ServerRequest;
+import io.helidon.http.HttpPrologue;
 
 /**
  * Access log entry for request line.
@@ -31,7 +31,7 @@ public final class RequestLineLogEntry extends AbstractLogEntry {
      * Create a new request line entry.
      *
      * @return a new access log entry for request line
-     * @see io.helidon.webserver.accesslog.AccessLogSupport.Builder#add(AccessLogEntry)
+     * @see AccessLogConfig.Builder#addEntry(AccessLogEntry)
      */
     public static RequestLineLogEntry create() {
         return builder().build();
@@ -48,21 +48,22 @@ public final class RequestLineLogEntry extends AbstractLogEntry {
 
     @Override
     public String doApply(AccessLogContext context) {
-        ServerRequest request = context.serverRequest();
+        HttpPrologue prologue = context.serverRequest().prologue();
+
         return QUOTES
                 // HTTP Method
-                + request.method().name()
+                + prologue.method().text()
                 + SPACE
                 // Path
-                + request.path().toRawString()
+                + prologue.uriPath().rawPath()
                 + SPACE
                 // HTTP version
-                + request.version().value()
+                + prologue.protocol() + "/" + prologue.protocolVersion()
                 + QUOTES;
     }
 
     /**
-     * A fluent API builder for {@link io.helidon.webserver.accesslog.RequestLineLogEntry}.
+     * A fluent API builder for {@link RequestLineLogEntry}.
      */
     public static final class Builder extends AbstractLogEntry.Builder<RequestLineLogEntry, Builder> {
         private Builder() {

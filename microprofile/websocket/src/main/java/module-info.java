@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,30 +14,50 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Aot;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+import io.helidon.webserver.http1.spi.Http1UpgradeProvider;
+
 /**
  * MP Tyrus Integration
  */
+@Feature(value = "Websocket",
+        description = "Jakarta Websocket implementation",
+        in = HelidonFlavor.MP,
+        path = "Websocket"
+)
+@Aot(false)
 module io.helidon.microprofile.tyrus {
-    requires java.logging;
-    requires jakarta.inject;
-    requires jakarta.interceptor.api;
-
-    requires jakarta.cdi;
-    requires transitive jakarta.websocket;
 
     requires io.helidon.common;
     requires io.helidon.config;
     requires io.helidon.microprofile.cdi;
-    requires tyrus.core;
     requires io.helidon.microprofile.server;
-    requires io.helidon.webserver.tyrus;
-    requires tyrus.spi;
+    requires io.helidon.webserver.websocket;
+    requires io.helidon.webserver;
+    requires jakarta.cdi;
+    requires jakarta.inject;
+    requires java.net.http;
+    requires org.glassfish.tyrus.core;
+    requires org.glassfish.tyrus.server;
+    requires org.glassfish.tyrus.spi;
+
+    requires static io.helidon.common.features.api;
+
+    requires transitive jakarta.websocket;
+    requires transitive io.helidon.common.concurrency.limits;
 
     exports io.helidon.microprofile.tyrus;
 
     // this is needed for CDI extensions that use non-public observer methods
     opens io.helidon.microprofile.tyrus to weld.core.impl, io.helidon.microprofile.cdi;
 
-    provides jakarta.enterprise.inject.spi.Extension with io.helidon.microprofile.tyrus.WebSocketCdiExtension;
-    provides org.glassfish.tyrus.core.ComponentProvider with io.helidon.microprofile.tyrus.HelidonComponentProvider;
+    provides jakarta.enterprise.inject.spi.Extension
+            with io.helidon.microprofile.tyrus.TyrusCdiExtension;
+    provides org.glassfish.tyrus.core.ComponentProvider
+            with io.helidon.microprofile.tyrus.HelidonComponentProvider;
+    provides Http1UpgradeProvider
+            with io.helidon.microprofile.tyrus.TyrusUpgradeProvider;
+	 
 }

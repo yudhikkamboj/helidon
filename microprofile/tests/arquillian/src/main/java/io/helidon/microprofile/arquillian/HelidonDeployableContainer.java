@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package io.helidon.microprofile.arquillian;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.System.Logger.Level;
 import java.lang.reflect.InvocationTargetException;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
@@ -31,10 +32,12 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,16 +45,21 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Pattern;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 
 import io.helidon.config.mp.MpConfigSources;
 
+import jakarta.enterprise.inject.ResolutionException;
 import jakarta.enterprise.inject.se.SeContainer;
 import jakarta.enterprise.inject.spi.CDI;
 import jakarta.enterprise.inject.spi.DefinitionException;
 import jakarta.enterprise.util.AnnotationLiteral;
+import jakarta.ws.rs.ApplicationPath;
+import jakarta.ws.rs.core.Application;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.spi.ConfigBuilder;
@@ -65,9 +73,13 @@ import org.jboss.arquillian.container.spi.client.protocol.ProtocolDescription;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.ProtocolMetaData;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.ArchivePath;
+import org.jboss.shrinkwrap.api.ArchivePaths;
 import org.jboss.shrinkwrap.api.Node;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 /**
  * Implementation of DeployableContainer for launching Helidon microprofile server.
@@ -78,7 +90,8 @@ import org.jboss.shrinkwrap.descriptor.api.Descriptor;
  * <li>A temporary directory is created</li>
  * <li>The WebArchive contents are written to the temporary directory</li>
  * <li>beans.xml is created in WEB-INF/classes if not present</li>
- * <li>The server is started with WEB-INF/classes and all libraries in WEB-INF/libon the classpath.</li>
+ * <li>WEB-INF/beans.xml will be moved to WEB-INF/classes/META-INF if present</li>
+ * <li>The server is started with WEB-INF/classes and all libraries in WEB-INF/lib on the classpath.</li>
  * </ol>
  *
  * Control is then returned to the test harness (in this case, generally testng) to run tests over HTTP.
@@ -88,7 +101,7 @@ import org.jboss.shrinkwrap.descriptor.api.Descriptor;
  * and supplies to this class.
  */
 public class HelidonDeployableContainer implements DeployableContainer<HelidonContainerConfiguration> {
-    private static final Logger LOGGER = Logger.getLogger(HelidonDeployableContainer.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(HelidonDeployableContainer.class.getName());
     // runnables that must be executed on stop
     private static final ConcurrentLinkedQueue<Runnable> STOP_RUNNABLES = new ConcurrentLinkedQueue<>();
 
@@ -124,6 +137,28 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         }
     }
 
+    /**
+     * Annotation literal to inject base registry.
+     */
+    static class VendorRegistryTypeLiteral extends AnnotationLiteral<RegistryType> implements RegistryType {
+
+        @Override
+        public MetricRegistry.Type type() {
+            return MetricRegistry.Type.VENDOR;
+        }
+    }
+
+    /**
+     * Annotation literal to inject base registry.
+     */
+    static class ApplicationRegistryTypeLiteral extends AnnotationLiteral<RegistryType> implements RegistryType {
+
+        @Override
+        public MetricRegistry.Type type() {
+            return MetricRegistry.Type.APPLICATION;
+        }
+    }
+
     @Override
     public Class<HelidonContainerConfiguration> getConfigurationClass() {
         return HelidonContainerConfiguration.class;
@@ -155,61 +190,158 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
 
     @Override
     public ProtocolMetaData deploy(Archive<?> archive) throws DeploymentException {
-        // Because helidon doesn't have a dynamic war deployment model, we need to actually start the server here.
-        RunContext context = new RunContext();
-        contexts.put(archive.getId(), context);
+        if (containerConfig.isMultipleDeployments() || (!containerConfig.isMultipleDeployments() && contexts.isEmpty())) {
+            // Because helidon doesn't have a dynamic war deployment model, we need to actually start the server here.
+            RunContext context = new RunContext();
+            contexts.put(archive.getId(), context);
 
-        // Is it a JavaArchive?
-        boolean isJavaArchive = archive instanceof JavaArchive;
+            // Is it a JavaArchive?
+            boolean isJavaArchive = archive instanceof JavaArchive;
 
-        try {
-            // Create the temporary deployment directory.
-            if (containerConfig.getUseRelativePath()) {
-                context.deployDir = Paths.get("target/helidon-arquillian-test");
-            } else {
-                context.deployDir = Files.createTempDirectory("helidon-arquillian-test");
+            try {
+                // Create the temporary deployment directory.
+                if (containerConfig.getUseRelativePath()) {
+                    context.deployDir = Paths.get("target/helidon-arquillian-test");
+                } else {
+                    context.deployDir = Files.createTempDirectory("helidon-arquillian-test");
+                }
+                LOGGER.log(Level.INFO, "Running Arquillian tests in directory: " + context.deployDir.toAbsolutePath());
+
+                copyArchiveToDeployDir(archive, context.deployDir);
+
+                for (Archive<?> additionalArchive : additionalArchives) {
+                    copyArchiveToDeployDir(additionalArchive, context.deployDir);
+                }
+
+                List<Path> classPath = new ArrayList<>();
+
+                Path rootDir = context.deployDir.resolve("");
+                if (isJavaArchive) {
+                    ensureBeansXml(rootDir, null);
+                    classPath.add(rootDir);
+                } else {
+                    // Prepare the launcher files
+                    Path webInfDir = context.deployDir.resolve("WEB-INF");
+                    Path classesDir = webInfDir.resolve("classes");
+                    Path libDir = webInfDir.resolve("lib");
+                    ensureBeansXml(classesDir, webInfDir);
+                    addServerClasspath(classPath, classesDir, libDir, rootDir);
+                    if (containerConfig.isInWebContainer()) {
+                        if (containerConfig.isIncludeWarContextPath()) {
+                            String rootContext = archive.getName().split("\\.")[0];
+                            if (!containerConfig.getSkipContextPaths().contains(rootContext)) {
+                                context.rootContext = rootContext;
+                            }
+                        }
+                        if (!loadApplicationFromWebXml(context, webInfDir)) {
+                            // Search Application in classes
+                            loadApplicationFromClasses(context, archive);
+                        }
+                    }
+                }
+
+                startServer(context, classPath.toArray(new Path[0]));
+            } catch (IOException | SAXException | ParserConfigurationException e) {
+                LOGGER.log(Level.INFO, "Failed to start container", e);
+                throw new DeploymentException("Failed to copy the archive assets into the deployment directory", e);
+            } catch (InvocationTargetException e) {
+
+                try {
+                    context.runnerClass
+                            .getDeclaredMethod("abortedCleanup")
+                            .invoke(context.runner);
+                } catch (IllegalAccessException | NoSuchMethodException | InvocationTargetException ex) {
+                    ex.printStackTrace();
+                }
+
+                throw lookForSupressedDeploymentException(e.getTargetException())
+                        .map(d ->
+                            new org.jboss.arquillian.container.spi.client.container.DeploymentException("Deployment failure!", d))
+                        .orElseThrow(() -> new DefinitionException(e));
+            } catch (ReflectiveOperationException e) {
+                LOGGER.log(Level.INFO, "Failed to start container", e);
+                throw new DefinitionException(e);        // validation exceptions
             }
-            LOGGER.info("Running Arquillian tests in directory: " + context.deployDir.toAbsolutePath());
 
-            copyArchiveToDeployDir(archive, context.deployDir);
-
-            for (Archive<?> additionalArchive : additionalArchives) {
-                copyArchiveToDeployDir(additionalArchive, context.deployDir);
-            }
-
-            List<Path> classPath = new ArrayList<>();
-
-            Path rootDir = context.deployDir.resolve("");
-            if (isJavaArchive) {
-                ensureBeansXml(rootDir);
-                classPath.add(rootDir);
-            } else {
-                // Prepare the launcher files
-                Path webInfDir = context.deployDir.resolve("WEB-INF");
-                Path classesDir = webInfDir.resolve("classes");
-                Path libDir = webInfDir.resolve("lib");
-                ensureBeansXml(classesDir);
-                addServerClasspath(classPath, classesDir, libDir, rootDir);
-            }
-
-            startServer(context, classPath.toArray(new Path[0]));
-        } catch (IOException e) {
-            LOGGER.log(Level.INFO, "Failed to start container", e);
-            throw new DeploymentException("Failed to copy the archive assets into the deployment directory", e);
-        } catch (InvocationTargetException e) {
-            throw lookForSupressedDeploymentException(e.getTargetException())
-                    .map(d -> new org.jboss.arquillian.container.spi.client.container.DeploymentException("Oj!", d))
-                    .orElseThrow(() -> new DefinitionException(e));
-        } catch (ReflectiveOperationException e) {
-            LOGGER.log(Level.INFO, "Failed to start container", e);
-            throw new DefinitionException(e);        // validation exceptions
+            // Server has started, so we're done.
+            //        ProtocolMetaData pm = new ProtocolMetaData();
+            //        pm.addContext(new HTTPContext("Helidon", "localhost", containerConfig.getPort()));
+            //        return pm;
         }
-
-        // Server has started, so we're done.
-        //        ProtocolMetaData pm = new ProtocolMetaData();
-        //        pm.addContext(new HTTPContext("Helidon", "localhost", containerConfig.getPort()));
-        //        return pm;
         return new ProtocolMetaData();
+    }
+
+    private boolean loadApplicationFromClasses(RunContext context, Archive<?> archive)
+            throws ClassNotFoundException, ReflectiveOperationException {
+        ArchivePath classes = ArchivePaths.create("WEB-INF", "classes");
+        org.jboss.shrinkwrap.api.Node root = archive.getContent().get(classes);
+        Collection<Class<Application>> applications = new HashSet<>();
+        if (root != null) {
+            deepApplicationFind(root, applications);
+            context.applications.addAll(applications);
+        }
+        return !context.applications.isEmpty();
+    }
+
+    private void deepApplicationFind(org.jboss.shrinkwrap.api.Node parent,
+            Collection<Class<Application>> applications) throws ClassNotFoundException {
+        for (org.jboss.shrinkwrap.api.Node child : parent.getChildren()) {
+            if (child.getChildren().isEmpty()) {
+                String name = child.toString();
+                if (name.endsWith(".class")) {
+                    name = name.replaceFirst("\\.class", "").replaceFirst("/WEB-INF/classes/", "").replaceAll("/", ".");
+                    Class<?> clazz = Class.forName(name);
+                    if (Application.class.isAssignableFrom(clazz)) {
+                        applications.add((Class<Application>) clazz);
+                    }
+                }
+            } else {
+                deepApplicationFind(child, applications);
+            }
+        }
+    }
+
+    private boolean loadApplicationFromWebXml(RunContext context, Path webInfDir) throws IOException,
+    ParserConfigurationException, SAXException, ReflectiveOperationException {
+        Path webXml = webInfDir.resolve("web.xml");
+        if (Files.exists(webXml)) {
+            try (InputStream inputStream = Files.newInputStream(webXml)) {
+                DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+                DocumentBuilder db = dbf.newDocumentBuilder();
+                Document doc = db.parse(inputStream);
+                NodeList nodes = doc.getElementsByTagName("init-param");
+                for (int i = 0; i < nodes.getLength(); i++) {
+                    NodeList childs = nodes.item(i).getChildNodes();
+                    Class<Application> application = application(childs);
+                    if (application != null) {
+                        context.explicitRsApplication = Optional.of(application);
+                        context.applications.add(application);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private Class<Application> application(NodeList childs) throws ClassNotFoundException {
+        boolean isApp = false;
+        String appName = null;
+        for (int j = 0; j < childs.getLength(); j++) {
+            org.w3c.dom.Node element = childs.item(j);
+            String name = element.getNodeName();
+            String value = element.getTextContent();
+            if ("param-name".equals(name) && "jakarta.ws.rs.Application".equals(value)) {
+                isApp = true;
+            } else if ("param-value".equals(name)) {
+                appName = value;
+            }
+        }
+        if (isApp) {
+            return (Class<Application>) Class.forName(appName);
+        } else {
+            return null;
+        }
     }
 
     static Optional<Exception> lookForSupressedDeploymentException(Throwable t) {
@@ -218,10 +350,12 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         }
         if (jakarta.enterprise.inject.spi.DeploymentException.class.isAssignableFrom(t.getClass())) {
             return Optional.of((jakarta.enterprise.inject.spi.DeploymentException) t);
-        }
-        if (IllegalStateException.class.isAssignableFrom(t.getClass())) {
+        } else if (IllegalStateException.class.isAssignableFrom(t.getClass())) {
             return Optional.of((IllegalStateException) t);
+        } else if (java.lang.Error.class.isAssignableFrom(t.getClass())) {
+            return Optional.of((new jakarta.enterprise.inject.spi.DeploymentException(t)));
         }
+
         var deploymentException = lookForSupressedDeploymentException(t.getCause());
         for (Throwable suppressed : t.getSuppressed()) {
             var candicate = lookForSupressedDeploymentException(suppressed);
@@ -281,6 +415,22 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         //    META-INF/microprofile-config.properties (such as JWT-Auth)
         ConfigBuilder builder = ConfigProviderResolver.instance()
                 .getBuilder();
+        // Add root context path per Application
+        if (context.rootContext != null && !context.applications.isEmpty()) {
+            containerConfig.addConfigBuilderConsumer(configBuilder -> {
+                Map<String, String> properties = new HashMap<>();
+                for (Class<Application> app : context.applications) {
+                    String key = app.getName() + ".routing-path.path";
+                    ApplicationPath path = app.getDeclaredAnnotation(ApplicationPath.class);
+                    String value = "/" + context.rootContext;
+                    if (path != null && !"/".equals(path.value()) && !"".equals(path.value())) {
+                        value = value + "/" + path.value();
+                    }
+                    properties.put(key, value);
+                }
+                configBuilder.withSources(MpConfigSources.create(properties));
+            });
+        }
         // we must use the default configuration to support profiles (and test them correctly in config TCK)
         // we may need to have a custom configuration for TCKs that do require workarounds
         /*
@@ -303,8 +453,8 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         }
 
         context.runnerClass
-                .getDeclaredMethod("start", Config.class, Integer.TYPE)
-                .invoke(context.runner, config, containerConfig.getPort());
+                .getDeclaredMethod("start", Config.class, Integer.TYPE, Optional.class)
+                .invoke(context.runner, config, containerConfig.getPort(), context.explicitRsApplication);
     }
 
     private URL[] toUrls(Path[] classPath) {
@@ -367,22 +517,30 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         classpath.add(rootDir);
     }
 
-    private void ensureBeansXml(Path classesDir) throws IOException {
+    private void ensureBeansXml(Path classesDir, Path webinfDir) throws IOException {
         Path beansPath = classesDir.resolve("META-INF/beans.xml");
+        Path metaInfPath = beansPath.getParent();
+        if (null != metaInfPath) {
+            Files.createDirectories(metaInfPath);
+        }
+        if (containerConfig.isInWebContainer() && webinfDir != null) {
+            // In case exists WEB-INF/beans.xml, then move it to classes/META-INF/beans.xml
+            Path webInfBeansPath = webinfDir.resolve("beans.xml");
+            if (Files.exists(webInfBeansPath)) {
+                Files.move(webInfBeansPath, beansPath);
+                return;
+            }
+        }
         if (Files.exists(beansPath)) {
             return;
         }
-        try (InputStream beanXmlTemplate = HelidonDeployableContainer.class.getResourceAsStream("/templates/beans.xml")) {
-            Path metaInfPath = beansPath.getParent();
-            if (null != metaInfPath) {
-                Files.createDirectories(metaInfPath);
-            }
-
-            if (null == beanXmlTemplate) {
-                Files.write(beansPath, new byte[0]);
-            } else {
-
-                Files.copy(beanXmlTemplate, beansPath);
+        if (containerConfig.isUseBeanXmlTemplate()) {
+            try (InputStream beanXmlTemplate = HelidonDeployableContainer.class.getResourceAsStream("/templates/beans.xml")) {
+                if (null == beanXmlTemplate) {
+                    Files.write(beansPath, new byte[0]);
+                } else {
+                    Files.copy(beanXmlTemplate, beansPath);
+                }
             }
         }
     }
@@ -395,7 +553,7 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         // Clean up contexts
         RunContext context = contexts.remove(archive.getId());
         if (null == context) {
-            LOGGER.severe("Undeploying an archive that was not deployed. ID: " + archive.getId());
+            LOGGER.log(Level.ERROR, "Undeploying an archive that was not deployed. ID: " + archive.getId());
             return;
         }
 
@@ -460,12 +618,21 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
      */
     private void cleanupBaseMetrics() {
         try {
-            MetricRegistry metricRegistry = CDI.current().select(MetricRegistry.class,
-                    new BaseRegistryTypeLiteral()).get();
-            Objects.requireNonNull(metricRegistry);
-            metricRegistry.removeMatching((m, v) -> true);
-        } catch (IllegalStateException e) {
-            LOGGER.log(Level.WARNING, "Unable to cleanup base metrics", e);
+            List.of(new BaseRegistryTypeLiteral(),
+                    new VendorRegistryTypeLiteral(),
+                    new ApplicationRegistryTypeLiteral())
+                    .forEach(literal -> {
+                        MetricRegistry metricRegistry = CDI.current().select(MetricRegistry.class,
+                                                                             literal).get();
+                        Objects.requireNonNull(metricRegistry);
+                        metricRegistry.removeMatching((m, v) -> true);
+                    });
+
+        } catch (IllegalStateException | ResolutionException e) {
+            // this may be a negative CDI test (e.g. when CDI is intended not to start)
+            // in such cases, CDI will not be available
+            // It can also be that metrics are not used at all in some tests, so we don't want to fail.
+            LOGGER.log(Level.DEBUG, "Unable to cleanup base metrics", e);
         }
     }
 
@@ -520,6 +687,10 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
         private Object runner;
         // existing class loader
         private ClassLoader oldClassLoader;
+        private String rootContext;
+        // It is explicit when it is defined in web.xml. CDI has nothing to do with that.
+        private Optional<Class<Application>> explicitRsApplication = Optional.empty();
+        private Set<Class<Application>> applications = new HashSet<>();
     }
 
     static class HelidonContainerClassloader extends ClassLoader implements Closeable {
@@ -565,8 +736,10 @@ public class HelidonDeployableContainer implements DeployableContainer<HelidonCo
                     }
                 }
             }
-
-            return Collections.enumeration(result);
+            // Give priority to WebApp resources (for example ServiceLoader provided by WebApp)
+            List<URL> toRevert = new ArrayList<URL>(result);
+            Collections.reverse(toRevert);
+            return Collections.enumeration(toRevert);
         }
 
         @Override

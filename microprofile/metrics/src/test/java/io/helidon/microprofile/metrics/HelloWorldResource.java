@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,15 @@
  */
 package io.helidon.microprofile.metrics;
 
+import java.lang.System.Logger.Level;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.webserver.ServerResponse;
+import io.helidon.webserver.http.ServerResponse;
 
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -38,28 +37,28 @@ import jakarta.ws.rs.container.AsyncResponse;
 import jakarta.ws.rs.container.Suspended;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import org.eclipse.microprofile.metrics.Gauge;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.eclipse.microprofile.metrics.annotation.Counted;
-import org.eclipse.microprofile.metrics.annotation.RegistryType;
-import org.eclipse.microprofile.metrics.annotation.SimplyTimed;
+import org.eclipse.microprofile.metrics.annotation.RegistryScope;
 import org.eclipse.microprofile.metrics.annotation.Timed;
 
 /**
  * HelloWorldResource class.
  */
-@Path("helloworld")
+@Path("/")
 @RequestScoped
 @Counted
 public class HelloWorldResource {
 
-    private static final Logger LOGGER = Logger.getLogger(HelloWorldResource.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(HelloWorldResource.class.getName());
 
     static final String SLOW_RESPONSE = "At last";
 
     // In case pipeline runs need a different time
     static final int SLOW_DELAY_MS = Integer.getInteger("helidon.microprofile.metrics.asyncSimplyTimedDelayMS", 2 * 1000);
 
-    static final String MESSAGE_SIMPLE_TIMER = "messageSimpleTimer";
+    static final String MESSAGE_TIMER = "messageTimer";
     static final String SLOW_MESSAGE_TIMER = "slowMessageTimer";
     static final String SLOW_MESSAGE_SIMPLE_TIMER = "slowMessageSimpleTimer";
 
@@ -89,22 +88,22 @@ public class HelloWorldResource {
         slowRequestResponseSent.await();
     }
 
-    static Optional<org.eclipse.microprofile.metrics.ConcurrentGauge> inflightRequests(MetricRegistry metricRegistry) {
-        return metricRegistry.getConcurrentGauges((metricID, metric) -> metricID.getName().endsWith("inFlight"))
+    static Optional<Gauge> inflightRequests(MetricRegistry metricRegistry) {
+        return metricRegistry.getGauges((metricID, metric) -> metricID.getName().endsWith("inFlight"))
                 .values()
                 .stream()
                 .findAny();
     }
 
     static long inflightRequestsCount(MetricRegistry metricRegistry) {
-        return inflightRequests(metricRegistry).get().getCount();
+        return inflightRequests(metricRegistry).get().getValue().longValue();
     }
 
     @Inject
     MetricRegistry metricRegistry;
 
     @Inject
-    @RegistryType(type = MetricRegistry.Type.VENDOR)
+    @RegistryScope(scope = MetricRegistry.VENDOR_SCOPE)
     private MetricRegistry vendorRegistry;
 
     public HelloWorldResource() {
@@ -120,7 +119,7 @@ public class HelloWorldResource {
     }
 
     @GET
-    @SimplyTimed(name = MESSAGE_SIMPLE_TIMER, absolute = true)
+    @Timed(name = MESSAGE_TIMER, absolute = true)
     @Path("/withArg/{name}")
     @Produces(MediaType.TEXT_PLAIN)
     public String messageWithArg(@PathParam("name") String input){
@@ -130,15 +129,13 @@ public class HelloWorldResource {
     @GET
     @Path("/slow")
     @Produces(MediaType.TEXT_PLAIN)
-    @SimplyTimed(name = SLOW_MESSAGE_SIMPLE_TIMER, absolute = true)
     @Timed(name = SLOW_MESSAGE_TIMER, absolute = true)
     public void slowMessage(@Suspended AsyncResponse ar, @Context ServerResponse serverResponse) {
         if (slowRequestInProgress == null) {
             ar.resume(new RuntimeException("slowRequestInProgress was unexpectedly null"));
             return;
         }
-        serverResponse.whenSent()
-                .thenAccept(r -> slowRequestResponseSent.countDown());
+        serverResponse.whenSent(() -> slowRequestResponseSent.countDown());
 
         long uponEntry = inflightRequestsCount();
 
@@ -152,13 +149,13 @@ public class HelloWorldResource {
                     throw new RuntimeException("Error resuming asynchronous response: not in suspended state");
                 }
                 long afterResume = inflightRequestsCount();
-                LOGGER.log(Level.FINE,
+                LOGGER.log(Level.DEBUG,
                         "inAsyncExec: " + inAsyncExec + ", afterResume: " + afterResume);
             } catch (InterruptedException e) {
                 throw new RuntimeException("Async test /slow wait was interrupted", e);
             }
         });
-        LOGGER.log(Level.FINE, "uponEntry: " + uponEntry + ", beforeReturn: " + inflightRequestsCount());
+        LOGGER.log(Level.DEBUG, "uponEntry: " + uponEntry + ", beforeReturn: " + inflightRequestsCount());
     }
 
     @GET
@@ -179,7 +176,6 @@ public class HelloWorldResource {
     @GET
     @Path("/slowWithArg/{name}")
     @Produces(MediaType.TEXT_PLAIN)
-    @SimplyTimed(name = SLOW_MESSAGE_SIMPLE_TIMER, absolute = true)
     @Timed(name = SLOW_MESSAGE_TIMER, absolute = true)
     public void slowMessageWithArg(@PathParam("name") String input, @Suspended AsyncResponse ar) {
         executorService.execute(() -> {

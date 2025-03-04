@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+import io.helidon.common.features.api.Aot;
+import io.helidon.common.features.api.Feature;
+import io.helidon.common.features.api.HelidonFlavor;
+
 /**
  * Provides classes and interfaces that integrate <a
  * href="https://jcp.org/en/jsr/detail?id=907">JTA</a> version 1.2
@@ -22,18 +26,30 @@
  * version 2.0 using <a href="http://narayana.io/">Narayana</a> as the
  * underlying implementation.
  */
+@Aot(description = "Experimental support, tested on limited use cases")
+@Feature(value = "JTA",
+        description = "Jakarta transaction API support for Helidon MP",
+        in = HelidonFlavor.MP,
+        path = "JTA"
+)
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.integrations.jta.cdi {
-    requires jakarta.transaction;
+
     requires jakarta.annotation;
-    requires java.sql;
-    requires java.rmi;
-    requires jakarta.interceptor.api;
+    requires transitive jakarta.cdi;
     requires jakarta.inject;
-    requires jakarta.cdi;
-    requires narayana.jta.jakarta;
+    requires transitive jakarta.transaction;
+    requires java.rmi;
+    requires java.sql;
+    requires narayana.jta;
+    requires io.helidon.common.resumable;
+
+    requires static io.helidon.common.features.api;
 
     exports io.helidon.integrations.jta.cdi;
+    exports io.helidon.integrations.jta.narayana to narayana.jta;
 
     provides jakarta.enterprise.inject.spi.Extension
             with io.helidon.integrations.jta.cdi.NarayanaExtension;
+
 }

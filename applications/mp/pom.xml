@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+    Copyright (c) 2019, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@
 -->
 
 <project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.helidon.applications</groupId>
-        <artifactId>helidon-applications-project</artifactId>
-        <version>3.0.0-SNAPSHOT</version>
+        <artifactId>helidon-applications</artifactId>
+        <version>4.2.0-SNAPSHOT</version>
+        <relativePath>../parent/pom.xml</relativePath>
     </parent>
     <artifactId>helidon-mp</artifactId>
     <packaging>pom</packaging>
@@ -31,18 +32,16 @@
     <description>Parent pom for Helidon MP applications</description>
 
     <properties>
-        <version.plugin.jandex>1.0.6</version.plugin.jandex>
-        <version.plugin.jaxb2>0.14.0</version.plugin.jaxb2>
-        <version.plugin.eclipselink>2.7.5.1</version.plugin.eclipselink>
-        <version.plugin.hibernate.enhance>${version.lib.hibernate}</version.plugin.hibernate.enhance>
-        <mainClass>io.helidon.microprofile.cdi.Main</mainClass>
+        <version.plugin.hibernate-enhance>${version.lib.hibernate}</version.plugin.hibernate-enhance>
+        <version.plugin.jandex>${version.lib.jandex}</version.plugin.jandex>
+        <mainClass>io.helidon.Main</mainClass>
     </properties>
 
     <build>
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <groupId>org.jboss.jandex</groupId>
+                    <groupId>io.smallrye</groupId>
                     <artifactId>jandex-maven-plugin</artifactId>
                     <version>${version.plugin.jandex}</version>
                     <executions>
@@ -56,48 +55,15 @@
                     </executions>
                 </plugin>
                 <plugin>
-                    <groupId>com.ethlo.persistence.tools</groupId>
-                    <artifactId>eclipselink-maven-plugin</artifactId>
-                    <version>${version.plugin.eclipselink}</version>
-                    <dependencies>
-                        <dependency>
-                            <groupId>jakarta.annotation</groupId>
-                            <artifactId>jakarta.annotation-api</artifactId>
-                            <version>${version.lib.jakarta.annotation-api}</version>
-                        </dependency>
-                        <dependency>
-                            <groupId>jakarta.xml.bind</groupId>
-                            <artifactId>jakarta.xml.bind-api</artifactId>
-                            <version>${version.lib.jakarta.xml.bind-api}</version>
-                        </dependency>
-                    </dependencies>
-                    <configuration>
-                        <updatePersistenceXml>false</updatePersistenceXml>
-                    </configuration>
-                </plugin>
-                 <plugin>
-                    <groupId>org.jvnet.jaxb2.maven2</groupId>
-                    <artifactId>maven-jaxb2-plugin</artifactId>
-                    <version>${version.plugin.jaxb2}</version>
-                    <dependencies>
-                        <!-- Force upgrade version. Needed to support Java 16 -->
-                        <dependency>
-                            <groupId>org.glassfish.jaxb</groupId>
-                            <artifactId>jaxb-runtime</artifactId>
-                            <version>${version.lib.jaxb-runtime}</version>
-                        </dependency>
-                    </dependencies>
-                </plugin>
-                <plugin>
                     <groupId>org.hibernate.orm.tooling</groupId>
                     <artifactId>hibernate-enhance-maven-plugin</artifactId>
-                    <version>${version.plugin.hibernate.enhance}</version>
+                    <version>${version.plugin.hibernate-enhance}</version>
+                    <!-- Force upgrade for latest Java support. -->
                     <dependencies>
                         <dependency>
-                            <!-- used by hibernate plugin - requires update for Java 17 -->
                             <groupId>net.bytebuddy</groupId>
                             <artifactId>byte-buddy</artifactId>
-                            <version>${version.lib.byte-buddy}</version>
+                            <version>${version.lib.bytebuddy}</version>
                         </dependency>
                     </dependencies>
                 </plugin>
@@ -111,13 +77,19 @@
             <build>
                 <plugins>
                     <plugin>
-                        <groupId>io.helidon.build-tools</groupId>
-                        <artifactId>helidon-maven-plugin</artifactId>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>native-image</id>
+                                <id>resource-config</id>
                                 <goals>
-                                    <goal>native-image</goal>
+                                    <goal>generateResourceConfig</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>build-native-image</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
                                 </goals>
                             </execution>
                         </executions>

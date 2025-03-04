@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package io.helidon.integrations.vault;
 
+import java.lang.System.Logger.Level;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.logging.Logger;
 
+import io.helidon.common.HelidonServiceLoader;
 import io.helidon.common.LazyValue;
-import io.helidon.common.serviceloader.HelidonServiceLoader;
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
 import io.helidon.integrations.common.rest.RestApi;
 import io.helidon.integrations.vault.spi.AuthMethodProvider;
 import io.helidon.integrations.vault.spi.SecretsEngineProvider;
@@ -38,7 +38,7 @@ import io.helidon.integrations.vault.spi.SysProvider;
  */
 class VaultImpl implements Vault {
 
-    private static final Logger LOGGER = Logger.getLogger(VaultImpl.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(VaultImpl.class.getName());
 
     private static final LazyValue<List<AuthMethodProvider<?>>> METHODS = LazyValue.create(() -> {
         List<AuthMethodProvider<?>> result = new LinkedList<>();
@@ -46,7 +46,7 @@ class VaultImpl implements Vault {
                 .build()
                 .forEach(result::add);
 
-        LOGGER.fine(() -> "Available Authentication Method providers: " + result);
+        LOGGER.log(Level.DEBUG, () -> "Available Authentication Method providers: " + result);
 
         return result;
     });
@@ -57,7 +57,7 @@ class VaultImpl implements Vault {
                 .build()
                 .forEach(result::add);
 
-        LOGGER.fine(() -> "Available Secret Engine providers: " + result);
+        LOGGER.log(Level.DEBUG, () -> "Available Secret Engine providers: " + result);
 
         return result;
     });
@@ -68,7 +68,7 @@ class VaultImpl implements Vault {
                 .build()
                 .forEach(result::add);
 
-        LOGGER.fine(() -> "Available Sys providers: " + result);
+        LOGGER.log(Level.DEBUG, () -> "Available Sys providers: " + result);
 
         return result;
     });
@@ -82,7 +82,7 @@ class VaultImpl implements Vault {
     }
 
     @Override
-    public <T extends SecretsRx> T secrets(Engine<T> engine) {
+    public <T extends Secrets> T secrets(Engine<T> engine) {
         return findEngineProvider(engine)
                 .map(it -> it.createSecrets(config, restAccess, it.supportedEngine().defaultMount()))
                 .orElseThrow(() -> new IllegalArgumentException("There is no provider available for engine "
@@ -91,7 +91,7 @@ class VaultImpl implements Vault {
     }
 
     @Override
-    public <T extends SecretsRx> T secrets(Engine<T> engine, String mount) {
+    public <T extends Secrets> T secrets(Engine<T> engine, String mount) {
         return findEngineProvider(engine)
                 .map(it -> it.createSecrets(config, restAccess, mount))
                 .orElseThrow(() -> new IllegalArgumentException("There is no provider available for engine "
@@ -148,12 +148,12 @@ class VaultImpl implements Vault {
     }
 
     @SuppressWarnings("unchecked")
-    private <T extends SecretsRx> Optional<SecretsEngineProvider<T>> findEngineProvider(Engine<T> engine) {
+    private <T extends Secrets> Optional<SecretsEngineProvider<T>> findEngineProvider(Engine<T> engine) {
         for (SecretsEngineProvider<?> engineProvider : ENGINES.get()) {
             Engine<?> supportedEngine = engineProvider.supportedEngine();
             if (supportedEngine.version().equals(engine.version())
                     && supportedEngine.type().equals(engine.type())
-                    && (engine.secretsType() == SecretsRx.class)
+                    && (engine.secretsType() == Secrets.class)
                     || engine.secretsType().equals(supportedEngine.secretsType())) {
                 return Optional.of((SecretsEngineProvider<T>) engineProvider);
             }

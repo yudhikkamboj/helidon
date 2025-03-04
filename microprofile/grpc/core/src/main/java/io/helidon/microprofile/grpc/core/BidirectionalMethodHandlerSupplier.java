@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,10 +29,9 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 
 /**
- * A supplier of {@link io.helidon.grpc.core.MethodHandler}s for bi-directional streaming gRPC methods.
+ * A supplier of {@link MethodHandler}s for bi-directional streaming gRPC methods.
  */
-public class BidirectionalMethodHandlerSupplier
-        extends AbstractMethodHandlerSupplier {
+public class BidirectionalMethodHandlerSupplier extends AbstractMethodHandlerSupplier {
 
     /**
      * Create a supplier of handlers for bi-directional streaming methods.
@@ -48,7 +47,7 @@ public class BidirectionalMethodHandlerSupplier
     }
 
     @Override
-    public <ReqT, RespT> MethodHandler<ReqT, RespT> get(String methodName, AnnotatedMethod method, Supplier<?> instance) {
+    public <ReqT, RespT> MethodHandler<ReqT, RespT> get(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
         if (!isRequiredMethodType(method)) {
             throw new IllegalArgumentException("Method not annotated as a bi-directional streaming method: " + method);
         }
@@ -58,7 +57,7 @@ public class BidirectionalMethodHandlerSupplier
 
         switch (type) {
         case bidiStreaming:
-            handler = new BidiStreaming<>(methodName, method, instance);
+            handler = new BidiStreaming<>(methodName, method, instanceSupplier);
             break;
         case unknown:
         default:
@@ -124,8 +123,8 @@ public class BidirectionalMethodHandlerSupplier
     public abstract static class AbstractServerStreamingHandler<ReqT, RespT>
             extends AbstractHandler<ReqT, RespT> {
 
-        AbstractServerStreamingHandler(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance, MethodDescriptor.MethodType.BIDI_STREAMING);
+        AbstractServerStreamingHandler(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier, MethodDescriptor.MethodType.BIDI_STREAMING);
         }
 
         @Override
@@ -149,8 +148,8 @@ public class BidirectionalMethodHandlerSupplier
     public static class BidiStreaming<ReqT, RespT>
             extends AbstractServerStreamingHandler<ReqT, RespT> {
 
-        BidiStreaming(String methodName, AnnotatedMethod method, Supplier<?> instance) {
-            super(methodName, method, instance);
+        BidiStreaming(String methodName, AnnotatedMethod method, Supplier<?> instanceSupplier) {
+            super(methodName, method, instanceSupplier);
             setRequestType(getGenericResponseType(method.genericReturnType()));
             setResponseType(getGenericResponseType(method.genericParameterTypes()[0]));
         }

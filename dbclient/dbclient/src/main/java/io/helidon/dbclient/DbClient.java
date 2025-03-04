@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,44 +18,25 @@ package io.helidon.dbclient;
 import java.util.Arrays;
 import java.util.List;
 import java.util.ServiceLoader;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.config.Config;
 import io.helidon.common.mapper.MapperManager;
-import io.helidon.common.reactive.Single;
-import io.helidon.common.reactive.Subscribable;
-import io.helidon.common.serviceloader.HelidonServiceLoader;
-import io.helidon.config.Config;
+import io.helidon.dbclient.spi.DbClientBuilder;
 import io.helidon.dbclient.spi.DbClientProvider;
-import io.helidon.dbclient.spi.DbClientProviderBuilder;
 import io.helidon.dbclient.spi.DbClientServiceProvider;
 import io.helidon.dbclient.spi.DbMapperProvider;
 
 /**
  * Helidon database client.
  */
-public interface DbClient {
-    /**
-     * Execute database statements in transaction.
-     *
-     * @param <T>      statement execution result type, MUST be either a {@link io.helidon.common.reactive.Multi}
-     *                 or a {@link io.helidon.common.reactive.Single}, as returned by all APIs of DbClient.
-     * @param <U>      the type provided by the result type
-     * @param executor database statement executor, see {@link DbExecute}
-     * @return statement execution result
-     */
-    <U, T extends Subscribable<U>> T inTransaction(Function<DbTransaction, T> executor);
+public interface DbClient extends AutoCloseable {
 
     /**
-     * Execute database statement.
-     *
-     * @param <T>      statement execution result type, MUST be either a {@link io.helidon.common.reactive.Multi}
-     *                 or a {@link io.helidon.common.reactive.Single}, as returned by all APIs of DbClient
-     * @param <U>      the type provided by the result type
-     * @param executor database statement executor, see {@link DbExecute}
-     * @return statement execution result
+     * Qualifier used for mapping using {@link io.helidon.common.mapper.MapperManager#map(Object, Class, Class, String...)}.
      */
-    <U, T extends Subscribable<U>> T execute(Function<DbExecute, T> executor);
+    String MAPPING_QUALIFIER = "dbclient";
 
     /**
      * Type of this database provider (such as jdbc:mysql, mongoDB etc.).
@@ -65,78 +46,106 @@ public interface DbClient {
     String dbType();
 
     /**
+     * Execute database statements.
+     *
+     * @return database statements executor
+     */
+    DbExecute execute();
+
+    /**
+     * Execute database statements in transaction.
+     * {@link DbTransaction} life-cycle must always be finished
+     * with {@link io.helidon.dbclient.DbTransaction#commit()}
+     * or {@link io.helidon.dbclient.DbTransaction#rollback()}.
+     * Those two methods mentioned above will also release database resources allocated
+     * by this transaction.
+     *
+     * @return transaction to execute database statements
+     */
+    DbTransaction transaction();
+
+    /**
      * Unwrap database client internals.
-     * Only database connection is supported. Any operations based on this connection are <b>blocking</b>.
-     * Reactive support must be implemented in user code.
+     * Only database connection is supported.
+     * <p>When {@code java.sql.Connection} is requested for JDBC provider, this connection must be closed
+     * by user code using {@code close()} method on returned {@code Connection} instance.
      *
      * @param <C> target class to be unwrapped
      * @param cls target class to be unwrapped
-     * @return database client internals future matching provided class.
+     * @return database client internals matching provided class.
      * @throws UnsupportedOperationException when provided class is not supported
      */
-    <C> Single<C> unwrap(Class<C> cls);
+    <C> C unwrap(Class<C> cls);
+
 
     /**
-     * Create Helidon database handler builder.
+     * Closes the DbClient and releases any associated resources.
+     */
+    @Override
+    void close();
+
+    /**
+     * Create Helidon database client.
      *
      * @param config name of the configuration node with driver configuration
-     * @return database handler builder
+     * @return database client instance
      */
     static DbClient create(Config config) {
         return builder(config).build();
     }
 
     /**
-     * Create Helidon database handler builder.
-     * <p>Database driver is loaded as SPI provider which implements {@link io.helidon.dbclient.spi.DbClientProvider} interface.
+     * Create Helidon database client builder.
+     * <p>Database driver is loaded as SPI provider which implements the {@link DbClientProvider} interface.
      * First provider on the class path is selected.</p>
      *
-     * @return database handler builder
+     * @return database client builder
      */
     static Builder builder() {
-        DbClientProvider theSource = DbClientProviderLoader.first();
-        if (null == theSource) {
+        DbClientProvider provider = DbClientProviderLoader.first();
+        if (null == provider) {
             throw new DbClientException(
-                    "No DbSource defined on classpath/module path. An implementation of io.helidon.dbclient.spi.DbSource is "
-                            + "required "
-                            + "to access a DB");
+                    "No DbSource defined on classpath/module path. An implementation of io.helidon.dbclient.spi.DbClientProvider"
+                    + " is required  to access a DB");
         }
 
-        return builder(theSource);
+        return builder(provider);
     }
 
     /**
-     * Create Helidon database handler builder.
+     * Create Helidon database client builder using specific SPI provider.
      *
-     * @param source database driver
-     * @return database handler builder
+     * @param provider SPI provider to use
+     * @return database client builder
      */
-    static Builder builder(DbClientProvider source) {
-        return new Builder(source);
+    static Builder builder(DbClientProvider provider) {
+        return new Builder(provider);
     }
 
     /**
-     * Create Helidon database handler builder.
-     * <p>Database driver is loaded as SPI provider which implements {@link io.helidon.dbclient.spi.DbClientProvider} interface.
-     * Provider on the class path with matching name is selected.</p>
+     * Create Helidon database client builder.
+     * <p>Database driver is loaded as SPI provider which implements the {@link DbClientProvider} interface.
+     * Provider matching {@code providerName} on the class path is selected.</p>
      *
-     * @param dbSource SPI provider name
+     * @param providerName SPI provider name
      * @return database handler builder
+     * @throws DbClientException when {@code providerName} was not found
      */
-    static Builder builder(String dbSource) {
-        return DbClientProviderLoader.get(dbSource)
+    static Builder builder(String providerName) {
+        return DbClientProviderLoader.get(providerName)
                 .map(DbClient::builder)
                 .orElseThrow(() -> new DbClientException(
-                        "No DbSource defined on classpath/module path for name: "
-                                + dbSource
-                                + ", available names: " + Arrays.toString(DbClientProviderLoader.names())));
+                        String.format("No DbClientProvider with name \"%s\" was found on the classpath/module path."
+                                              + " Available names: %s",
+                                      providerName,
+                                      Arrays.toString(DbClientProviderLoader.names()))));
     }
 
     /**
-     * Create a Helidon database handler builder from configuration.
+     * Create Helidon database client builder from configuration.
      *
      * @param dbConfig configuration that should contain the key {@code source} that defines the type of this database
-     *                 and is used to load appropriate {@link io.helidon.dbclient.spi.DbClientProvider} from Java Service loader
+     *                 and is used to load appropriate {@link DbClientProvider} from Java Service loader
      * @return a builder pre-configured from the provided config
      */
     static Builder builder(Config dbConfig) {
@@ -154,22 +163,21 @@ public interface DbClient {
      */
     final class Builder implements io.helidon.common.Builder<Builder, DbClient> {
 
+        // Provider specific DbClient builder.
+        private final DbClientBuilder<?> clientBuilder;
+        // DbClient configuration
+        private Config config = Config.empty();
+
         private final HelidonServiceLoader.Builder<DbClientServiceProvider> clientServiceProviders = HelidonServiceLoader.builder(
                 ServiceLoader.load(DbClientServiceProvider.class));
 
         /**
-         * Provider specific database handler builder instance.
-         */
-        private final DbClientProviderBuilder<?> theBuilder;
-        private Config config = Config.empty();
-
-        /**
          * Create an instance of Helidon database handler builder.
          *
-         * @param dbClientProvider provider specific {@link io.helidon.dbclient.spi.DbClientProvider} instance
+         * @param dbClientProvider provider specific {@link DbClientProvider} instance
          */
         private Builder(DbClientProvider dbClientProvider) {
-            this.theBuilder = dbClientProvider.builder();
+            this.clientBuilder = dbClientProvider.builder();
         }
 
         /**
@@ -188,59 +196,22 @@ public interface DbClient {
                     // this client service is on classpath, yet there is no configuration for it, so it is ignored
                     continue;
                 }
-
                 provider.create(providerConfig)
-                    .forEach(this::addService);
+                        .forEach(this::addService);
             }
 
-            return theBuilder.build();
-        }
-
-        /**
-         * Add an interceptor provider.
-         * The provider is only used when configuration is used ({@link #config(io.helidon.config.Config)}.
-         *
-         * @param provider provider to add to the list of loaded providers
-         * @return updated builder instance
-         */
-        public Builder addServiceProvider(DbClientServiceProvider provider) {
-            this.clientServiceProviders.addService(provider);
-            return this;
-        }
-
-        /**
-         * Add a client service.
-         *
-         * @param clientService clientService to apply
-         * @return updated builder instance
-         */
-        public Builder addService(DbClientService clientService) {
-            theBuilder.addService(clientService);
-            return this;
-        }
-
-        /**
-         * Add a client service.
-         *
-         * @param clientServiceSupplier supplier of client service
-         * @return updated builder instance
-         */
-        public Builder addService(Supplier<? extends DbClientService> clientServiceSupplier) {
-            theBuilder.addService(clientServiceSupplier.get());
-            return this;
+            return clientBuilder.build();
         }
 
         /**
          * Use database connection configuration from configuration file.
          *
-         * @param config {@link io.helidon.config.Config} instance with database connection attributes
+         * @param config {@link Config} instance with database connection attributes
          * @return database provider builder
          */
         public Builder config(Config config) {
-            theBuilder.config(config);
-
+            this.clientBuilder.config(config);
             this.config = config;
-
             return this;
         }
 
@@ -252,20 +223,20 @@ public interface DbClient {
          * @return updated builder instance
          */
         public Builder statements(DbStatements statements) {
-            theBuilder.statements(statements);
+            clientBuilder.statements(statements);
             return this;
         }
 
         /**
          * Database schema mappers provider.
          * Mappers associated with types in this provider will override existing types associations loaded
-         * as {@link io.helidon.dbclient.spi.DbMapperProvider} Java services.
+         * as {@link DbMapperProvider} Java services.
          *
          * @param provider database schema mappers provider to use
          * @return updated builder instance
          */
         public Builder mapperProvider(DbMapperProvider provider) {
-            theBuilder.addMapperProvider(provider);
+            clientBuilder.addMapperProvider(provider);
             return this;
         }
 
@@ -276,9 +247,32 @@ public interface DbClient {
          * @return updated builder instance
          */
         public Builder mapperManager(MapperManager manager) {
-            theBuilder.mapperManager(manager);
+            clientBuilder.mapperManager(manager);
             return this;
         }
+
+        /**
+         * Add a client service.
+         *
+         * @param clientService clientService to apply
+         * @return updated builder instance
+         */
+        public Builder addService(DbClientService clientService) {
+            clientBuilder.addService(clientService);
+            return this;
+        }
+
+        /**
+         * Add a client service.
+         *
+         * @param clientServiceSupplier supplier of client service
+         * @return updated builder instance
+         */
+        public Builder addService(Supplier<? extends DbClientService> clientServiceSupplier) {
+            clientBuilder.addService(clientServiceSupplier.get());
+            return this;
+        }
+
     }
 
 }

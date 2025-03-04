@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,29 +21,30 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.ServiceLoader;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Handler;
 import java.util.logging.Level;
-import java.util.logging.LogManager;
-import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
-import io.helidon.common.HelidonFeatures;
-import io.helidon.common.HelidonFlavor;
-import io.helidon.common.LogConfig;
+import io.helidon.Main;
 import io.helidon.common.SerializationConfig;
 import io.helidon.common.Version;
+import io.helidon.common.Weight;
+import io.helidon.common.Weighted;
 import io.helidon.common.context.Context;
 import io.helidon.common.context.Contexts;
+import io.helidon.common.features.HelidonFeatures;
+import io.helidon.common.features.api.HelidonFlavor;
 import io.helidon.config.mp.MpConfig;
 import io.helidon.config.mp.MpConfigProviderResolver;
+import io.helidon.logging.common.LogConfig;
+import io.helidon.spi.HelidonShutdownHandler;
 
 import jakarta.enterprise.context.BeforeDestroyed;
 import jakarta.enterprise.context.Destroyed;
 import jakarta.enterprise.context.Initialized;
+import jakarta.enterprise.event.Startup;
+import jakarta.enterprise.inject.Any;
 import jakarta.enterprise.inject.se.SeContainer;
 import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.enterprise.inject.spi.CDI;
@@ -91,29 +92,33 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
     private static final AtomicBoolean IN_RUNTIME = new AtomicBoolean();
     private static final String EXIT_ON_STARTED_KEY = "exit.on.started";
     private static final boolean EXIT_ON_STARTED = "!".equals(System.getProperty(EXIT_ON_STARTED_KEY));
-    private static final Context ROOT_CONTEXT;
+    // whether the current shutdown was invoked by the shutdown hook
+    private static final AtomicBoolean FROM_SHUTDOWN_HOOK = new AtomicBoolean();
+    // Default Weld container id. TCKs assumes this value.
+    private static final String STATIC_INSTANCE = "STATIC_INSTANCE";
 
     static {
         HelidonFeatures.flavor(HelidonFlavor.MP);
 
-        Context.Builder contextBuilder = Context.builder()
-                .id("helidon-cdi");
-
-        Contexts.context()
-                .ifPresent(contextBuilder::parent);
-
-        ROOT_CONTEXT = contextBuilder.build();
-
         CDI.setCDIProvider(new HelidonCdiProvider());
     }
 
+    private static volatile HelidonShutdownHandler shutdownHandler;
     private final WeldBootstrap bootstrap;
     private final String id;
+    private final Context rootContext;
+
     private HelidonCdi cdi;
 
     HelidonContainerImpl() {
         this.bootstrap = new WeldBootstrap();
-        id = UUID.randomUUID().toString();
+        this.id = STATIC_INSTANCE;
+        this.rootContext = Context.builder()
+                .id("helidon-cdi")
+                .update(it ->
+                                Contexts.context()
+                                        .ifPresent(it::parent))
+                .build();
     }
 
     /**
@@ -132,14 +137,13 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
     void initInContext() {
         long time = System.nanoTime();
 
-        Contexts.runInContext(ROOT_CONTEXT, this::init);
+        Contexts.runInContext(rootContext, this::init);
 
         time = System.nanoTime() - time;
         long t = TimeUnit.MILLISECONDS.convert(time, TimeUnit.NANOSECONDS);
         LOGGER.fine("Container initialized in " + t + " millis");
     }
 
-    @SuppressWarnings("unchecked")
     private HelidonContainerImpl init() {
         LOGGER.fine(() -> "Initializing CDI container " + id);
 
@@ -170,11 +174,8 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
 
         setProperties(new HashMap<>(properties));
 
-        ServiceLoader.load(Extension.class).findFirst().ifPresent(it -> {
-            // adding an empty extension to start even with just extensions on classpath
-            // Weld would fail (as it sets the extensions after checking if they are empty)
-            addExtension(new Extension() { });
-        });
+        // this is required for correct startup
+        addExtension(new Extension() {});
 
         Deployment deployment = createDeployment(resourceLoader, bootstrap);
         // we need to configure custom proxy services to
@@ -199,6 +200,7 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
         }
         deployment.getServices().add(ExternalConfiguration.class, configurationBuilder.build());
 
+        // CDI TCK tests expects SE to be excluded, which means Helidon may require to do things that Weld is supposed to do.
         bootstrap.startContainer(id, Environments.SE, deployment);
 
         bootstrap.startInitialization();
@@ -236,7 +238,7 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
 
     /**
      * Start this container.
-     * @return
+     * @return container instance
      */
     @Override
     public SeContainer start() {
@@ -247,7 +249,7 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
         SerializationConfig.configureRuntime();
         LogConfig.configureRuntime();
         try {
-            Contexts.runInContext(ROOT_CONTEXT, this::doStart);
+            Contexts.runInContext(rootContext, this::doStart);
         } catch (Exception e) {
             try {
                 // we must clean up
@@ -266,7 +268,7 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
 
     @Override
     public Context context() {
-        return ROOT_CONTEXT;
+        return rootContext;
     }
 
     @Override
@@ -298,46 +300,10 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
         bootstrap.validateBeans();
         bootstrap.endInitialization();
 
-        // adding a shutdown hook
-        // we need to workaround that logging stops printing output during shutdown hooks
-        // let's add a Handler
-        // this is to workaround https://bugs.openjdk.java.net/browse/JDK-8161253
-
-        Thread shutdownHook = new Thread(() -> {
-            cdi.close();
-        }, "helidon-cdi-shutdown-hook");
-
-        Logger rootLogger = LogManager.getLogManager().getLogger("");
-        Handler[] handlers = rootLogger.getHandlers();
-        Handler[] newHandlers = new Handler[handlers.length + 1];
-        newHandlers[0] = new Handler() {
-            @Override
-            public void publish(LogRecord record) {
-                // noop
-            }
-
-            @Override
-            public void flush() {
-                // noop
-            }
-
-            @Override
-            public void close() throws SecurityException {
-                try {
-                    shutdownHook.join();
-                } catch (InterruptedException ignored) {
-                }
-            }
-        };
-        System.arraycopy(handlers, 0, newHandlers, 1, handlers.length);
-        for (Handler handler : handlers) {
-            rootLogger.removeHandler(handler);
-        }
-        for (Handler newHandler : newHandlers) {
-            rootLogger.addHandler(newHandler);
-        }
+        shutdownHandler = new CdiShutdownHandler(cdi);
 
         bm.getEvent().select(Initialized.Literal.APPLICATION).fire(new ContainerInitialized(id));
+        bm.getEvent().select(Any.Literal.INSTANCE).fire(new Startup());
 
         now = System.currentTimeMillis() - now;
         LOGGER.fine("Container started in " + now + " millis (this excludes the initialization time)");
@@ -346,8 +312,7 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
                               Version.VERSION,
                               config.getOptionalValue("features.print-details", Boolean.class).orElse(false));
 
-        // shutdown hook should be added after all initialization is done, otherwise a race condition may happen
-        Runtime.getRuntime().addShutdownHook(shutdownHook);
+        Main.addShutdownHandler(shutdownHandler);
         return this;
     }
 
@@ -395,6 +360,13 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
             IN_RUNTIME.set(false);
             // need to reset - if somebody decides to restart CDI (such as a test)
             ContainerInstanceHolder.reset();
+
+            if (!FROM_SHUTDOWN_HOOK.get()) {
+                var usedShutdownHandler = shutdownHandler;
+                if (usedShutdownHandler != null) {
+                    Main.removeShutdownHandler(usedShutdownHandler);
+                }
+            }
         }
 
         @Override
@@ -441,6 +413,26 @@ final class HelidonContainerImpl extends Weld implements HelidonContainer {
                 }
             }
             return deployment.loadBeanDeploymentArchive(WeldContainer.class);
+        }
+    }
+
+    @Weight(Weighted.DEFAULT_WEIGHT + 100) // higher than inject
+    private static final class CdiShutdownHandler implements HelidonShutdownHandler {
+        private final HelidonCdi cdi;
+
+        private CdiShutdownHandler(HelidonCdi cdi) {
+            this.cdi = cdi;
+        }
+
+        @Override
+        public void shutdown() {
+            FROM_SHUTDOWN_HOOK.set(true);
+            cdi.close();
+        }
+
+        @Override
+        public String toString() {
+            return "Helidon CDI shutdown handler";
         }
     }
 }

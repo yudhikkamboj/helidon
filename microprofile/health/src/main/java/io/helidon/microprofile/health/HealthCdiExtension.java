@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,42 +16,35 @@
 package io.helidon.microprofile.health;
 
 import java.lang.annotation.Annotation;
-import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.function.Function;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
-import io.helidon.common.serviceloader.HelidonServiceLoader;
+import io.helidon.common.HelidonServiceLoader;
 import io.helidon.config.Config;
-import io.helidon.health.HealthSupport;
-import io.helidon.health.common.BuiltInHealthCheck;
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.servicecommon.restcdi.HelidonRestCdiExtension;
-import io.helidon.webserver.Routing;
+import io.helidon.microprofile.servicecommon.HelidonRestCdiExtension;
+import io.helidon.webserver.observe.health.HealthObserver;
+import io.helidon.webserver.observe.health.HealthObserverConfig;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Initialized;
 import jakarta.enterprise.event.Observes;
-import jakarta.enterprise.inject.spi.BeanManager;
-import jakarta.enterprise.inject.spi.BeforeBeanDiscovery;
 import jakarta.enterprise.inject.spi.CDI;
-import jakarta.enterprise.inject.spi.ProcessManagedBean;
-import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.health.HealthCheck;
 import org.eclipse.microprofile.health.Liveness;
 import org.eclipse.microprofile.health.Readiness;
 import org.eclipse.microprofile.health.Startup;
 
+import static io.helidon.health.HealthCheckType.LIVENESS;
+import static io.helidon.health.HealthCheckType.READINESS;
+import static io.helidon.health.HealthCheckType.STARTUP;
 import static jakarta.interceptor.Interceptor.Priority.LIBRARY_BEFORE;
 
 /**
  * Health extension.
  */
-public class HealthCdiExtension extends HelidonRestCdiExtension<HealthSupport> {
+public class HealthCdiExtension extends HelidonRestCdiExtension {
     private static final BuiltInHealthCheck BUILT_IN_HEALTH_CHECK_LITERAL = new BuiltInHealthCheck() {
         @Override
         public Class<? extends Annotation> annotationType() {
@@ -59,83 +52,72 @@ public class HealthCdiExtension extends HelidonRestCdiExtension<HealthSupport> {
         }
     };
 
-    private static final Logger LOGGER = Logger.getLogger(HealthCdiExtension.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(HealthCdiExtension.class.getName());
 
     /**
      * Creates a new instance of the health CDI extension.
      */
     public HealthCdiExtension() {
-        super(LOGGER, HEALTH_SUPPORT_FACTORY, HealthSupport.Builder.HEALTH_CONFIG_KEY);
+        super(LOGGER, nestedConfigKey("health"), "health");
     }
 
-    void registerProducers(@Observes BeforeBeanDiscovery bbd) {
-        bbd.addAnnotatedType(JvmRuntimeProducers.class, "health.JvmRuntimeProducers")
-                .add(ApplicationScoped.Literal.INSTANCE);
+    /**
+     * Register the Health observer with server observer feature.
+     * This is a CDI observer method invoked by CDI machinery.
+     *
+     * @param event  event object
+     * @param server Server CDI extension
+     */
+    public void registerService(@Observes @Priority(LIBRARY_BEFORE + 10) @Initialized(ApplicationScoped.class)
+                                Object event,
+                                ServerCdiExtension server) {
+
+        server.addObserver(configure());
     }
 
-    @Override
-    public Routing.Builder registerService(@Observes @Priority(LIBRARY_BEFORE + 10) @Initialized(ApplicationScoped.class)
-                                                      Object adv,
-                                              BeanManager bm,
-                                              ServerCdiExtension server) {
-        Routing.Builder defaultRouting = super.registerService(adv, bm, server);
-
-        org.eclipse.microprofile.config.Config config = ConfigProvider.getConfig();
-        if (!config.getOptionalValue("health.enabled", Boolean.class).orElse(true)) {
-            LOGGER.finest("Health support is disabled in configuration");
-        }
-        return defaultRouting;
-    }
-
-    private static final Function<Config, HealthSupport> HEALTH_SUPPORT_FACTORY = (Config helidonConfig) -> {
-
-        org.eclipse.microprofile.config.Config config = ConfigProvider.getConfig();
-
-        HealthSupport.Builder builder = HealthSupport.builder()
-                .config(helidonConfig);
+    private HealthObserver configure() {
+        HealthObserverConfig.Builder builder = HealthObserver.builder();
+        Config config = componentConfig();
+        builder.details(true)
+                .endpoint("/health") // absolute URI to align with MP
+                .config(config);
 
         CDI<Object> cdi = CDI.current();
 
-        // Collect built-in checks if disabled, otherwise set list to empty for filtering
-        Optional<Boolean> disableDefaults = config.getOptionalValue("mp.health.disable-default-procedures",
-                                                                    Boolean.class);
-
-        List<HealthCheck> builtInHealthChecks = disableDefaults.map(
-                b -> b ? cdi.select(HealthCheck.class, BUILT_IN_HEALTH_CHECK_LITERAL)
-                        .stream()
-                        .collect(Collectors.toList()) : Collections.<HealthCheck>emptyList())
-                .orElse(Collections.emptyList());
+        List<HealthCheck> builtInsFilter;
+        if (rootConfig().get("mp.health.disable-default-procedures").asBoolean().orElse(false)) {
+            builder.useSystemServices(false);
+            builtInsFilter = cdi.select(HealthCheck.class, BUILT_IN_HEALTH_CHECK_LITERAL)
+                    .stream()
+                    .toList();
+        } else {
+            builtInsFilter = List.of();
+        }
 
         cdi.select(HealthCheck.class, Liveness.Literal.INSTANCE)
                 .stream()
-                .filter(hc -> !builtInHealthChecks.contains(hc))
-                .forEach(builder::addLiveness);
+                .filter(hc -> !builtInsFilter.contains(hc))
+                .forEach(it -> builder.addCheck(MpCheckWrapper.create(LIVENESS, it)));
 
         cdi.select(HealthCheck.class, Readiness.Literal.INSTANCE)
                 .stream()
-                .filter(hc -> !builtInHealthChecks.contains(hc))
-                .forEach(builder::addReadiness);
+                .filter(hc -> !builtInsFilter.contains(hc))
+                .forEach(it -> builder.addCheck(MpCheckWrapper.create(READINESS, it)));
 
         cdi.select(HealthCheck.class, Startup.Literal.INSTANCE)
                 .stream()
-                .filter(hc -> !builtInHealthChecks.contains(hc))
-                .forEach(builder::addStartup);
+                .filter(hc -> !builtInsFilter.contains(hc))
+                .forEach(it -> builder.addCheck(MpCheckWrapper.create(STARTUP, it)));
 
+        // load MP health check providers
         HelidonServiceLoader.create(ServiceLoader.load(HealthCheckProvider.class))
                 .forEach(healthCheckProvider -> {
-                    healthCheckProvider.livenessChecks().forEach(builder::addLiveness);
-                    healthCheckProvider.readinessChecks().forEach(builder::addReadiness);
-                    healthCheckProvider.startupChecks().forEach(builder::addStartup);
+                    healthCheckProvider.livenessChecks().forEach(it -> builder.addCheck(MpCheckWrapper.create(LIVENESS, it)));
+                    healthCheckProvider.readinessChecks().forEach(it -> builder.addCheck(MpCheckWrapper.create(READINESS, it)));
+                    healthCheckProvider.startupChecks().forEach(it -> builder.addCheck(MpCheckWrapper.create(STARTUP, it)));
                 });
 
         return builder.build();
-        };
-
-
-    @Override
-    protected void processManagedBean(ProcessManagedBean<?> processManagedBean) {
-        // Annotated sites are handled in registerHealth.
     }
-
 
 }

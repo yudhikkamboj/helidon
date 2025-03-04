@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,16 +26,15 @@ import java.util.function.Function;
 
 import io.helidon.microprofile.metrics.MetricUtil.MatchingType;
 
+import org.eclipse.microprofile.metrics.Counter;
 import org.eclipse.microprofile.metrics.Metadata;
 import org.eclipse.microprofile.metrics.MetadataBuilder;
 import org.eclipse.microprofile.metrics.Metric;
 import org.eclipse.microprofile.metrics.MetricRegistry;
-import org.eclipse.microprofile.metrics.MetricType;
+import org.eclipse.microprofile.metrics.MetricUnits;
 import org.eclipse.microprofile.metrics.Tag;
-import org.eclipse.microprofile.metrics.annotation.ConcurrentGauge;
+import org.eclipse.microprofile.metrics.Timer;
 import org.eclipse.microprofile.metrics.annotation.Counted;
-import org.eclipse.microprofile.metrics.annotation.Metered;
-import org.eclipse.microprofile.metrics.annotation.SimplyTimed;
 import org.eclipse.microprofile.metrics.annotation.Timed;
 
 /**
@@ -56,6 +55,7 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
         private final Registration<?> registration;
         private final Executable executable;
         private final Class<? extends Annotation> annotationType;
+        private final String scope;
 
 
         static <A extends Annotation, E extends Member & AnnotatedElement, T extends Metric>
@@ -73,7 +73,6 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
                     info.absolute(annotation));
             MetadataBuilder metadataBuilder = Metadata.builder()
                     .withName(metricName)
-                    .withType(ANNOTATION_TYPE_TO_METRIC_TYPE.get(annotation.annotationType()))
                     .withUnit(info.unit(annotation)
                             .trim());
 
@@ -81,16 +80,14 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
             if (candidateDescription != null && !candidateDescription.trim().isEmpty()) {
                 metadataBuilder.withDescription(candidateDescription.trim());
             }
-            String candidateDisplayName = info.displayName(annotation);
-            if (candidateDisplayName != null && !candidateDisplayName.trim().isEmpty()) {
-                metadataBuilder.withDisplayName(candidateDisplayName.trim());
-            }
             return new RegistrationPrep(metricName,
                                           metadataBuilder.build(),
                                           info.tags(annotation),
                                           info.registerFunction,
                                           executable,
-                                          annotation.annotationType());
+                                          annotation.annotationType(),
+                                          info.scope(annotation)
+                                          );
         }
 
         private RegistrationPrep(String metricName,
@@ -98,13 +95,15 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
                                  Tag[] tags,
                                  Registration<?> registration,
                                  Executable executable,
-                                 Class<? extends Annotation> annotationType) {
+                                 Class<? extends Annotation> annotationType,
+                                 String scope) {
             this.metricName = metricName;
             this.metadata = metadata;
             this.tags = tags;
             this.registration = registration;
             this.executable = executable;
             this.annotationType = annotationType;
+            this.scope = scope;
         }
 
         String metricName() {
@@ -123,17 +122,70 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
             return annotationType;
         }
 
+        Metadata metadata() {
+            return metadata;
+        }
+
+        String scope() {
+            return scope;
+        }
+
         Metric register(MetricRegistry registry) {
+            validateMetadata(registry);
             return registration.register(registry, metadata, tags);
+        }
+
+        private void validateMetadata(MetricRegistry registry) {
+            // Make sure the metadata from the annotation, represented in this registration prep, is consistent with any
+            // pre-existing metadata. We interpret "consistent" to mean that if the annotation specifies a value it must
+            // match the value in the pre-existing metadata; if the annotation does not specify a value then it is treated
+            // as a wildcard and is consistent with any value stored in the pre-existing metadata.
+
+            List<String> mismatches = new ArrayList<>();
+            Metadata existingMetadata = registry.getMetadata(metricName);
+            if (existingMetadata == null) {
+                return;
+            }
+
+            // Some underlying implementations (e.g., the Micrometer Prometheus meter registry) impose their own ideas
+            // about the units for timers, with the result that registered metrics and therefore our recorded metadata might have
+            // a different unit setting from what the annotation or programmatically-specified metadata called for. To allow for
+            // that case, we'll exclude units on timers from the validation. Note that the Prometheus meter registry
+            // checks the consistency of metadata itself and throws the expected IllegalArgumentException in case of violations,
+            // as the MP Metrics spec requires.
+
+            if (!Timed.class.isAssignableFrom(annotationType)) {
+                if (!isConsistentWith(metadata.getUnit(), existingMetadata.getUnit())) {
+                    mismatches.add("unit");
+                }
+            }
+            if (!isConsistentWith(metadata.getDescription(), existingMetadata.getDescription())) {
+                mismatches.add("description");
+            }
+            if (!mismatches.isEmpty()) {
+                throw new IllegalArgumentException(String.format(
+                        """
+                                Attempt to look up or register a metric for annotation %s at %s failed; the metadata implied \
+                                by the annotation %s does not match the pre-existing metadata %s for %s""",
+                        annotationType.getName(),
+                        executable.toGenericString(),
+                        metadata,
+                        existingMetadata,
+                        mismatches));
+            }
+        }
+
+        private static boolean isConsistentWith(String s1, String s2) {
+            String normalizedS1 = s1 == null || s1.isBlank() || s1.equals(MetricUnits.NONE) ? "" : s1;
+            String normalizedS2 = s2 == null || s2.isBlank() || s2.endsWith(MetricUnits.NONE) ? "" : s2;
+            return normalizedS2.equals(normalizedS1);
+
         }
     }
 
-    static final Map<Class<? extends Annotation>, MetricType> ANNOTATION_TYPE_TO_METRIC_TYPE =
-            Map.of(ConcurrentGauge.class, MetricType.CONCURRENT_GAUGE,
-                Counted.class, MetricType.COUNTER,
-                Metered.class, MetricType.METERED,
-                SimplyTimed.class, MetricType.SIMPLE_TIMER,
-                Timed.class, MetricType.TIMER);
+    static final Map<Class<? extends Annotation>, Class<? extends Metric>> ANNOTATION_TYPE_TO_METRIC_TYPE =
+            Map.of(Counted.class, Counter.class,
+                Timed.class, Timer.class);
 
     static final Map<Class<? extends Annotation>, MetricAnnotationInfo<?, ?>> ANNOTATION_TYPE_TO_INFO = Map.of(
             Counted.class, new MetricAnnotationInfo<>(
@@ -141,62 +193,32 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
                     Counted::name,
                     Counted::absolute,
                     Counted::description,
-                    Counted::displayName,
                     Counted::unit,
                     Counted::tags,
+                    Counted::scope,
                     MetricRegistry::counter,
-                    MetricType.COUNTER),
-            Metered.class, new MetricAnnotationInfo<>(
-                    Metered.class,
-                    Metered::name,
-                    Metered::absolute,
-                    Metered::description,
-                    Metered::displayName,
-                    Metered::unit,
-                    Metered::tags,
-                    MetricRegistry::meter,
-                    MetricType.METERED),
+                    Counter.class),
             Timed.class, new MetricAnnotationInfo<>(
                     Timed.class,
                     Timed::name,
                     Timed::absolute,
                     Timed::description,
-                    Timed::displayName,
                     Timed::unit,
                     Timed::tags,
+                    Timed::scope,
                     MetricRegistry::timer,
-                    MetricType.TIMER),
-            ConcurrentGauge.class, new MetricAnnotationInfo<>(
-                    ConcurrentGauge.class,
-                    ConcurrentGauge::name,
-                    ConcurrentGauge::absolute,
-                    ConcurrentGauge::description,
-                    ConcurrentGauge::displayName,
-                    ConcurrentGauge::unit,
-                    ConcurrentGauge::tags,
-                    MetricRegistry::concurrentGauge,
-                    MetricType.CONCURRENT_GAUGE),
-            SimplyTimed.class, new MetricAnnotationInfo<>(
-                    SimplyTimed.class,
-                    SimplyTimed::name,
-                    SimplyTimed::absolute,
-                    SimplyTimed::description,
-                    SimplyTimed::displayName,
-                    SimplyTimed::unit,
-                    SimplyTimed::tags,
-                    MetricRegistry::simpleTimer,
-                    MetricType.SIMPLE_TIMER)
+                    Timer.class)
     );
 
     private final Class<A> annotationClass;
     private final Function<A, String> annotationNameFunction;
     private final Function<A, Boolean> annotationAbsoluteFunction;
     private final Function<A, String> annotationDescriptorFunction;
-    private final Function<A, String> annotationDisplayNameFunction;
     private final Function<A, String> annotationUnitsFunction;
     private final Function<A, String[]> annotationTagsFunction;
+    private final Function<A, String> annotationScopeFunction;
     private final Registration<T> registerFunction;
-    private final MetricType metricType;
+    private final Class<? extends Metric> metricType;
 
 
     MetricAnnotationInfo(
@@ -204,18 +226,18 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
             Function<A, String> annotationNameFunction,
             Function<A, Boolean> annotationAbsoluteFunction,
             Function<A, String> annotationDescriptorFunction,
-            Function<A, String> annotationDisplayNameFunction,
             Function<A, String> annotationUnitsFunction,
             Function<A, String[]> annotationTagsFunction,
+            Function<A, String> annotationScopeFunction,
             Registration<T> registerFunction,
-            MetricType metricType) {
+            Class<? extends Metric> metricType) {
         this.annotationClass = annotationClass;
         this.annotationNameFunction = annotationNameFunction;
         this.annotationAbsoluteFunction = annotationAbsoluteFunction;
         this.annotationDescriptorFunction = annotationDescriptorFunction;
-        this.annotationDisplayNameFunction = annotationDisplayNameFunction;
         this.annotationUnitsFunction = annotationUnitsFunction;
         this.annotationTagsFunction = annotationTagsFunction;
+        this.annotationScopeFunction = annotationScopeFunction;
         this.registerFunction = registerFunction;
         this.metricType = metricType;
     }
@@ -249,10 +271,6 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
         return annotationAbsoluteFunction.apply(annotationClass.cast(a));
     }
 
-    String displayName(Annotation a) {
-        return annotationDisplayNameFunction.apply(annotationClass.cast(a));
-    }
-
     String description(Annotation a) {
         return annotationDescriptorFunction.apply(annotationClass.cast(a));
     }
@@ -265,7 +283,11 @@ class MetricAnnotationInfo<A extends Annotation, T extends Metric> {
         return tags(annotationTagsFunction.apply(annotationClass.cast(a)));
     }
 
-    MetricType metricType() {
+    String scope(Annotation a) {
+        return annotationScopeFunction.apply(annotationClass.cast(a));
+    }
+
+    Class<? extends Metric> metricType() {
         return metricType;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,7 @@
 
 package io.helidon.grpc.core;
 
-import com.google.protobuf.MessageLite;
 import io.grpc.MethodDescriptor;
-import io.grpc.protobuf.lite.ProtoLiteUtils;
-import jakarta.inject.Named;
 
 /**
  * A supplier of {@link MethodDescriptor.Marshaller} instances for specific
@@ -29,74 +26,20 @@ import jakarta.inject.Named;
 public interface MarshallerSupplier {
 
     /**
-     * The name of the Protocol Buffer marshaller supplier.
-     */
-    String PROTO = "proto";
-
-    /**
-     * The name to use to specify the default marshaller supplier.
-     */
-    String DEFAULT = "default";
-
-    /**
      * Obtain a {@link MethodDescriptor.Marshaller} for a type.
      *
-     * @param clazz  the {@link Class} of the type to obtain the {@link MethodDescriptor.Marshaller} for
-     * @param <T>    the type to be marshalled
-     *
+     * @param clazz the {@link Class} of the type to obtain the {@link MethodDescriptor.Marshaller} for
+     * @param <T> the type to be marshalled
      * @return a {@link MethodDescriptor.Marshaller} for a type
      */
     <T> MethodDescriptor.Marshaller<T> get(Class<T> clazz);
 
     /**
-     * Obtain the default marshaller.
+     * Creates a default marshaller supplier.
      *
-     * @return the default marshaller
+     * @return the default marshaller supplier
      */
-    static MarshallerSupplier defaultInstance() {
-        return new DefaultMarshallerSupplier();
-    }
-
-    /**
-     * The default {@link MarshallerSupplier}.
-     */
-    @Named(MarshallerSupplier.DEFAULT)
-    class DefaultMarshallerSupplier
-            implements MarshallerSupplier {
-
-        private final ProtoMarshallerSupplier proto = new ProtoMarshallerSupplier();
-
-        @Override
-        public <T> MethodDescriptor.Marshaller<T> get(Class<T> clazz) {
-            if (MessageLite.class.isAssignableFrom(clazz)) {
-                return proto.get(clazz);
-            }
-            return JavaMarshaller.instance();
-        }
-    }
-
-    /**
-     * A {@link MarshallerSupplier} implementation that
-     * supplies Protocol Buffer marshaller instances.
-     */
-    @Named(PROTO)
-    class ProtoMarshallerSupplier
-            implements MarshallerSupplier {
-
-        @Override
-        @SuppressWarnings("unchecked")
-        public <T> MethodDescriptor.Marshaller<T> get(Class<T> clazz) {
-            try {
-                java.lang.reflect.Method getDefaultInstance = clazz.getDeclaredMethod("getDefaultInstance");
-                MessageLite instance = (MessageLite) getDefaultInstance.invoke(clazz);
-
-                return (MethodDescriptor.Marshaller<T>) ProtoLiteUtils.marshaller(instance);
-            } catch (Exception e) {
-                String msg = String.format(
-                        "Attempting to use class %s, which is not a valid Protocol buffer message, with a default marshaller",
-                        clazz.getName());
-                throw new IllegalArgumentException(msg);
-            }
-        }
+    static MarshallerSupplier create() {
+        return DefaultMarshallerSupplier.create();
     }
 }

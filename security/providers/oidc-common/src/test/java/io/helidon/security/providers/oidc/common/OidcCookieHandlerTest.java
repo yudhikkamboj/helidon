@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@ package io.helidon.security.providers.oidc.common;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-
-import io.helidon.common.reactive.Single;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -43,7 +41,7 @@ class OidcCookieHandlerTest {
     @Test
     void testFindCookieMissing() {
         Map<String, List<String>> headers = Map.of();
-        Optional<Single<String>> cookie = handler.findCookie(headers);
+        Optional<String> cookie = handler.findCookie(headers);
 
         assertThat(cookie, is(Optional.empty()));
     }
@@ -53,10 +51,10 @@ class OidcCookieHandlerTest {
         String expectedValue = "cookieValue";
         Map<String, List<String>> headers = Map.of("Accept", List.of("application/json"),
                                                    "Cookie", List.of("COOKIE=" + expectedValue));
-        Optional<Single<String>> cookie = handler.findCookie(headers);
+        Optional<String> cookie = handler.findCookie(headers);
 
         assertThat(cookie, not(Optional.empty()));
-        String cookieValue = cookie.get().await();
+        String cookieValue = cookie.get();
         assertThat(cookieValue, is(expectedValue));
 
         headers = Map.of("Accept", List.of("application/json"),
@@ -64,7 +62,7 @@ class OidcCookieHandlerTest {
         cookie = handler.findCookie(headers);
 
         assertThat(cookie, not(Optional.empty()));
-        cookieValue = cookie.get().await();
+        cookieValue = cookie.get();
         assertThat(cookieValue, is(expectedValue));
 
         headers = Map.of("Accept", List.of("application/json"),
@@ -72,7 +70,7 @@ class OidcCookieHandlerTest {
         cookie = handler.findCookie(headers);
 
         assertThat(cookie, not(Optional.empty()));
-        cookieValue = cookie.get().await();
+        cookieValue = cookie.get();
         assertThat(cookieValue, is(expectedValue));
 
         headers = Map.of("Accept", List.of("application/json"),
@@ -80,7 +78,7 @@ class OidcCookieHandlerTest {
         cookie = handler.findCookie(headers);
 
         assertThat(cookie, not(Optional.empty()));
-        cookieValue = cookie.get().await();
+        cookieValue = cookie.get();
         assertThat(cookieValue, is(expectedValue));
     }
 }

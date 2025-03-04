@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,15 @@
 
 package io.helidon.microprofile.graphql.server;
 
+import java.lang.System.Logger.Level;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Predicate;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
-import io.helidon.graphql.server.GraphQlSupport;
 import io.helidon.graphql.server.InvocationHandler;
 import io.helidon.microprofile.server.ServerCdiExtension;
-import io.helidon.webserver.Routing;
+import io.helidon.webserver.graphql.GraphQlService;
 
 import graphql.schema.GraphQLSchema;
 import jakarta.annotation.Priority;
@@ -57,7 +54,7 @@ import static jakarta.interceptor.Interceptor.Priority.LIBRARY_BEFORE;
  * A CDI {@link Extension} to collect the classes that are of interest to Microprofile GraphQL.
  */
 public class GraphQlCdiExtension implements Extension {
-    private static final Logger LOGGER = Logger.getLogger(GraphQlCdiExtension.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(GraphQlCdiExtension.class.getName());
 
     /**
      * The {@link List} of collected API's.
@@ -79,7 +76,7 @@ public class GraphQlCdiExtension implements Extension {
     }
 
     void collectApis(@Observes @WithAnnotations({Type.class, Input.class,
-                                                        Interface.class}) ProcessAnnotatedType<?> processAnnotatedType) {
+            Interface.class}) ProcessAnnotatedType<?> processAnnotatedType) {
         // these are directly added
         this.collectedApis.add(processAnnotatedType.getAnnotatedType().getJavaClass());
     }
@@ -122,7 +119,7 @@ public class GraphQlCdiExtension implements Extension {
         config.getOptionalValue(ConfigKey.EXCEPTION_BLACK_LIST, String[].class)
                 .ifPresent(handlerBuilder::exceptionBlacklist);
 
-        GraphQlSupport graphQlSupport = GraphQlSupport.builder()
+        GraphQlService service = GraphQlService.builder()
                 .config(graphQlConfig)
                 .invocationHandler(handlerBuilder)
                 .build();
@@ -130,13 +127,9 @@ public class GraphQlCdiExtension implements Extension {
             ServerCdiExtension server = bm.getExtension(ServerCdiExtension.class);
             Optional<String> routingNameConfig = config.getOptionalValue("graphql.routing", String.class);
 
-            Routing.Builder routing = routingNameConfig.stream()
-                    .filter(Predicate.not("@default"::equals))
-                    .map(server::serverNamedRoutingBuilder)
-                    .findFirst()
-                    .orElseGet(server::serverRoutingBuilder);
-
-            graphQlSupport.update(routing);
+            routingNameConfig.map(server::serverNamedRoutingBuilder)
+                    .orElseGet(server::serverRoutingBuilder)
+                    .register(service);
         } catch (Throwable e) {
             LOGGER.log(Level.WARNING, "Failed to set up routing with web server, maybe server extension missing?", e);
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,27 +17,27 @@ package io.helidon.microprofile.metrics;
 
 import org.eclipse.microprofile.metrics.Counter;
 import org.eclipse.microprofile.metrics.MetricID;
-import org.eclipse.microprofile.metrics.SimpleTimer;
+import org.eclipse.microprofile.metrics.Timer;
 
 /**
  * Represents metrics-related work done before and/or after Helidon processes REST requests.
  * <p>
- *     An optional MP metrics feature (which Helidon implements) updates a {@link SimpleTimer} for each REST request
+ *     An optional MP metrics feature (which Helidon implements) updates a {@link Timer} for each REST request
  *     successfully processed or throwing a mapped exception and updates a {@link Counter} for each unmapped exception thrown
  *     during the handling of a REST request.
  * </p>
  */
-record SyntheticRestRequestWorkItem(MetricID successfulSimpleTimerMetricID,
-                                    SimpleTimer successfulSimpleTimer,
+record SyntheticRestRequestWorkItem(MetricID successfulTimerMetricID,
+                                    Timer successfulTimer,
                                     MetricID unmappedExceptionCounterMetricID,
                                     Counter unmappedExceptionCounter) implements MetricWorkItem {
 
-    static SyntheticRestRequestWorkItem create(MetricID successfulSimpleTimerMetricID,
-                                               SimpleTimer successfulSimpleTimer,
+    static SyntheticRestRequestWorkItem create(MetricID successfulTimerMetricID,
+                                               Timer successfulTimer,
                                                MetricID unmappedExceptionCounterMetricID,
                                                Counter unmappedExceptionCounter) {
-        return new SyntheticRestRequestWorkItem(successfulSimpleTimerMetricID,
-                                                successfulSimpleTimer,
+        return new SyntheticRestRequestWorkItem(successfulTimerMetricID,
+                                                successfulTimer,
                                                 unmappedExceptionCounterMetricID,
                                                 unmappedExceptionCounter);
     }

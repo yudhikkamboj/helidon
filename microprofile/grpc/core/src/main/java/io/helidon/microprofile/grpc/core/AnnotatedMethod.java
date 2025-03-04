@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import io.helidon.grpc.api.Grpc;
+
 /**
  * A model of an annotated gRPC method.
  */
@@ -37,17 +39,17 @@ public class AnnotatedMethod implements AnnotatedElement {
      * The set of meta-annotations that are used to identify an annotated gRPC method.
      */
     private static final Set<Class<? extends Annotation>> METHOD_META_ANNOTATIONS
-            = Set.of(GrpcMethod.class);
+            = Set.of(Grpc.GrpcMethod.class);
 
     /**
      * The set of annotations that are used to identify an annotated gRPC method.
      */
     private static final Set<Class<? extends Annotation>> METHOD_ANNOTATIONS
-            = Set.of(GrpcMethod.class,
-                     Bidirectional.class,
-                     ClientStreaming.class,
-                     ServerStreaming.class,
-                     Unary.class);
+            = Set.of(Grpc.GrpcMethod.class,
+                     Grpc.Bidirectional.class,
+                     Grpc.ClientStreaming.class,
+                     Grpc.ServerStreaming.class,
+                     Grpc.Unary.class);
 
     /**
      * The set of method parameter annotations that are used to identify an annotated gRPC method.
@@ -105,14 +107,14 @@ public class AnnotatedMethod implements AnnotatedElement {
      * @throws java.lang.NullPointerException if the method parameter is null
      * @return an {@link AnnotatedMethod} instance representing the Java method
      */
-     public static AnnotatedMethod create(Method method) {
-         return new AnnotatedMethod(Objects.requireNonNull(method));
-     }
+    public static AnnotatedMethod create(Method method) {
+        return new AnnotatedMethod(Objects.requireNonNull(method));
+    }
 
     /**
      * Get the underlying Java method.
      * <p>
-     * This will be the method that is actually annotated with {@link GrpcMethod},
+     * This will be the method that is actually annotated with {@link io.helidon.grpc.api.Grpc.GrpcMethod},
      * which may be the same as or overridden by the method returned by {@link #declaredMethod()}.
      *
      * @return the actual annotated Java method.
@@ -143,7 +145,7 @@ public class AnnotatedMethod implements AnnotatedElement {
 
     /**
      * Get method parameter types.
-     *
+     * <p>
      * See also {@link Method#getParameterTypes()}.
      *
      * @return method parameter types.
@@ -154,7 +156,7 @@ public class AnnotatedMethod implements AnnotatedElement {
 
     /**
      * Get method type parameters.
-     *
+     * <p>
      * See also {@link Method#getTypeParameters()}.
      *
      * @return method type parameters.
@@ -165,7 +167,7 @@ public class AnnotatedMethod implements AnnotatedElement {
 
     /**
      * Get generic method parameter types.
-     *
+     * <p>
      * See also {@link Method#getGenericParameterTypes()}.
      *
      * @return generic method parameter types.
@@ -176,8 +178,8 @@ public class AnnotatedMethod implements AnnotatedElement {
 
     /**
      * Get generic method return type.
-     *
-     * See also {@link Method#getGenericReturnType()} ()}.
+     * <p>
+     * See also {@link Method#getGenericReturnType()}.
      *
      * @return generic method return types.
      */
@@ -187,8 +189,8 @@ public class AnnotatedMethod implements AnnotatedElement {
 
     /**
      * Get method return type.
-     *
-     * See also {@link Method#getReturnType()} ()} ()}.
+     * <p>
+     * See also {@link Method#getReturnType()}.
      *
      * @return method return types.
      */
@@ -209,8 +211,8 @@ public class AnnotatedMethod implements AnnotatedElement {
      */
     public <T extends Annotation> Stream<T> metaMethodAnnotations(Class<T> annotation) {
         return Arrays.stream(methodAnnotations)
-                     .map(ann -> ann.annotationType().getAnnotation(annotation))
-                     .filter(Objects::nonNull);
+                .map(ann -> ann.annotationType().getAnnotation(annotation))
+                .filter(Objects::nonNull);
     }
 
     /**
@@ -241,8 +243,8 @@ public class AnnotatedMethod implements AnnotatedElement {
      */
     public <T extends Annotation> Stream<T> annotationOrMetaAnnotation(Class<T> type) {
         return Arrays.stream(methodAnnotations)
-                     .map(ann -> annotationOrMetaAnnotation(type, ann))
-                     .filter(Objects::nonNull);
+                .map(ann -> annotationOrMetaAnnotation(type, ann))
+                .filter(Objects::nonNull);
     }
 
     /**
@@ -254,7 +256,7 @@ public class AnnotatedMethod implements AnnotatedElement {
      */
     public Stream<Annotation> annotationsWithMetaAnnotation(Class<? extends Annotation> type) {
         return Arrays.stream(methodAnnotations)
-                     .filter(ann -> ann.annotationType().isAnnotationPresent(type));
+                .filter(ann -> ann.annotationType().isAnnotationPresent(type));
     }
 
     @SuppressWarnings("unchecked")
@@ -298,7 +300,7 @@ public class AnnotatedMethod implements AnnotatedElement {
      *
      * @param declaredMethod  the declared method
      * @param actualMethod    the method that the declared method overrides
-     * @return  an array of merged annotations
+     * @return an array of merged annotations
      */
     private static Annotation[] mergeMethodAnnotations(Method declaredMethod, Method actualMethod) {
         List<Annotation> list = new ArrayList<>(Arrays.asList(declaredMethod.getAnnotations()));
@@ -318,7 +320,7 @@ public class AnnotatedMethod implements AnnotatedElement {
      *
      * @param declaredMethod  the declared method
      * @param actualMethod    the method that the declared method overrides
-     * @return  an array of merged annotations
+     * @return an array of merged annotations
      */
     private static Annotation[][] mergeParameterAnnotations(Method declaredMethod, Method actualMethod) {
         Annotation[][] methodParamAnnotations = declaredMethod.getParameterAnnotations();
@@ -363,7 +365,7 @@ public class AnnotatedMethod implements AnnotatedElement {
      * class hierarchy before searching the implemented interfaces.
      *
      * @param declaredMethod  the declared method
-     * @return  the actual annotated gRPC method or the declared method if no
+     * @return the actual annotated gRPC method or the declared method if no
      *          method in the class hierarchy is annotated
      */
     private static Method findAnnotatedMethod(Method declaredMethod) {
@@ -386,7 +388,7 @@ public class AnnotatedMethod implements AnnotatedElement {
      *
      * @param declaringClass  the Class declaring the method
      * @param declaredMethod  the declared method
-     * @return  the actual annotated gRPC method or the declared method if no
+     * @return the actual annotated gRPC method or the declared method if no
      *          method in the class hierarchy is annotated
      */
     private static Method findAnnotatedMethod(Class<?> declaringClass, Method declaredMethod) {
@@ -459,7 +461,7 @@ public class AnnotatedMethod implements AnnotatedElement {
      */
     private static boolean hasMetaAnnotation(Method method, Class<? extends Annotation> type) {
         return Arrays.stream(method.getAnnotations())
-                     .anyMatch(a -> a.annotationType().isAnnotationPresent(type));
+                .anyMatch(a -> a.annotationType().isAnnotationPresent(type));
     }
 
     /**

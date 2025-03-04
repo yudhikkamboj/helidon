@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,18 +24,17 @@
  * @see io.helidon.integrations.common.rest.ApiResponse
  */
 module io.helidon.integrations.common.rest {
-    requires java.logging;
-    requires jakarta.json;
 
-    requires io.opentracing.api;
-
-    requires io.helidon.common.http;
-    requires io.helidon.common;
-    requires io.helidon.common.reactive;
-    requires io.helidon.faulttolerance;
+    requires io.helidon.common.context;
     requires io.helidon.config;
+    requires io.helidon.faulttolerance;
+    requires io.helidon.http.media.jsonp;
+    requires io.helidon.tracing;
     requires io.helidon.webclient;
-    requires io.helidon.media.jsonp;
+
+    requires transitive io.helidon.common;
+    requires transitive jakarta.json;
 
     exports io.helidon.integrations.common.rest;
+
 }

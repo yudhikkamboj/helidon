@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 import io.helidon.common.Base64Value;
-import io.helidon.common.reactive.Single;
-import io.helidon.config.Config;
+import io.helidon.common.config.Config;
 import io.helidon.integrations.vault.Vault;
 import io.helidon.security.SecurityException;
 import io.helidon.security.spi.DigestProvider;
@@ -34,10 +33,10 @@ import io.helidon.security.spi.ProviderConfig;
  */
 public class TransitSecurityProvider implements EncryptionProvider<TransitSecurityProvider.TransitEncryptionConfig>,
                                                 DigestProvider<TransitSecurityProvider.TransitDigestConfig> {
-    private final TransitSecretsRx transit;
+    private final TransitSecrets transit;
 
     TransitSecurityProvider(Vault vault) {
-        this.transit = vault.secrets(TransitSecretsRx.ENGINE);
+        this.transit = vault.secrets(TransitSecrets.ENGINE);
     }
 
     @Override
@@ -47,16 +46,17 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
 
     @Override
     public EncryptionSupport encryption(TransitEncryptionConfig providerConfig) {
-        Function<byte[], Single<String>> encrypt = bytes -> transit.encrypt(providerConfig.encryptionRequest()
-                                                                                    .data(Base64Value.create(bytes)))
-                .map(Encrypt.Response::encrypted)
-                .map(Encrypt.Encrypted::cipherText);
+        Function<byte[], String> encrypt = bytes ->
+                transit.encrypt(providerConfig.encryptionRequest()
+                                        .data(Base64Value.create(bytes)))
+                        .encrypted()
+                        .cipherText();
 
-        Function<String, Single<byte[]>> decrypt = encrypted -> transit.decrypt(providerConfig.decryptionRequest()
-                                                                                        .cipherText(encrypted))
-                .map(Decrypt.Response::decrypted)
-                .map(Base64Value::toBytes);
-
+        Function<String, byte[]> decrypt = encrypted ->
+                transit.decrypt(providerConfig.decryptionRequest()
+                                        .cipherText(encrypted))
+                        .decrypted()
+                        .toBytes();
         return EncryptionSupport.create(encrypt, decrypt);
     }
 
@@ -80,8 +80,7 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
                     .data(Base64Value.create(data))
                     .preHashed(preHashed);
 
-            return transit.sign(request)
-                    .map(Sign.Response::signature);
+            return transit.sign(request).signature();
         };
 
         VerifyFunction verifyFunction = (data, preHashed, digest) -> {
@@ -90,8 +89,7 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
                     .preHashed(preHashed)
                     .signature(digest);
 
-            return transit.verify(verifyRequest)
-                    .map(Verify.Response::isValid);
+            return transit.verify(verifyRequest).isValid();
         };
 
         return DigestSupport.create(digestFunction, verifyFunction);
@@ -102,8 +100,7 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
             Hmac.Request request = providerConfig.hmacRequest()
                     .data(Base64Value.create(data));
 
-            return transit.hmac(request)
-                    .map(Hmac.Response::hmac);
+            return transit.hmac(request).hmac();
         };
 
         VerifyFunction verifyFunction = (data, preHashed, digest) -> {
@@ -112,8 +109,7 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
                     .preHashed(preHashed)
                     .hmac(digest);
 
-            return transit.verify(verifyRequest)
-                    .map(Verify.Response::isValid);
+            return transit.verify(verifyRequest).isValid();
         };
 
         return DigestSupport.create(digestFunction, verifyFunction);
@@ -233,6 +229,7 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
              * Update this builder from configuration.
              * Only {@value CONFIG_KEY_KEY_NAME} is mandatory.
              *
+             * <p>
              * Configuration options:
              * <table class="config">
              * <caption>Secret configuration</caption>
@@ -355,9 +352,11 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
             /**
              * When using a RSA key, specifies the RSA signature algorithm to use for signing. Supported signature types are:
              *
+             * <p>
              * pss
              * pkcs1v15
              *
+             * <p>
              * See signature algorithm constants on this class.
              *
              * @param signatureAlgorithm signature algorithm to use
@@ -498,6 +497,7 @@ public class TransitSecurityProvider implements EncryptionProvider<TransitSecuri
              * Update this builder from configuration.
              * Only {@value CONFIG_KEY_KEY_NAME} is mandatory.
              *
+             * <p>
              * Configuration options:
              * <table class="config">
              * <caption>Secret configuration</caption>

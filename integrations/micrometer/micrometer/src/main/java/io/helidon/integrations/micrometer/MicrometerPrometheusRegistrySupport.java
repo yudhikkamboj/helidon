@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,22 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.integrations.micrometer;
 
 import java.io.IOException;
-import java.io.StringWriter;
 import java.io.Writer;
 import java.util.Enumeration;
 import java.util.Optional;
 import java.util.function.Function;
 
-import io.helidon.common.http.Http;
-import io.helidon.common.http.MediaType;
-import io.helidon.config.Config;
-import io.helidon.config.ConfigValue;
-import io.helidon.webserver.Handler;
-import io.helidon.webserver.ServerRequest;
-import io.helidon.webserver.ServerResponse;
+import io.helidon.common.config.Config;
+import io.helidon.common.config.ConfigValue;
+import io.helidon.common.media.type.MediaTypes;
+import io.helidon.webserver.http.Handler;
+import io.helidon.webserver.http.ServerRequest;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.config.MeterRegistryConfig;
@@ -69,14 +67,15 @@ class MicrometerPrometheusRegistrySupport extends MicrometerBuiltInRegistrySuppo
     }
 
     @Override
-    public Function<ServerRequest, Optional<Handler>> requestToHandlerFn(MeterRegistry registry) {
+    public Function<ServerRequest,
+            Optional<Handler>> requestToHandlerFn(MeterRegistry registry) {
         /*
          * Deal with a request if the MediaType is text/plain or the query parameter "type" specifies "prometheus".
          */
         return (ServerRequest req) -> {
             if (req.headers()
-                    .bestAccepted(MediaType.TEXT_PLAIN).isPresent()
-                    || req.queryParams()
+                    .bestAccepted(MediaTypes.TEXT_PLAIN).isPresent()
+                    || req.query()
                     .first("type")
                     .orElse("")
                     .equals("prometheus")) {
@@ -85,46 +84,6 @@ class MicrometerPrometheusRegistrySupport extends MicrometerBuiltInRegistrySuppo
                 return Optional.empty();
             }
         };
-    }
-
-    /**
-     * Handler for dealing with HTTP requests to the Micrometer endpoint that specify prometheus as the registry type.
-     */
-    static class PrometheusHandler implements Handler {
-
-        private final PrometheusMeterRegistry registry;
-
-        private PrometheusHandler(PrometheusMeterRegistry registry) {
-            this.registry = registry;
-        }
-
-        static PrometheusHandler create(MeterRegistry registry) {
-            return new PrometheusHandler(PrometheusMeterRegistry.class.cast(registry));
-        }
-
-        @Override
-        public void accept(ServerRequest req, ServerResponse res) {
-            res.headers().contentType(MediaType.TEXT_PLAIN);
-            switch (Http.Method.valueOf(req.method()
-                    .name())) {
-                case GET:
-                    res.send(registry.scrape());
-                    break;
-                case OPTIONS:
-                    StringWriter writer = new StringWriter();
-                    try {
-                        metadata(writer, registry);
-                        res.send(writer.toString());
-                    } catch (IOException e) {
-                        res.status(Http.Status.INTERNAL_SERVER_ERROR_500)
-                                .send(e);
-                    }
-                    break;
-                default:
-                    res.status(Http.Status.NOT_IMPLEMENTED_501)
-                            .send();
-            }
-        }
     }
 
     static void metadata(Writer writer, PrometheusMeterRegistry registry) throws IOException {

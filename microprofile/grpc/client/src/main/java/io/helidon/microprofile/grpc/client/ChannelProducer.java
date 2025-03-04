@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,16 @@
 
 package io.helidon.microprofile.grpc.client;
 
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import io.helidon.config.Config;
-import io.helidon.grpc.client.GrpcChannelsProvider;
-import io.helidon.microprofile.grpc.core.InProcessGrpcChannel;
+import io.helidon.grpc.api.Grpc;
 
 import io.grpc.Channel;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
-import jakarta.enterprise.inject.spi.BeanManager;
 import jakarta.enterprise.inject.spi.InjectionPoint;
 import jakarta.inject.Inject;
 
@@ -38,18 +36,18 @@ import jakarta.inject.Inject;
 public class ChannelProducer {
 
     private final GrpcChannelsProvider provider;
-
-    private final Map<String, Channel> channelMap = new ConcurrentHashMap<>();
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Map<String, Channel> channelMap = new HashMap<>();
 
     /**
      * Create a {@link ChannelProducer}.
      *
-     * @param config  the {@link io.helidon.config.Config} to use to configure
-     *                the provided {@link io.grpc.Channel}s
+     * @param config the {@link io.helidon.config.Config} to use to configure
+     *               the provided {@link io.grpc.Channel}s
      */
     @Inject
     ChannelProducer(Config config) {
-        provider = GrpcChannelsProvider.create(config.get("grpc"));
+        provider = GrpcChannelsProvider.create(config.get("grpc.client"));
     }
 
     /**
@@ -59,57 +57,30 @@ public class ChannelProducer {
      * @return a gRPC {@link io.grpc.Channel}
      */
     @Produces
-    @GrpcChannel(name = GrpcChannelsProvider.DEFAULT_CHANNEL_NAME)
     public Channel get(InjectionPoint injectionPoint) {
-        GrpcChannel qualifier = injectionPoint.getQualifiers()
-                                        .stream()
-                                        .filter(q -> q.annotationType().equals(GrpcChannel.class))
-                                        .map(q -> (GrpcChannel) q)
-                                        .findFirst()
-                                        .orElse(null);
+        Grpc.GrpcChannel qualifier = injectionPoint.getAnnotated().getAnnotations()
+                .stream()
+                .filter(q -> q.annotationType().equals(Grpc.GrpcChannel.class))
+                .map(q -> (Grpc.GrpcChannel) q)
+                .findFirst()
+                .orElse(null);
 
-        String name = qualifier == null ? GrpcChannelsProvider.DEFAULT_CHANNEL_NAME : qualifier.name();
-
+        String name = (qualifier == null) ? GrpcChannelsProvider.DEFAULT_CHANNEL_NAME : qualifier.value();
         return findChannel(name);
-    }
-
-    /**
-     * Produces the default gRPC {@link io.grpc.Channel}.
-     *
-     * @return the default gRPC {@link io.grpc.Channel}
-     */
-    @Produces
-    public Channel getDefaultChannel() {
-        return findChannel(GrpcChannelsProvider.DEFAULT_CHANNEL_NAME);
     }
 
     /**
      * Obtain the named {@link io.grpc.Channel}.
      *
      * @param name the channel name
-     * @return  the named {@link io.grpc.Channel}
+     * @return the named {@link io.grpc.Channel}
      */
-    Channel findChannel(String name) {
-        return channelMap.computeIfAbsent(name, provider::channel);
-    }
-
-    /**
-     * A utility method to obtain an in-process {@link io.grpc.Channel}.
-     *
-     * @param beanManager the CDI {@link BeanManager} to use to find the {@link io.grpc.Channel}
-     * @return an in-process {@link io.grpc.Channel}
-     */
-    static Channel inProcessChannel(BeanManager beanManager) {
-        return inProcessChannel(beanManager.createInstance());
-    }
-
-    /**
-     * A utility method to obtain an in-process {@link io.grpc.Channel}.
-     *
-     * @param instance the CDI {@link Instance} to use to find the {@link io.grpc.Channel}
-     * @return an in-process {@link io.grpc.Channel}
-     */
-    static Channel inProcessChannel(Instance<Object> instance) {
-        return instance.select(Channel.class, InProcessGrpcChannel.Literal.INSTANCE).get();
+    public Channel findChannel(String name) {
+        try {
+            lock.lock();
+            return channelMap.computeIfAbsent(name, provider::channel);
+        } finally {
+            lock.unlock();
+        }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,12 @@
 
 package io.helidon.integrations.microstream.health;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+
+import io.helidon.health.HealthCheckResponse;
 
 import one.microstream.storage.embedded.types.EmbeddedStorageManager;
-import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -44,7 +46,7 @@ class MicrostreamHealthTest {
         setMicrostreamStatus(true);
         MicrostreamHealthCheck check = MicrostreamHealthCheck.create(embeddedStorageManager);
         HealthCheckResponse response = check.call();
-        assertThat(response.getStatus(), is(HealthCheckResponse.Status.UP));
+        assertThat(response.status(), is(HealthCheckResponse.Status.UP));
     }
 
     @Test
@@ -52,7 +54,7 @@ class MicrostreamHealthTest {
         setMicrostreamStatus(false);
         MicrostreamHealthCheck check = MicrostreamHealthCheck.create(embeddedStorageManager);
         HealthCheckResponse response = check.call();
-        assertThat(response.getStatus(), is(HealthCheckResponse.Status.DOWN));
+        assertThat(response.status(), is(HealthCheckResponse.Status.DOWN));
     }
 
     @Test
@@ -63,10 +65,12 @@ class MicrostreamHealthTest {
             return true;
         });
 
-        MicrostreamHealthCheck check = MicrostreamHealthCheck.builder(embeddedStorageManager)
-                .timeout(20, TimeUnit.MILLISECONDS).build();
+        MicrostreamHealthCheck check = MicrostreamHealthCheck
+                .builder(embeddedStorageManager)
+                .timeout(Duration.of(20, ChronoUnit.MILLIS))
+                .build();
 
         HealthCheckResponse response = check.call();
-        assertThat(response.getStatus(), is(HealthCheckResponse.Status.DOWN));
+        assertThat(response.status(), is(HealthCheckResponse.Status.DOWN));
     }
 }

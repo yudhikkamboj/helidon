@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,16 @@
  */
 package io.helidon.config;
 
+import java.lang.System.Logger.Level;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.logging.Logger;
 
-import io.helidon.common.serviceloader.HelidonServiceLoader;
+import io.helidon.common.HelidonServiceLoader;
+import io.helidon.common.media.type.MediaType;
 import io.helidon.config.spi.ChangeWatcher;
 import io.helidon.config.spi.ConfigParser;
 import io.helidon.config.spi.ConfigSource;
@@ -69,12 +69,12 @@ import io.helidon.config.spi.RetryPolicy;
  * </ul>
  */
 public final class MetaConfig {
-    private static final Logger LOGGER = Logger.getLogger(MetaConfig.class.getName());
-    private static final Set<String> SUPPORTED_MEDIA_TYPES;
+    private static final System.Logger LOGGER = System.getLogger(MetaConfig.class.getName());
+    private static final Set<MediaType> SUPPORTED_MEDIA_TYPES;
     private static final List<String> SUPPORTED_SUFFIXES;
 
     static {
-        Set<String> supportedMediaTypes = new HashSet<>();
+        Set<MediaType> supportedMediaTypes = new HashSet<>();
         List<String> supportedSuffixes = new LinkedList<>();
 
         HelidonServiceLoader.create(ServiceLoader.load(ConfigParser.class))
@@ -87,12 +87,15 @@ public final class MetaConfig {
         SUPPORTED_SUFFIXES = List.copyOf(supportedSuffixes);
     }
 
-    private MetaConfig() {
+    private final Config metaConfig;
+
+    MetaConfig() {
+        this.metaConfig = metaConfig().orElseGet(Config::empty);
     }
 
     /**
      * Create configuration from meta configuration (files or classpath resources), or create a default config instance
-     *  if meta configuration is not present.
+     * if meta configuration is not present.
      *
      * @return a config instance
      */
@@ -144,7 +147,10 @@ public final class MetaConfig {
         String type = metaConfig.get("type").asString().get();
         ChangeWatcher<?> changeWatcher = MetaProviders.changeWatcher(type, metaConfig.get("properties"));
 
-        LOGGER.fine(() -> "Loaded change watcher of type \"" + type + "\", class: " + changeWatcher.getClass().getName());
+        if (LOGGER.isLoggable(Level.TRACE)) {
+            LOGGER.log(Level.TRACE,
+                       "Loaded change watcher of type \"" + type + "\", class: " + changeWatcher.getClass().getName());
+        }
 
         return changeWatcher;
     }
@@ -159,7 +165,9 @@ public final class MetaConfig {
         String type = metaConfig.get("type").asString().get();
         RetryPolicy retryPolicy = MetaProviders.retryPolicy(type, metaConfig.get("properties"));
 
-        LOGGER.fine(() -> "Loaded retry policy of type \"" + type + "\", class: " + retryPolicy.getClass().getName());
+        if (LOGGER.isLoggable(Level.TRACE)) {
+            LOGGER.log(Level.TRACE, "Loaded retry policy of type \"" + type + "\", class: " + retryPolicy.getClass().getName());
+        }
 
         return retryPolicy;
     }
@@ -167,7 +175,8 @@ public final class MetaConfig {
     /**
      * Load a config source (or config sources) based on its meta configuration.
      * The metaConfig must contain a key {@code type} that defines the type of the source to be found via providers, and
-     *   a key {@code properties} with configuration of the config sources
+     * a key {@code properties} with configuration of the config sources
+     *
      * @param sourceMetaConfig meta configuration of a config source
      * @return config source instance
      * @see Config.Builder#config(Config)
@@ -181,17 +190,20 @@ public final class MetaConfig {
         if (multiSource) {
             List<ConfigSource> sources = MetaProviders.configSources(type, sourceProperties);
 
-            LOGGER.fine(() -> "Loaded sources of type \"" + type + "\", values: " + sources);
+            if (LOGGER.isLoggable(Level.TRACE)) {
+                LOGGER.log(Level.TRACE, "Loaded sources of type \"" + type + "\", values: " + sources);
+            }
 
             return sources;
         } else {
             ConfigSource source = MetaProviders.configSource(type, sourceProperties);
 
-            LOGGER.fine(() -> "Loaded source of type \"" + type + "\", class: " + source.getClass().getName());
+            if (LOGGER.isLoggable(Level.TRACE)) {
+                LOGGER.log(Level.TRACE, "Loaded source of type \"" + type + "\", class: " + source.getClass().getName());
+            }
 
             return List.of(source);
         }
-
     }
 
     // override config source
@@ -200,7 +212,10 @@ public final class MetaConfig {
         OverrideSource source = MetaProviders.overrideSource(type,
                                                              sourceMetaConfig.get("properties"));
 
-        LOGGER.fine(() -> "Loaded override source of type \"" + type + "\", class: " + source.getClass().getName());
+        if (LOGGER.isLoggable(Level.TRACE)) {
+            LOGGER.log(Level.TRACE,
+                       "Loaded override source of type \"" + type + "\", class: " + source.getClass().getName());
+        }
 
         return source;
     }
@@ -215,16 +230,13 @@ public final class MetaConfig {
         return configSources;
     }
 
-    // only interested in config source
-    static List<ConfigSource> configSources(Function<String, Boolean> supportedMediaType, List<String> supportedSuffixes) {
-        Optional<Config> metaConfigOpt = metaConfig();
-
-        return metaConfigOpt
-                .map(MetaConfig::configSources)
-                .orElseGet(() -> MetaConfigFinder.findConfigSource(supportedMediaType, supportedSuffixes)
-                        .map(List::of)
-                        .orElseGet(List::of));
-
+    /**
+     * Meta configuration if provided, or empty config if not.
+     *
+     * @return meta configuration
+     */
+    public Config metaConfiguration() {
+        return this.metaConfig;
     }
 
     private static Config createDefault() {

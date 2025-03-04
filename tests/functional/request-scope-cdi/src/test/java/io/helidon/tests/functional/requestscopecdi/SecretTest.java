@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,9 @@
 
 package io.helidon.tests.functional.requestscopecdi;
 
-import io.helidon.common.http.MediaType;
-import io.helidon.microprofile.tests.junit5.HelidonTest;
+import io.helidon.common.media.type.MediaTypes;
+import io.helidon.microprofile.testing.junit5.HelidonTest;
 
-import io.netty.handler.codec.http.HttpResponseStatus;
 import jakarta.inject.Inject;
 import jakarta.json.JsonObject;
 import jakarta.ws.rs.client.WebTarget;
@@ -28,7 +27,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @HelidonTest
 class SecretTest {
@@ -40,10 +38,10 @@ class SecretTest {
     public void testSecrets() {
         Response r = baseTarget.path("greet")
                 .request()
-                .accept(MediaType.APPLICATION_JSON.toString())
+                .accept(MediaTypes.APPLICATION_JSON.text())
                 .get();
-        assertThat(r.getStatus(), is(HttpResponseStatus.OK.code()));
+        assertThat(r.getStatus(), is(Response.Status.OK.getStatusCode()));
         JsonObject o = r.readEntity(JsonObject.class);
-        assertEquals(o.get("secret1"), o.get("secret2"));
+        assertThat(o.get("secret1"), is(o.get("secret2")));
     }
 }

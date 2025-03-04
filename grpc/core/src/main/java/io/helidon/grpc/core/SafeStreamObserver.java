@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,23 @@
 
 package io.helidon.grpc.core;
 
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.lang.System.Logger.Level;
 
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 
 /**
- * A {@link io.grpc.stub.StreamObserver} that handles exceptions correctly.
+ * A {@link StreamObserver} that handles exceptions correctly.
  *
  * @param <T> the type of response expected
  */
-public class SafeStreamObserver<T>
-        implements StreamObserver<T> {
+public class SafeStreamObserver<T> implements StreamObserver<T> {
 
     /**
-     * Create a {@link io.helidon.grpc.core.SafeStreamObserver} that wraps
-     * another {@link io.grpc.stub.StreamObserver}.
+     * Create a {@link SafeStreamObserver} that wraps
+     * another {@link StreamObserver}.
      *
-     * @param streamObserver  the {@link io.grpc.stub.StreamObserver} to wrap
+     * @param streamObserver  the {@link StreamObserver} to wrap
      */
     private SafeStreamObserver(StreamObserver<? super T> streamObserver) {
         delegate = streamObserver;
@@ -64,14 +62,14 @@ public class SafeStreamObserver<T>
     public void onError(Throwable thrown) {
         try {
             if (done) {
-                LOGGER.log(Level.SEVERE, checkNotNull(thrown), () -> "OnError called after StreamObserver was closed");
+                LOGGER.log(Level.ERROR, () -> "OnError called after StreamObserver was closed");
             } else {
                 done = true;
                 delegate.onError(checkNotNull(thrown));
             }
         } catch (Throwable t) {
             throwIfFatal(t);
-            LOGGER.log(Level.SEVERE, t, () -> "Caught exception handling onError");
+            LOGGER.log(Level.ERROR, () -> "Caught exception handling onError", t);
         }
     }
 
@@ -85,7 +83,7 @@ public class SafeStreamObserver<T>
                 delegate.onCompleted();
             } catch (Throwable thrown) {
                 throwIfFatal(thrown);
-                LOGGER.log(Level.SEVERE, thrown, () -> "Caught exception handling onComplete");
+                LOGGER.log(Level.ERROR, () -> "Caught exception handling onComplete", thrown);
             }
         }
     }
@@ -153,14 +151,14 @@ public class SafeStreamObserver<T>
     /**
      * The {2link Logger} to use.
      */
-    private static final Logger LOGGER = Logger.getLogger(SafeStreamObserver.class.getName());
+    private static final System.Logger LOGGER = System.getLogger(SafeStreamObserver.class.getName());
 
     // ----- data members ---------------------------------------------------
 
     /**
      * The actual StreamObserver.
      */
-    private StreamObserver<? super T> delegate;
+    private final StreamObserver<? super T> delegate;
 
     /**
      * Indicates a terminal state.

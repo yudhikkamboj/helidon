@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import org.eclipse.microprofile.metrics.Gauge;
 import org.eclipse.microprofile.metrics.Histogram;
 import org.eclipse.microprofile.metrics.Metadata;
 import org.eclipse.microprofile.metrics.MetricRegistry;
-import org.eclipse.microprofile.metrics.MetricType;
 import org.eclipse.microprofile.metrics.MetricUnits;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.eclipse.microprofile.faulttolerance.exceptions.CircuitBreakerOpenException;
 
@@ -64,7 +64,6 @@ class MetricsTest extends FaultToleranceTest {
         MetricRegistry metricRegistry = getMetricRegistry();
         metricRegistry.counter(Metadata.builder()
                 .withName("dcounter")
-                .withType(MetricType.COUNTER)
                 .withUnit(MetricUnits.NONE)
                 .build());
         metricRegistry.counter("dcounter").inc();

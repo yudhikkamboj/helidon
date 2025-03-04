@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,17 @@
 /**
  * MicroProfile Reactive Messaging Health check.
  */
+@SuppressWarnings({ "requires-automatic", "requires-transitive-automatic" })
 module io.helidon.microprofile.messaging.health {
-    requires java.logging;
 
-    requires static jakarta.cdi;
-    requires static jakarta.inject;
-    requires io.helidon.microprofile.messaging;
-    requires io.helidon.microprofile.health;
+    requires jakarta.inject;
     requires microprofile.health.api;
-    requires io.helidon.health.common;
+
+    requires transitive io.helidon.microprofile.health;
+    requires transitive io.helidon.microprofile.messaging;
+    requires transitive jakarta.cdi;
+    requires transitive org.reactivestreams;
 
     exports io.helidon.microprofile.messaging.health;
+
 }

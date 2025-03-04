@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,12 @@ import io.helidon.common.GenericType;
 import io.helidon.dbclient.DbMapper;
 
 /**
- * Java Service loader interface for database mappers.
+ * Java {@link java.util.ServiceLoader} interface for database mappers.
  *
- * @see io.helidon.dbclient.DbMapper
+ * @see DbMapper
  */
 public interface DbMapperProvider {
+
     /**
      * Returns mapper for specific type.
      *
@@ -46,4 +47,5 @@ public interface DbMapperProvider {
     default <T> Optional<DbMapper<T>> mapper(GenericType<T> type) {
         return Optional.empty();
     }
+
 }

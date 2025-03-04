@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,10 @@ public final class UserIdLogEntry implements AccessLogEntry {
 
     /**
      * Create a new access log entry for user id.
+     *
      * @return an entry that always considers user id to be undefined
-     * @see io.helidon.webserver.accesslog.AccessLogSupport.Builder#add(AccessLogEntry)
-     * @see io.helidon.webserver.accesslog.UserLogEntry
+     * @see AccessLogConfig.Builder#addEntry(AccessLogEntry)
+     * @see UserLogEntry
      */
     public static UserIdLogEntry create() {
         // does nothing, no need to create a new instance

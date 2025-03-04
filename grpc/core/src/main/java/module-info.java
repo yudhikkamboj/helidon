@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2024 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,42 +14,20 @@
  * limitations under the License.
  */
 
-import io.helidon.grpc.core.JavaMarshaller;
-import io.helidon.grpc.core.JsonbMarshaller;
-import io.helidon.grpc.core.MarshallerSupplier;
-
 /**
- * gRPC Core Module.
+ * Helidon GRPC core package.
  */
 module io.helidon.grpc.core {
-    exports io.helidon.grpc.core;
 
-    requires transitive io.helidon.config;
-    requires transitive io.helidon.config.objectmapping;
-    requires transitive io.helidon.common.configurable;
-    requires transitive io.helidon.common;
+    requires io.helidon.common;
+    requires io.helidon.http;
     requires io.helidon.common.context;
-    requires io.helidon.common.http;
+    requires io.helidon.tracing;
 
-    requires grpc.netty;
-    requires transitive grpc.protobuf;
-    requires grpc.protobuf.lite;
-    requires transitive grpc.stub;
     requires transitive io.grpc;
-    requires io.netty.handler;
-    requires io.netty.transport;
+    requires transitive io.grpc.stub;
     requires transitive com.google.protobuf;
+    requires transitive io.grpc.protobuf;
 
-    requires jakarta.annotation;
-    requires static jakarta.json.bind;
-    requires java.logging;
-    requires java.naming;
-
-    requires jakarta.inject;
-
-    provides MarshallerSupplier with
-            MarshallerSupplier.DefaultMarshallerSupplier,
-            MarshallerSupplier.ProtoMarshallerSupplier,
-            JavaMarshaller.Supplier,
-            JsonbMarshaller.Supplier;
+    exports io.helidon.grpc.core;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package io.helidon.dbclient.mongodb;
 
+import java.lang.System.Logger.Level;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.logging.Logger;
 
 import jakarta.json.Json;
 
@@ -30,11 +30,19 @@ import jakarta.json.Json;
  */
 final class StatementParsers {
 
-    /** Local logger instance. */
-    private static final Logger LOGGER = Logger.getLogger(StatementParsers.class.getName());
+    /**
+     * Local logger instance.
+     */
+    private static final System.Logger LOGGER = System.getLogger(StatementParsers.class.getName());
 
+    /**
+     * Create a JSON representation of a value.
+     *
+     * @param value value
+     * @return JSON value
+     */
     static String toJson(Object value) {
-        if ((value instanceof Integer)  || (value instanceof Short)  || (value instanceof Byte)){
+        if ((value instanceof Integer) || (value instanceof Short) || (value instanceof Byte)) {
             return Json.createValue(((Number) value).intValue()).toString();
         }
         if (value instanceof Long) {
@@ -98,14 +106,6 @@ final class StatementParsers {
         }
 
         /**
-         * Do nothing.
-         *
-         * @param parser parser instance
-         */
-        static void doNothing(Parser parser) {
-        }
-
-        /**
          * Copy character from input string to output as is.
          *
          * @param parser parser instance
@@ -122,10 +122,6 @@ final class StatementParsers {
          * Target SQL statement builder.
          */
         private final StringBuilder sb;
-        /**
-         * Temporary string storage.
-         */
-        private final StringBuilder nap;
 
         /**
          * Character being currently processed.
@@ -134,8 +130,7 @@ final class StatementParsers {
 
         private Parser(String statement) {
             this.sb = new StringBuilder(statement.length());
-            this.nap = new StringBuilder(32);
-            this.statement = statement;
+            this.statement = statement; // temporary string storage
             this.c = '\0';
         }
 
@@ -145,10 +140,6 @@ final class StatementParsers {
 
         StringBuilder sb() {
             return sb;
-        }
-
-        StringBuilder nap() {
-            return nap;
         }
 
         char c() {
@@ -173,7 +164,8 @@ final class StatementParsers {
         /**
          * Parser ACTION interface.
          */
-        private interface Action extends Consumer<NamedParser> {}
+        private interface Action extends Consumer<NamedParser> {
+        }
 
         /**
          * States used in state machine.
@@ -198,15 +190,14 @@ final class StatementParsers {
 
             // This is far from optimal code, but direct translation table would be too large for Java char
             private static CharClass charClass(char c) {
-                switch (c) {
-                    case '"': return QUOTE;
-                    case PAR_BEG: return DOLLAR;
-                    case ':': return COLON;
-                    default:
-                        return Character.isLetter(c)
-                                ? LETTER
-                                : (Character.isDigit(c) ? NUMBER : OTHER);
-                }
+                return switch (c) {
+                    case '"' -> QUOTE;
+                    case PAR_BEG -> DOLLAR;
+                    case ':' -> COLON;
+                    default -> Character.isLetter(c)
+                            ? LETTER
+                            : (Character.isDigit(c) ? NUMBER : OTHER);
+                };
             }
 
         }
@@ -215,46 +206,68 @@ final class StatementParsers {
          * States TRANSITION table.
          */
         private static final State[][] TRANSITION = {
-            // Transitions from STATEMENT state
-            {
-                State.STATEMENT, // LETTER: regular part of the statement, keep processing it
-                State.STATEMENT, // NUMBER: regular part of the statement, keep processing it
-                State.STRING,    // QUOTE: beginning of JSON string processing, switch to STRING state
-                State.STATEMENT, // COLON: regular part of the statement, keep processing it
-                State.PAR_BEG,   // DOLLAR: possible beginning of named parameter, switch to PAR_BEG state
-                State.STATEMENT  // OTHER: regular part of the statement, keep processing it
-            },
-            // Transitions from STRING state
-            {
-                State.STRING,    // LETTER: regular part of the JSON string, keep processing it
-                State.STRING,    // NUMBER: regular part of the JSON string, keep processing it
-                State.STATEMENT, // QUOTE: end of JSON string processing, go back to STATEMENT state
-                State.STRING,    // COLON: regular part of the JSON string, keep processing it
-                State.STRING,    // DOLLAR: regular part of the JSON string, keep processing it
-                State.STRING     // OTHER: regular part of the JSON string, keep processing it
-            },
-            // Transitions from PAR_BEG state
-            {
-                State.PARAMETER, // LETTER: first character of named parameter, switch to PARAMETER state
-                State.STATEMENT, // NUMBER: can't be first character of named parameter, go back to STATEMENT state
-                State.STRING,    // QUOTE: not a named parameter but beginning of JSON string processing,
-                                 //        switch to STRING state
-                State.STATEMENT, // COLON: can't be first character of named parameter, go back to STATEMENT state
-                State.PAR_BEG,   // DOLLAR: not a named parameter but possible beginning of another named parameter,
-                                 //         retry named parameter processing
-                State.STATEMENT  // OTHER: can't be first character of named parameter, go back to STATEMENT state
-            },
-            // Transitions from PARAMETER state
-            {
-                State.PARAMETER, // LETTER: next character of named parameter, keep processing it
-                State.PARAMETER, // NUMBER: next character of named parameter, keep processing it
-                State.STATEMENT, // QUOTE: end of named parameter and beginning of JSON string processing,
-                                 //        switch to STRING state
-                State.STATEMENT, // COLON: not a named parameter, colon is part of the name, go back to STATEMENT state
-                State.PAR_BEG,   // DOLLAR: end of named parameter and possible beginning of another named parameter
-                                 //         switch to PAR_BEG state
-                State.STATEMENT  // OTHER: can't be next character of named parameter, go back to STATEMENT state
-            }
+                // Transitions from STATEMENT state
+                {
+                        // LETTER: regular part of the statement, keep processing it
+                        State.STATEMENT,
+                        // NUMBER: regular part of the statement, keep processing it
+                        State.STATEMENT,
+                        // QUOTE: beginning of JSON string processing, switch to STRING state
+                        State.STRING,
+                        // COLON: regular part of the statement, keep processing it
+                        State.STATEMENT,
+                        // DOLLAR: possible beginning of named parameter, switch to PAR_BEG state
+                        State.PAR_BEG,
+                        // OTHER: regular part of the statement, keep processing it
+                        State.STATEMENT
+                },
+                // Transitions from STRING state
+                {
+                        //LETTER: regular part of the JSON string, keep processing it
+                        State.STRING,
+                        // NUMBER: regular part of the JSON string, keep processing it
+                        State.STRING,
+                        // QUOTE: end of JSON string processing, go back to STATEMENT state
+                        State.STATEMENT,
+                        // COLON: regular part of the JSON string, keep processing it
+                        State.STRING,
+                        // DOLLAR: regular part of the JSON string, keep processing it
+                        State.STRING,
+                        // OTHER: regular part of the JSON string, keep processing it
+                        State.STRING
+                },
+                // Transitions from PAR_BEG state
+                {
+                        // LETTER: first character of named parameter, switch to PARAMETER state
+                        State.PARAMETER,
+                        // NUMBER: can't be first character of named parameter, go back to STATEMENT state
+                        State.STATEMENT,
+                        // QUOTE: not a named parameter but beginning of JSON string processing, switch to STRING state
+                        State.STRING,
+                        // COLON: can't be first character of named parameter, go back to STATEMENT state
+                        State.STATEMENT,
+                        // DOLLAR: not a named parameter but possible beginning of another named parameter
+                        // retry named parameter processing
+                        State.PAR_BEG,
+                        // OTHER: can't be first character of named parameter, go back to STATEMENT state
+                        State.STATEMENT
+                },
+                // Transitions from PARAMETER state
+                {
+                        // LETTER: next character of named parameter, keep processing it
+                        State.PARAMETER,
+                        // NUMBER: next character of named parameter, keep processing it
+                        State.PARAMETER,
+                        // QUOTE: end of named parameter and beginning of JSON string processing, switch to STRING state
+                        State.STATEMENT,
+                        // COLON: not a named parameter, colon is part of the name, go back to STATEMENT state
+                        State.STATEMENT,
+                        // DOLLAR: end of named parameter and possible beginning of another named parameter switch
+                        // to PAR_BEG state
+                        State.PAR_BEG,
+                        // OTHER: can't be next character of named parameter, go back to STATEMENT state
+                        State.STATEMENT
+                }
         };
 
 
@@ -262,44 +275,66 @@ final class StatementParsers {
          * States TRANSITION ACTION table.
          */
         private static final Action[][] ACTION = {
-            // Actions performed on transitions from STATEMENT state
-            {
-                NamedParser::copyCurrChar, // LETTER: copy regular statement character to output
-                NamedParser::copyCurrChar, // NUMBER: copy regular statement character to output
-                NamedParser::copyCurrChar, // QUOTE: copy regular statement character to output
-                NamedParser::copyCurrChar, // COLON: copy regular statement character to output
-                NamedParser::storeCharPos, // DOLLAR: store current character position
-                NamedParser::copyCurrChar  // OTHER: copy regular statement character to output
-            },
-            // Actions performed on transitions from STRING state
-            {
-                NamedParser::copyCurrChar, // LETTER: copy regular statement character to output
-                NamedParser::copyCurrChar, // NUMBER: copy regular statement character to output
-                NamedParser::copyCurrChar, // QUOTE: copy regular statement character to output
-                NamedParser::copyCurrChar, // COLON: copy regular statement character to output
-                NamedParser::copyCurrChar, // DOLLAR: copy regular statement character to output
-                NamedParser::copyCurrChar  // OTHER: copy regular statement character to output
-            },
-            // Actions performed on transitions from PAR_BEG state
-            {
-                NamedParser::doNothing,       // LETTER: do nothing, parameter name was not finished yet
-                NamedParser::copyStoredChars, // NUMBER: copy characters from stored position up to current character to output
-                NamedParser::copyStoredChars, // QUOTE: copy characters from stored position up to current character to output
-                NamedParser::copyStoredChars, // COLON: copy characters from stored position up to current character to output
-                NamedParser::copyStoredCharsStoreCharPos, // DOLLAR: copy characters from stored position
-                                                          //         up to current character to output
-                NamedParser::copyStoredChars  // OTHER: copy characters from stored position up to current character to output
-            },
-            // Actions performed on transitions from PARAMETER state
-            {
-                NamedParser::doNothing,               // LETTER: do nothing, parameter name was not finished yet
-                NamedParser::doNothing,               // NUMBER: do nothing, parameter name was not finished yet
-                NamedParser::finishParamCopyCurrChar, // QUOTE: finish parameter processing
-                NamedParser::copyStoredChars,         // COLON: copy characters from stored position
-                                                      //        up to current character to output
-                NamedParser::finishParamStoreCharPos, // DOLLAR: finish parameter processing
-                NamedParser::finishParamCopyCurrChar  // OTHER: finish parameter processing
-            }
+                // Actions performed on transitions from STATEMENT state
+                {
+                        // LETTER: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // NUMBER: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // QUOTE: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // COLON: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // DOLLAR: store current character position
+                        NamedParser::storeCharPos,
+                        // OTHER: copy regular statement character to output
+                        NamedParser::copyCurrChar
+                },
+                // Actions performed on transitions from STRING state
+                {
+                        // LETTER: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // NUMBER: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // QUOTE: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // COLON: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // DOLLAR: copy regular statement character to output
+                        NamedParser::copyCurrChar,
+                        // OTHER: copy regular statement character to output
+                        NamedParser::copyCurrChar
+                },
+                // Actions performed on transitions from PAR_BEG state
+                {
+                        // LETTER: do nothing, parameter name was not finished yet
+                        NamedParser::doNothing,
+                        // NUMBER: copy characters from stored position up to current character to output
+                        NamedParser::copyStoredChars,
+                        // QUOTE: copy characters from stored position up to current character to output
+                        NamedParser::copyStoredChars,
+                        // COLON: copy characters from stored position up to current character to output
+                        NamedParser::copyStoredChars,
+                        // DOLLAR: copy characters from stored position up to current character to output
+                        NamedParser::copyStoredCharsStoreCharPos,
+                        // OTHER: copy characters from stored position up to current character to output
+                        NamedParser::copyStoredChars
+                },
+                // Actions performed on transitions from PARAMETER state
+                {
+                        // LETTER: do nothing, parameter name was not finished yet
+                        NamedParser::doNothing,
+                        // NUMBER: do nothing, parameter name was not finished yet
+                        NamedParser::doNothing,
+                        // QUOTE: finish parameter processing
+                        NamedParser::finishParamCopyCurrChar,
+                        // COLON: copy characters from stored position up to current character to output
+                        NamedParser::copyStoredChars,
+                        // DOLLAR: finish parameter processing
+                        NamedParser::finishParamStoreCharPos,
+                        // OTHER: finish parameter processing
+                        NamedParser::finishParamCopyCurrChar
+                }
         };
 
         /**
@@ -353,7 +388,7 @@ final class StatementParsers {
          * Parameter name is replaced by mapped value if mapping for given parameter exists.
          * Otherwise parameter name is left in statement as is without replacing it.
          *
-         * @param parser  parser instance
+         * @param parser parser instance
          */
         private static void finishParamCopyCurrChar(NamedParser parser) {
             String parName = parser.statement.substring(parser.paramBegPos + 1, parser.curPos);
@@ -370,7 +405,7 @@ final class StatementParsers {
          * Parameter name is replaced by mapped value if mapping for given parameter exists.
          * Otherwise parameter name is left in statement as is without replacing it.
          *
-         * @param parser  parser instance
+         * @param parser parser instance
          */
         private static void finishParamStoreCharPos(NamedParser parser) {
             String parName = parser.statement.substring(parser.paramBegPos + 1, parser.curPos);
@@ -382,15 +417,25 @@ final class StatementParsers {
             parser.paramBegPos = parser.curPos;
         }
 
-        /** Parameter name to value mapping. */
-        private final Map<String, ? extends Object> mappings;
-        /** SQL statement to be parsed. */
+        /**
+         * Parameter name to value mapping.
+         */
+        private final Map<String, ?> mappings;
+        /**
+         * SQL statement to be parsed.
+         */
         private final String statement;
-        /** Target SQL statement builder. */
+        /**
+         * Target SQL statement builder.
+         */
         private final StringBuilder sb;
-        /** Current position in the parsed String. */
+        /**
+         * Current position in the parsed String.
+         */
         private int curPos;
-        /** Parameter beginning position (index of '$' character). */
+        /**
+         * Parameter beginning position (index of '$' character).
+         */
         private int paramBegPos;
 
         /**
@@ -398,7 +443,7 @@ final class StatementParsers {
          */
         private CharClass cl;
 
-        NamedParser(String statement, Map<String, ? extends Object> mappings) {
+        NamedParser(String statement, Map<String, ?> mappings) {
             this.statement = statement;
             this.sb = new StringBuilder(statement.length());
             this.mappings = mappings;
@@ -415,20 +460,19 @@ final class StatementParsers {
                 state = TRANSITION[state.ordinal()][cl.ordinal()];
             }
             switch (state) {
-                case PAR_BEG:
-                    sb.append(statement, paramBegPos, len);
-                    break;
-                case PARAMETER:
+                case PAR_BEG -> sb.append(statement, paramBegPos, len);
+                case PARAMETER -> {
                     String parName = statement.substring(paramBegPos + 1, len);
                     if (mappings.containsKey(parName)) {
                         sb.append(toJson(mappings.get(parName)));
                     } else {
                         sb.append(statement, paramBegPos, len);
                     }
-                    break;
-                default:
+                }
+                default -> {
+                }
             }
-            LOGGER.fine(() -> String.format("Named Statement %s", sb.toString()));
+            LOGGER.log(Level.DEBUG, () -> String.format("Named Statement %s", sb.toString()));
             return sb.toString();
         }
 
@@ -479,22 +523,22 @@ final class StatementParsers {
          * States TRANSITION table.
          */
         private static final State[][] TRANSITION = {
-            // Transition from STATEMENT
-            {
-                State.STATEMENT,
-                State.STATEMENT,
-                State.STRING,
-                State.STATEMENT,
-                State.STATEMENT
-            },
-            // Transition from STRING
-            {
-                State.STRING,
-                State.STRING,
-                State.STATEMENT,
-                State.STRING,
-                State.STRING
-            }
+                // Transition from STATEMENT
+                {
+                        State.STATEMENT,
+                        State.STATEMENT,
+                        State.STRING,
+                        State.STATEMENT,
+                        State.STATEMENT
+                },
+                // Transition from STRING
+                {
+                        State.STRING,
+                        State.STRING,
+                        State.STATEMENT,
+                        State.STRING,
+                        State.STRING
+                }
         };
 
         private static final Action COPY_ACTION = Parser::copyChar;
@@ -521,7 +565,6 @@ final class StatementParsers {
             }
         }
 
-        private final List<Object> parameters;
         private final ListIterator<Object> parIt;
         /**
          * Character class of character being currently processed.
@@ -530,7 +573,6 @@ final class StatementParsers {
 
         private IndexedParser(String statement, List<Object> parameters) {
             super(statement);
-            this.parameters = parameters;
             this.parIt = parameters.listIterator();
             this.cl = null;
         }
@@ -545,7 +587,7 @@ final class StatementParsers {
                 ACTION[state.ordinal()][cl.ordinal()].process(this);
                 state = TRANSITION[state.ordinal()][cl.ordinal()];
             }
-            LOGGER.fine(() -> String.format("Indexed Statement %s", sb().toString()));
+            LOGGER.log(Level.DEBUG, () -> String.format("Indexed Statement %s", sb().toString()));
             return sb().toString();
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,14 @@ import java.security.PrivateKey;
 import java.util.Base64;
 
 import io.helidon.common.configurable.Resource;
-import io.helidon.common.pki.KeyConfig;
+import io.helidon.common.pki.Keys;
 
 import org.junit.jupiter.api.Test;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * Test Main class (cli).
@@ -42,9 +42,9 @@ public class MainTest {
 
         Main.EncryptionCliProcessor ecp = new Main.EncryptionCliProcessor();
         ecp.parse(args);
-        assertEquals(Main.Algorithm.aes, ecp.getAlgorithm());
-        assertEquals(masterPassword, ecp.getMasterPassword());
-        assertEquals(secret, ecp.getSecret());
+        assertThat(ecp.getAlgorithm(), is(Main.Algorithm.aes));
+        assertThat(ecp.getMasterPassword(), is(masterPassword));
+        assertThat(ecp.getSecret(), is(secret));
 
         String encrypted = ecp.encrypt();
 
@@ -55,9 +55,10 @@ public class MainTest {
         );
 
         String orig = EncryptionUtil.decryptAes(ecp.getMasterPassword().toCharArray(),
-                                                encrypted.substring(EncryptionFilter.PREFIX_GCM.length(), encrypted.length() - 1));
+                                                encrypted.substring(EncryptionFilter.PREFIX_GCM.length(),
+                                                                    encrypted.length() - 1));
 
-        assertEquals(secret, orig);
+        assertThat(orig, is(secret));
 
         Main.main(args);
     }
@@ -70,18 +71,19 @@ public class MainTest {
         String certAlias = "1";
 
         String[] args = new String[] {"rsa", keystorePath, keystorePass, certAlias, secret};
-        PrivateKey pk = KeyConfig.keystoreBuilder()
-                .keystore(Resource.create(Paths.get(keystorePath)))
-                .keyAlias("1")
-                .keystorePassphrase(keystorePass.toCharArray())
+        PrivateKey pk = Keys.builder()
+                .keystore(keystoreBuilder -> keystoreBuilder.keystore(Resource.create(Paths.get(keystorePath)))
+                        .keyAlias("1")
+                        .passphrase(keystorePass.toCharArray())
+                )
                 .build()
                 .privateKey().orElseThrow(AssertionError::new);
 
         Main.EncryptionCliProcessor ecp = new Main.EncryptionCliProcessor();
         ecp.parse(args);
-        assertEquals(Main.Algorithm.rsa, ecp.getAlgorithm());
-        assertNotNull(ecp.getPublicKey());
-        assertEquals(secret, ecp.getSecret());
+        assertThat(ecp.getAlgorithm(), is(Main.Algorithm.rsa));
+        assertThat(ecp.getPublicKey(), notNullValue());
+        assertThat(ecp.getSecret(), is(secret));
 
         String encrypted = ecp.encrypt();
         assertAll(() -> assertThat("Encrypted string should start with rsa prefix: " + encrypted,
@@ -93,7 +95,7 @@ public class MainTest {
 
         String orig = EncryptionUtil.decryptRsa(pk, base64);
 
-        assertEquals(secret, orig);
+        assertThat(orig, is(secret));
         Main.main(args);
     }
 }
